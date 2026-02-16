@@ -1,0 +1,2 @@
+# Runtime dependencies for sentientagent_v2
+google-adk
