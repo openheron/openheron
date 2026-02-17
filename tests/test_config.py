@@ -80,6 +80,7 @@ class ConfigTests(unittest.TestCase):
             os.environ.pop("FEISHU_APP_ID", None)
             os.environ.pop("SENTIENTAGENT_V2_SESSION_BACKEND", None)
             os.environ.pop("GOOGLE_API_KEY", None)
+            os.environ.pop("BRAVE_API_KEY", None)
             os.environ.pop("SENTIENTAGENT_V2_WEB_SEARCH_ENABLED", None)
             loaded = bootstrap_env_from_config(path)
 
@@ -89,18 +90,37 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(os.environ["SENTIENTAGENT_V2_SESSION_BACKEND"], "sqlite")
         self.assertEqual(os.environ["GOOGLE_API_KEY"], "google-key")
         self.assertEqual(os.environ["SENTIENTAGENT_V2_WEB_SEARCH_ENABLED"], "0")
+        self.assertNotIn("BRAVE_API_KEY", os.environ)
 
-    def test_legacy_channels_enabled_list_is_still_supported(self) -> None:
+    def test_web_search_api_key_is_loaded_from_web_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config.json"
             cfg = default_config()
-            cfg["channels"]["enabled"] = ["feishu"]
+            cfg["web"]["search"]["apiKey"] = "brave-key"
             save_config(cfg, path)
 
-            os.environ.pop("SENTIENTAGENT_V2_CHANNELS", None)
+            os.environ.pop("BRAVE_API_KEY", None)
             bootstrap_env_from_config(path)
 
-        self.assertEqual(os.environ["SENTIENTAGENT_V2_CHANNELS"], "feishu")
+        self.assertEqual(os.environ["BRAVE_API_KEY"], "brave-key")
+
+    def test_legacy_keys_are_not_used_anymore(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            cfg = default_config()
+            cfg["providers"]["google"]["apiKey"] = ""
+            cfg["web"]["search"]["apiKey"] = ""
+            cfg["keys"] = {"googleApiKey": "legacy-google", "braveApiKey": "legacy-brave"}
+            save_config(cfg, path)
+            loaded_cfg = load_config(path)
+
+            os.environ.pop("GOOGLE_API_KEY", None)
+            os.environ.pop("BRAVE_API_KEY", None)
+            bootstrap_env_from_config(path)
+
+        self.assertNotIn("keys", loaded_cfg)
+        self.assertNotIn("GOOGLE_API_KEY", os.environ)
+        self.assertNotIn("BRAVE_API_KEY", os.environ)
 
 
 if __name__ == "__main__":

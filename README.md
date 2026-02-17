@@ -226,15 +226,9 @@ pip install python-socks
       "maxResults": 5
     }
   },
-  "keys": {
-    "googleApiKey": "",
-    "braveApiKey": ""
-  },
   "debug": false
 }
 ```
-
-`keys.*` 是兼容旧配置的后备字段，建议优先使用 `providers.*` 和 `web.*`。
 
 ## Acknowledgements
 

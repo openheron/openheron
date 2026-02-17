@@ -9,6 +9,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+_DEFAULT_GOOGLE_MODEL = "gemini-3-flash-preview"
+
 
 def get_data_dir() -> Path:
     """Return the data directory used by sentientagent_v2."""
@@ -49,7 +51,7 @@ def default_config() -> dict[str, Any]:
             "google": {
                 "enabled": True,
                 "apiKey": "",
-                "model": "gemini-3-flash-preview",
+                "model": _DEFAULT_GOOGLE_MODEL,
             },
             "openai": {
                 "enabled": False,
@@ -87,20 +89,18 @@ def default_config() -> dict[str, Any]:
                 "maxResults": 5,
             },
         },
-        "keys": {
-            # Legacy compatibility fields. Prefer providers/web sections above.
-            "googleApiKey": "",
-            "braveApiKey": "",
-        },
         "debug": False,
     }
 
 
 def _deep_merge(base: Any, override: Any) -> Any:
-    if isinstance(base, dict) and isinstance(override, dict):
-        merged = dict(base)
-        for key, value in override.items():
-            merged[key] = _deep_merge(base.get(key), value)
+    """Merge override into base, but keep only keys defined in base schema."""
+    if isinstance(base, dict):
+        if not isinstance(override, dict):
+            return base
+        merged: dict[str, Any] = {}
+        for key, base_value in base.items():
+            merged[key] = _deep_merge(base_value, override.get(key))
         return merged
     return override if override is not None else base
 
@@ -146,22 +146,8 @@ def save_config(config: dict[str, Any], config_path: Path | None = None) -> Path
     return path
 
 
-def _coerce_channels(value: Any) -> str:
-    if isinstance(value, list):
-        names = [str(item).strip().lower() for item in value if str(item).strip()]
-        return ",".join(names) if names else "local"
-    if isinstance(value, str):
-        text = value.strip()
-        return text or "local"
-    return "local"
-
-
 def _resolve_enabled_channels(channels: dict[str, Any]) -> str:
-    """Resolve enabled channel names from new-style flags or legacy list."""
-    legacy = channels.get("enabled")
-    if legacy is not None:
-        return _coerce_channels(legacy)
-
+    """Resolve enabled channel names from per-channel enabled flags."""
     names: list[str] = []
     for name in ("local", "feishu"):
         raw = channels.get(name)
@@ -188,15 +174,8 @@ def _resolve_provider(cfg: dict[str, Any]) -> tuple[str, bool, str, str]:
         active_cfg = {}
 
     enabled = _is_enabled(active_cfg.get("enabled"), default=(active == "google"))
-    agent = cfg.get("agent", {})
-    keys = cfg.get("keys", {})
-    model = str(active_cfg.get("model", "")).strip() or str(agent.get("model", "")).strip() or "gemini-3-flash-preview"
-
-    # Runtime currently uses Google ADK; keep legacy key fallback.
-    if active == "google":
-        api_key = str(active_cfg.get("apiKey", "")).strip() or str(keys.get("googleApiKey", "")).strip()
-    else:
-        api_key = str(active_cfg.get("apiKey", "")).strip()
+    model = str(active_cfg.get("model", "")).strip() or _DEFAULT_GOOGLE_MODEL
+    api_key = str(active_cfg.get("apiKey", "")).strip()
     return active, enabled, model, api_key
 
 
@@ -207,7 +186,6 @@ def _resolve_web(cfg: dict[str, Any]) -> tuple[bool, bool, str, int, str]:
     search = web.get("search")
     if not isinstance(search, dict):
         search = {}
-    keys = cfg.get("keys", {})
 
     web_enabled = _is_enabled(web.get("enabled"), default=True)
     search_enabled = web_enabled and _is_enabled(search.get("enabled"), default=True)
@@ -220,7 +198,7 @@ def _resolve_web(cfg: dict[str, Any]) -> tuple[bool, bool, str, int, str]:
         max_results = 5
     max_results = min(max(max_results, 1), 10)
 
-    api_key = str(search.get("apiKey", "")).strip() or str(keys.get("braveApiKey", "")).strip()
+    api_key = str(search.get("apiKey", "")).strip()
     return web_enabled, search_enabled, provider, max_results, api_key
 
 
