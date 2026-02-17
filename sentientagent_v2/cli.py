@@ -47,6 +47,11 @@ def _cmd_doctor() -> int:
     issues: list[str] = []
     if shutil.which("adk") is None:
         issues.append("Missing `adk` CLI. Install with: pip install google-adk")
+    if not os.getenv("GOOGLE_API_KEY", "").strip():
+        issues.append(
+            "Missing Google API key. Set `keys.googleApiKey` in ~/.sentientagent_v2/config.json "
+            "or export GOOGLE_API_KEY."
+        )
 
     config_path = get_config_path()
     registry = get_registry()
@@ -105,8 +110,9 @@ def _cmd_onboard(force: bool) -> int:
     print("")
     print("Next steps:")
     print(f"1. Edit config: {saved_to}")
-    print("2. Start gateway: sentientagent_v2 gateway")
-    print("3. Dry run: sentientagent_v2 doctor")
+    print("2. Fill keys.googleApiKey (and channel credentials if needed)")
+    print("3. Start gateway: sentientagent_v2 gateway")
+    print("4. Dry run: sentientagent_v2 doctor")
     return 0
 
 

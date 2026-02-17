@@ -47,6 +47,7 @@ def default_config() -> dict[str, Any]:
             },
         },
         "keys": {
+            "googleApiKey": "",
             "braveApiKey": "",
         },
         "debug": False,
@@ -124,6 +125,7 @@ def config_to_env(config: dict[str, Any]) -> dict[str, str]:
     debug = cfg.get("debug", False)
 
     env = {
+        "GOOGLE_API_KEY": str(keys.get("googleApiKey", "")).strip(),
         "SENTIENTAGENT_V2_MODEL": str(agent.get("model", "")).strip(),
         "SENTIENTAGENT_V2_WORKSPACE": str(agent.get("workspace", "")).strip(),
         "SENTIENTAGENT_V2_BUILTIN_SKILLS_DIR": str(agent.get("builtinSkillsDir", "")).strip(),

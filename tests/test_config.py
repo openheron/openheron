@@ -46,13 +46,17 @@ class ConfigTests(unittest.TestCase):
 
     def test_apply_config_to_env_respects_existing_values(self) -> None:
         os.environ["SENTIENTAGENT_V2_MODEL"] = "from-shell"
+        os.environ["GOOGLE_API_KEY"] = "key-from-shell"
         cfg = default_config()
         cfg["agent"]["model"] = "from-config"
+        cfg["keys"]["googleApiKey"] = "key-from-config"
         apply_config_to_env(cfg, overwrite=False)
         self.assertEqual(os.environ["SENTIENTAGENT_V2_MODEL"], "from-shell")
+        self.assertEqual(os.environ["GOOGLE_API_KEY"], "key-from-shell")
 
         apply_config_to_env(cfg, overwrite=True)
         self.assertEqual(os.environ["SENTIENTAGENT_V2_MODEL"], "from-config")
+        self.assertEqual(os.environ["GOOGLE_API_KEY"], "key-from-config")
 
     def test_bootstrap_env_from_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -62,17 +66,20 @@ class ConfigTests(unittest.TestCase):
             cfg["channels"]["feishu"]["appId"] = "app-id"
             cfg["channels"]["feishu"]["appSecret"] = "app-secret"
             cfg["session"]["backend"] = "sqlite"
+            cfg["keys"]["googleApiKey"] = "google-key"
             save_config(cfg, path)
 
             os.environ.pop("SENTIENTAGENT_V2_CHANNELS", None)
             os.environ.pop("FEISHU_APP_ID", None)
             os.environ.pop("SENTIENTAGENT_V2_SESSION_BACKEND", None)
+            os.environ.pop("GOOGLE_API_KEY", None)
             loaded = bootstrap_env_from_config(path)
 
         self.assertIsNotNone(loaded)
         self.assertEqual(os.environ["SENTIENTAGENT_V2_CHANNELS"], "feishu")
         self.assertEqual(os.environ["FEISHU_APP_ID"], "app-id")
         self.assertEqual(os.environ["SENTIENTAGENT_V2_SESSION_BACKEND"], "sqlite")
+        self.assertEqual(os.environ["GOOGLE_API_KEY"], "google-key")
 
 
 if __name__ == "__main__":

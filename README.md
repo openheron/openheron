@@ -70,6 +70,7 @@ This creates:
 - `~/.sentientagent_v2/workspace`
 
 Gateway/doctor/message commands will auto-load this config file and map it to runtime env vars.
+日常使用建议只改这个 `config.json`，不要频繁手工 `export`。
 
 ## Run
 
@@ -152,21 +153,16 @@ python -m pytest -q
 - config file: `~/.sentientagent_v2/config.json` (recommended)
 - shell env vars (higher priority, overrides config values)
 
-- `SENTIENTAGENT_V2_MODEL`: override model (default: `gemini-3-flash-preview`)
-- `SENTIENTAGENT_V2_WORKSPACE`: workspace root for custom skills
-- `SENTIENTAGENT_V2_BUILTIN_SKILLS_DIR`: override built-in skills directory
-- `SENTIENTAGENT_V2_CHANNELS`: default channel list for `gateway` (e.g. `local,feishu`)
-- `SENTIENTAGENT_V2_SESSION_BACKEND`: `memory` (default) or `sqlite`
-- `SENTIENTAGENT_V2_SESSION_DB_URL`: DB URL when using sqlite backend (optional)
-- `FEISHU_APP_ID`: required for Feishu channel
-- `FEISHU_APP_SECRET`: required for Feishu channel
-- `FEISHU_ENCRYPT_KEY`: optional for Feishu event decrypt
-- `FEISHU_VERIFICATION_TOKEN`: optional for Feishu event verify
-- `SENTIENTAGENT_V2_DEBUG`: set to `1` to print debug details to stderr, including:
-  - request payload sent to the LLM runner
-  - every function calling / tool calling trace with input and output
-  - skill discovery and `read_skill` selection details
-  - LLM event stream details (`text` / `function_call` / `function_response` / errors / finish_reason)
+通常不需要设置任何环境变量，直接在 `config.json` 里填：
+
+- `keys.googleApiKey`（必填，LLM 调用）
+- `channels.enabled` 和 `channels.feishu.*`（启用 Feishu 时）
+
+只在“临时覆盖”时才建议使用 env，例如：
+
+- `GOOGLE_API_KEY`
+- `SENTIENTAGENT_V2_CHANNELS`
+- `SENTIENTAGENT_V2_DEBUG`
 
 ## Feishu Dependency
 
@@ -206,6 +202,7 @@ pip install python-socks
     }
   },
   "keys": {
+    "googleApiKey": "your_google_api_key",
     "braveApiKey": ""
   },
   "debug": false
