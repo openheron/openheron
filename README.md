@@ -9,7 +9,7 @@ You can think of sentientagent_v2 as a "Hello World" edition of the OpenClaw-sty
 
 - Keeps: local skill discovery and loading (`SKILL.md`)
 - Adds: minimal bus/channel gateway with pluggable channels (`local`, `feishu`)
-- Runtime: Google ADK (`LlmAgent` + function tools)
+- Runtime: Google ADK (`LlmAgent` + function tools), with providers `google` and `openai` (`openai` via LiteLLM)
 - Bundles built-in skills under `sentientagent_v2/skills`
 - Provides core tools for file, shell, web, messaging, and scheduling workflows
 
@@ -166,7 +166,7 @@ python -m pytest -q
 In normal usage, you do not need to set environment variables manually.
 Configure these fields in `config.json`:
 
-- `providers.google.enabled / apiKey / model`
+- `providers.google.enabled / apiKey / model` or `providers.openai.enabled / apiKey / model` (enable exactly one)
 - `channels.local.enabled`, `channels.feishu.enabled`, and `channels.feishu.*`
 - `web.enabled`, `web.search.enabled / provider / apiKey / maxResults`
 - `security.restrictToWorkspace / allowExec / allowNetwork / execAllowlist`
@@ -174,6 +174,7 @@ Configure these fields in `config.json`:
 Use env vars only for temporary overrides, for example:
 
 - `GOOGLE_API_KEY`
+- `OPENAI_API_KEY`
 - `SENTIENTAGENT_V2_CHANNELS`
 - `SENTIENTAGENT_V2_EXEC_ALLOWLIST`
 - `SENTIENTAGENT_V2_DEBUG`
@@ -193,6 +194,14 @@ If your environment uses a SOCKS proxy and you see
 pip install python-socks
 ```
 
+## OpenAI Provider Dependency
+
+Install optional dependencies when `providers.openai.enabled=true`:
+
+```bash
+pip install -e '.[openai]'
+```
+
 ## Config Example
 
 ```json
@@ -210,7 +219,7 @@ pip install python-socks
     "openai": {
       "enabled": false,
       "apiKey": "",
-      "model": ""
+      "model": "openai/gpt-4.1-mini"
     }
   },
   "session": {
@@ -248,6 +257,7 @@ pip install python-socks
 ```
 
 Provider selection is determined by `enabled` flags only. Keep exactly one provider enabled.
+Runtime currently supports `google` and `openai`.
 
 `session` always uses SQLite. If `dbUrl` is empty, the default path is
 `~/.sentientagent_v2/database/sessions.db`.

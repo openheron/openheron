@@ -10,9 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from .env_utils import is_enabled
+from .provider import default_model_for_provider, normalize_model_name, provider_api_key_env
 from .security import normalize_allowlist
-
-_DEFAULT_GOOGLE_MODEL = "gemini-3-flash-preview"
 
 
 def get_data_dir() -> Path:
@@ -41,17 +40,17 @@ def default_config() -> dict[str, Any]:
             "google": {
                 "enabled": True,
                 "apiKey": "",
-                "model": _DEFAULT_GOOGLE_MODEL,
+                "model": default_model_for_provider("google"),
             },
             "openai": {
                 "enabled": False,
                 "apiKey": "",
-                "model": "",
+                "model": default_model_for_provider("openai"),
             },
             "openrouter": {
                 "enabled": False,
                 "apiKey": "",
-                "model": "",
+                "model": default_model_for_provider("openrouter"),
             },
         },
         "session": {
@@ -173,13 +172,13 @@ def _resolve_provider(cfg: dict[str, Any]) -> tuple[str, bool, str, str]:
             enabled_names.append(name)
 
     if not enabled_names:
-        return "google", False, _DEFAULT_GOOGLE_MODEL, ""
+        return "google", False, default_model_for_provider("google"), ""
 
     active = enabled_names[0]
     active_cfg = providers.get(active, {})
     if not isinstance(active_cfg, dict):
         active_cfg = {}
-    model = str(active_cfg.get("model", "")).strip() or _DEFAULT_GOOGLE_MODEL
+    model = normalize_model_name(active, active_cfg.get("model"))
     api_key = str(active_cfg.get("apiKey", "")).strip()
     return active, True, model, api_key
 
@@ -239,8 +238,11 @@ def config_to_env(config: dict[str, Any]) -> dict[str, str]:
     restrict_workspace, allow_exec, allow_network, exec_allowlist = _resolve_security(cfg)
     debug = cfg.get("debug", False)
 
+    provider_key_env = provider_api_key_env(provider_name) if provider_enabled else None
     env = {
-        "GOOGLE_API_KEY": provider_api_key,
+        "GOOGLE_API_KEY": "",
+        "OPENAI_API_KEY": "",
+        "OPENROUTER_API_KEY": "",
         "SENTIENTAGENT_V2_MODEL": model,
         "SENTIENTAGENT_V2_PROVIDER": provider_name,
         "SENTIENTAGENT_V2_PROVIDER_ENABLED": "1" if provider_enabled else "0",
@@ -263,6 +265,8 @@ def config_to_env(config: dict[str, Any]) -> dict[str, str]:
         "SENTIENTAGENT_V2_EXEC_ALLOWLIST": exec_allowlist,
         "SENTIENTAGENT_V2_DEBUG": "1" if bool(debug) else "0",
     }
+    if provider_key_env:
+        env[provider_key_env] = provider_api_key
     return env
 
 

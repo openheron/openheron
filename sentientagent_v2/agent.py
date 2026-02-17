@@ -8,6 +8,7 @@ from datetime import datetime
 
 from google.adk.agents import LlmAgent
 
+from .provider import build_adk_model_from_env
 from .skills import get_registry, list_skills, read_skill
 from .tools import (
     cron,
@@ -55,7 +56,7 @@ Available skills:
 
 root_agent = LlmAgent(
     name="sentientagent_v2",
-    model=os.getenv("SENTIENTAGENT_V2_MODEL", "gemini-3-flash-preview"),
+    model=build_adk_model_from_env(),
     instruction=_build_instruction(),
     tools=[
         list_skills,

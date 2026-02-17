@@ -152,13 +152,15 @@ class ConfigTests(unittest.TestCase):
             os.environ.pop("SENTIENTAGENT_V2_PROVIDER", None)
             os.environ.pop("SENTIENTAGENT_V2_PROVIDER_ENABLED", None)
             os.environ.pop("GOOGLE_API_KEY", None)
+            os.environ.pop("OPENAI_API_KEY", None)
             os.environ.pop("SENTIENTAGENT_V2_MODEL", None)
             bootstrap_env_from_config(path)
 
         self.assertEqual(os.environ["SENTIENTAGENT_V2_PROVIDER"], "openai")
         self.assertEqual(os.environ["SENTIENTAGENT_V2_PROVIDER_ENABLED"], "1")
-        self.assertEqual(os.environ["GOOGLE_API_KEY"], "openai-key-selected")
-        self.assertEqual(os.environ["SENTIENTAGENT_V2_MODEL"], "gpt-4.1-mini")
+        self.assertEqual(os.environ["OPENAI_API_KEY"], "openai-key-selected")
+        self.assertNotIn("GOOGLE_API_KEY", os.environ)
+        self.assertEqual(os.environ["SENTIENTAGENT_V2_MODEL"], "openai/gpt-4.1-mini")
 
     def test_provider_active_key_is_ignored_when_enabled_points_elsewhere(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -173,10 +175,12 @@ class ConfigTests(unittest.TestCase):
 
             os.environ.pop("SENTIENTAGENT_V2_PROVIDER", None)
             os.environ.pop("GOOGLE_API_KEY", None)
+            os.environ.pop("OPENAI_API_KEY", None)
             bootstrap_env_from_config(path)
 
         self.assertEqual(os.environ["SENTIENTAGENT_V2_PROVIDER"], "google")
         self.assertEqual(os.environ["GOOGLE_API_KEY"], "google-key-selected")
+        self.assertNotIn("OPENAI_API_KEY", os.environ)
 
     def test_legacy_keys_are_not_used_anymore(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -189,11 +193,13 @@ class ConfigTests(unittest.TestCase):
             loaded_cfg = load_config(path)
 
             os.environ.pop("GOOGLE_API_KEY", None)
+            os.environ.pop("OPENAI_API_KEY", None)
             os.environ.pop("BRAVE_API_KEY", None)
             bootstrap_env_from_config(path)
 
         self.assertNotIn("keys", loaded_cfg)
         self.assertNotIn("GOOGLE_API_KEY", os.environ)
+        self.assertNotIn("OPENAI_API_KEY", os.environ)
         self.assertNotIn("BRAVE_API_KEY", os.environ)
 
 

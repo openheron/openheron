@@ -13,6 +13,10 @@ feishu = [
     "lark-oapi>=1.4.15",
     "python-socks>=2.5.3",
 ]
+openai = [
+    "litellm>=1.75.5,<1.80.17",
+    "openai>=1.100.2",
+]
 
 [project.scripts]
 sentientagent_v2 = "sentientagent_v2.cli:main"
