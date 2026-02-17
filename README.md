@@ -70,7 +70,7 @@ This creates:
 - `~/.sentientagent_v2/workspace`
 
 Gateway/doctor/message commands will auto-load this config file and map it to runtime env vars.
-日常使用建议只改这个 `config.json`，不要频繁手工 `export`。
+For day-to-day use, update only `config.json` and avoid frequent manual `export` overrides.
 
 ## Run
 
@@ -153,13 +153,14 @@ python -m pytest -q
 - config file: `~/.sentientagent_v2/config.json` (recommended)
 - shell env vars (higher priority, overrides config values)
 
-通常不需要设置任何环境变量，直接在 `config.json` 里填：
+In normal usage, you do not need to set environment variables manually.
+Configure these fields in `config.json`:
 
 - `providers.google.enabled / apiKey / model`
-- `channels.local.enabled`、`channels.feishu.enabled` 和 `channels.feishu.*`
-- `web.enabled`、`web.search.enabled / provider / apiKey / maxResults`
+- `channels.local.enabled`, `channels.feishu.enabled`, and `channels.feishu.*`
+- `web.enabled`, `web.search.enabled / provider / apiKey / maxResults`
 
-只在“临时覆盖”时才建议使用 env，例如：
+Use env vars only for temporary overrides, for example:
 
 - `GOOGLE_API_KEY`
 - `SENTIENTAGENT_V2_CHANNELS`
@@ -229,8 +230,8 @@ pip install python-socks
 }
 ```
 
-`session` 固定使用 SQLite。`dbUrl` 留空时默认使用  
-`~/.sentientagent_v2/database/sessions.db`。
+`session` always uses SQLite. If `dbUrl` is empty, the default path is
+`~/.sentientagent_v2/database/sessions.db`.
 
 ## Acknowledgements
 
