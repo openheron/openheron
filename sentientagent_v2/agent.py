@@ -9,6 +9,7 @@ from datetime import datetime
 from google.adk.agents import LlmAgent
 
 from .provider import build_adk_model_from_env
+from .runtime.debug_callbacks import after_model_debug_callback, before_model_debug_callback
 from .skills import get_registry, list_skills, read_skill
 from .tools import (
     cron,
@@ -58,6 +59,8 @@ root_agent = LlmAgent(
     name="sentientagent_v2",
     model=build_adk_model_from_env(),
     instruction=_build_instruction(),
+    before_model_callback=before_model_debug_callback,
+    after_model_callback=after_model_debug_callback,
     tools=[
         list_skills,
         read_skill,

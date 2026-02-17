@@ -1,0 +1,99 @@
+"""Tests for callback-based debug tracing."""
+
+from __future__ import annotations
+
+import io
+import os
+import types as pytypes
+import unittest
+from contextlib import redirect_stderr
+from unittest.mock import patch
+
+from sentientagent_v2.runtime.debug_callbacks import after_model_debug_callback, before_model_debug_callback
+
+
+class DebugCallbacksTests(unittest.TestCase):
+    def test_before_model_emits_request_text_when_debug_enabled(self) -> None:
+        callback_context = pytypes.SimpleNamespace(
+            invocation_id="inv-1",
+            agent_name="sentientagent_v2",
+            user_id="u-1",
+            session=pytypes.SimpleNamespace(id="s-1"),
+        )
+        llm_request = pytypes.SimpleNamespace(
+            model="openai/gpt-5.2",
+            config=pytypes.SimpleNamespace(system_instruction="You are an assistant."),
+            contents=[
+                pytypes.SimpleNamespace(
+                    role="user",
+                    parts=[pytypes.SimpleNamespace(text="tomorrow weather in Weihai")],
+                )
+            ],
+            tools_dict={"web_search": object(), "exec": object()},
+        )
+
+        with patch.dict(os.environ, {"SENTIENTAGENT_V2_DEBUG": "1"}, clear=False):
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                result = before_model_debug_callback(callback_context, llm_request)
+
+        self.assertIsNone(result)
+        log = buf.getvalue()
+        self.assertIn("llm.before_model", log)
+        self.assertIn("tomorrow weather in Weihai", log)
+        self.assertIn("You are an assistant.", log)
+
+    def test_after_model_emits_response_text_when_debug_enabled(self) -> None:
+        callback_context = pytypes.SimpleNamespace(
+            invocation_id="inv-2",
+            agent_name="sentientagent_v2",
+            user_id="u-2",
+            session=pytypes.SimpleNamespace(id="s-2"),
+        )
+        llm_response = pytypes.SimpleNamespace(
+            finish_reason="stop",
+            partial=False,
+            turn_complete=True,
+            error_code=None,
+            error_message=None,
+            content=pytypes.SimpleNamespace(parts=[pytypes.SimpleNamespace(text="Tomorrow is cloudy.")]),
+        )
+
+        with patch.dict(os.environ, {"SENTIENTAGENT_V2_DEBUG": "1"}, clear=False):
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                result = after_model_debug_callback(callback_context, llm_response)
+
+        self.assertIsNone(result)
+        log = buf.getvalue()
+        self.assertIn("llm.after_model", log)
+        self.assertIn("Tomorrow is cloudy.", log)
+
+    def test_callbacks_are_silent_when_debug_disabled(self) -> None:
+        callback_context = pytypes.SimpleNamespace(session=pytypes.SimpleNamespace(id="s-3"))
+        llm_request = pytypes.SimpleNamespace(
+            model="gemini-3-flash-preview",
+            config=pytypes.SimpleNamespace(system_instruction="sys"),
+            contents=[],
+            tools_dict={},
+        )
+        llm_response = pytypes.SimpleNamespace(
+            finish_reason="stop",
+            partial=False,
+            turn_complete=True,
+            error_code=None,
+            error_message=None,
+            content=pytypes.SimpleNamespace(parts=[pytypes.SimpleNamespace(text="ok")]),
+        )
+
+        with patch.dict(os.environ, {"SENTIENTAGENT_V2_DEBUG": "0"}, clear=False):
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                before_model_debug_callback(callback_context, llm_request)
+                after_model_debug_callback(callback_context, llm_response)
+
+        self.assertEqual(buf.getvalue(), "")
+
+
+if __name__ == "__main__":
+    unittest.main()

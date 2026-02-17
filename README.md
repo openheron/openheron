@@ -174,6 +174,12 @@ Use env vars only for temporary overrides, for example:
 - `SENTIENTAGENT_V2_CHANNELS`
 - `SENTIENTAGENT_V2_EXEC_ALLOWLIST`
 - `SENTIENTAGENT_V2_DEBUG`
+- `SENTIENTAGENT_V2_DEBUG_MAX_CHARS` (default `2000`, max text length per debug message)
+
+When `debug=true` (or `SENTIENTAGENT_V2_DEBUG=1`), `sentientagent_v2` emits callback-based LLM traces:
+
+- `llm.before_model`: model name, tool names, and sanitized text sent to the model
+- `llm.after_model`: finish reason, errors, and sanitized response text
 
 ## Feishu Note
 
