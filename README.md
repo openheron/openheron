@@ -202,6 +202,7 @@ Configure these fields in `config.json`:
 - `channels.local.enabled`, `channels.feishu.enabled`, and `channels.feishu.*`
 - `web.enabled`, `web.search.enabled / provider / apiKey / maxResults`
 - `security.restrictToWorkspace / allowExec / allowNetwork / execAllowlist`
+- `tools.mcpServers` (optional MCP server map; supports stdio and remote HTTP/SSE)
 
 Use env vars only for temporary overrides, for example:
 
@@ -209,6 +210,7 @@ Use env vars only for temporary overrides, for example:
 - `OPENAI_API_KEY`
 - `SENTIENTAGENT_V2_CHANNELS`
 - `SENTIENTAGENT_V2_EXEC_ALLOWLIST`
+- `SENTIENTAGENT_V2_MCP_SERVERS_JSON`
 - `SENTIENTAGENT_V2_DEBUG`
 - `SENTIENTAGENT_V2_DEBUG_MAX_CHARS` (default `2000`, max text length per debug message)
 
@@ -272,6 +274,28 @@ It is already included in default dependencies.
     "allowNetwork": true,
     "execAllowlist": []
   },
+  "tools": {
+    "mcpServers": {
+      "filesystem": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "/absolute/path/to/workspace"
+        ]
+      },
+      "docs": {
+        "url": "https://example.com/mcp",
+        "transport": "http",
+        "headers": {
+          "Authorization": "Bearer <token>"
+        },
+        "toolFilter": ["search_docs"],
+        "toolNamePrefix": "mcp_docs_",
+        "requireConfirmation": false
+      }
+    }
+  },
   "debug": false
 }
 ```
@@ -281,6 +305,27 @@ Runtime currently supports `google` and `openai`.
 
 `session` always uses SQLite. If `dbUrl` is empty, the default path is
 `~/.sentientagent_v2/database/sessions.db`.
+
+## MCP Tool Integration (Minimum Setup)
+
+`sentientagent_v2` uses ADK `McpToolset` and reads server config from `tools.mcpServers`.
+
+Per-server fields:
+
+- `command` + `args` + `env`: stdio MCP server
+- `url`: remote MCP server
+- `transport`: optional, `sse` or `http` (auto-detects `/sse` as SSE when omitted)
+- `headers`: optional HTTP headers for remote MCP
+- `toolFilter` (or `tool_filter`): optional allowlist of MCP tool names
+- `toolNamePrefix` (or `tool_name_prefix`): optional prefix for exposed tool names
+- `requireConfirmation` (or `require_confirmation`): optional confirmation gate
+
+Quick verify:
+
+1. Add one server under `tools.mcpServers` in `~/.sentientagent_v2/config.json`.
+2. Run `sentientagent_v2 doctor` to ensure config is loaded.
+3. Start gateway: `sentientagent_v2 gateway`.
+4. Ask the agent to use MCP tools by prefix (for example `mcp_filesystem_...`).
 
 ## Security Policy
 

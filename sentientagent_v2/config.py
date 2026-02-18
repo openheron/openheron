@@ -84,6 +84,9 @@ def default_config() -> dict[str, Any]:
             "allowNetwork": True,
             "execAllowlist": [],
         },
+        "tools": {
+            "mcpServers": {},
+        },
         "debug": False,
     }
 
@@ -93,6 +96,9 @@ def _deep_merge(base: Any, override: Any) -> Any:
     if isinstance(base, dict):
         if not isinstance(override, dict):
             return base
+        # Empty dict in defaults acts as an extensible map schema.
+        if not base:
+            return override
         merged: dict[str, Any] = {}
         for key, base_value in base.items():
             merged[key] = _deep_merge(base_value, override.get(key))
@@ -223,6 +229,18 @@ def _resolve_security(cfg: dict[str, Any]) -> tuple[bool, bool, bool, str]:
     return restrict, allow_exec, allow_network, allowlist
 
 
+def _resolve_mcp_servers_json(cfg: dict[str, Any]) -> str:
+    """Serialize configured MCP servers into a stable JSON string."""
+    tools = cfg.get("tools")
+    if not isinstance(tools, dict):
+        return "{}"
+    raw = tools.get("mcpServers", {})
+    if not isinstance(raw, dict):
+        return "{}"
+    # Compact form keeps env values readable while preserving full structure.
+    return json.dumps(raw, ensure_ascii=False, separators=(",", ":"))
+
+
 def config_to_env(config: dict[str, Any]) -> dict[str, str]:
     """Map config payload into runtime environment variables."""
     cfg = normalize_config(config)
@@ -237,6 +255,7 @@ def config_to_env(config: dict[str, Any]) -> dict[str, str]:
         cfg
     )
     restrict_workspace, allow_exec, allow_network, exec_allowlist = _resolve_security(cfg)
+    mcp_servers_json = _resolve_mcp_servers_json(cfg)
     debug = cfg.get("debug", False)
 
     provider_key_env = provider_api_key_env(provider_name) if provider_enabled else None
@@ -264,6 +283,7 @@ def config_to_env(config: dict[str, Any]) -> dict[str, str]:
         "SENTIENTAGENT_V2_ALLOW_EXEC": "1" if allow_exec else "0",
         "SENTIENTAGENT_V2_ALLOW_NETWORK": "1" if allow_network else "0",
         "SENTIENTAGENT_V2_EXEC_ALLOWLIST": exec_allowlist,
+        "SENTIENTAGENT_V2_MCP_SERVERS_JSON": mcp_servers_json,
         "SENTIENTAGENT_V2_DEBUG": "1" if bool(debug) else "0",
     }
     if provider_key_env:

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import os
 import platform
+from typing import Any
 
 from google.adk.agents import LlmAgent
 from google.adk.tools import LongRunningFunctionTool
 
+from .mcp_registry import build_mcp_toolsets_from_env
 from .provider import build_adk_model_from_env
 from .runtime.debug_callbacks import after_model_debug_callback, before_model_debug_callback
 from .skills import get_registry, list_skills, read_skill
@@ -57,13 +59,9 @@ Available skills:
 """
 
 
-root_agent = LlmAgent(
-    name="sentientagent_v2",
-    model=build_adk_model_from_env(),
-    instruction=_build_instruction(),
-    before_model_callback=before_model_debug_callback,
-    after_model_callback=after_model_debug_callback,
-    tools=[
+def _build_tools() -> list[Any]:
+    """Assemble builtin tools plus optional MCP toolsets from env config."""
+    tools: list[Any] = [
         list_skills,
         read_skill,
         read_file,
@@ -77,5 +75,16 @@ root_agent = LlmAgent(
         message_image,
         cron,
         LongRunningFunctionTool(func=spawn_subagent),
-    ],
+    ]
+    tools.extend(build_mcp_toolsets_from_env())
+    return tools
+
+
+root_agent = LlmAgent(
+    name="sentientagent_v2",
+    model=build_adk_model_from_env(),
+    instruction=_build_instruction(),
+    before_model_callback=before_model_debug_callback,
+    after_model_callback=after_model_debug_callback,
+    tools=_build_tools(),
 )

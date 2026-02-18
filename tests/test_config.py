@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
@@ -36,6 +37,7 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(cfg["security"]["allowExec"])
         self.assertTrue(cfg["security"]["allowNetwork"])
         self.assertEqual(cfg["security"]["execAllowlist"], [])
+        self.assertEqual(cfg["tools"]["mcpServers"], {})
 
     def test_save_then_load_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -201,6 +203,27 @@ class ConfigTests(unittest.TestCase):
         self.assertNotIn("GOOGLE_API_KEY", os.environ)
         self.assertNotIn("OPENAI_API_KEY", os.environ)
         self.assertNotIn("BRAVE_API_KEY", os.environ)
+
+    def test_mcp_servers_are_exported_to_env_as_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            cfg = default_config()
+            cfg["tools"]["mcpServers"] = {
+                "filesystem": {
+                    "command": "npx",
+                    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+                }
+            }
+            save_config(cfg, path)
+
+            os.environ.pop("SENTIENTAGENT_V2_MCP_SERVERS_JSON", None)
+            bootstrap_env_from_config(path)
+
+        raw = os.environ.get("SENTIENTAGENT_V2_MCP_SERVERS_JSON")
+        self.assertIsNotNone(raw)
+        parsed = json.loads(raw or "{}")
+        self.assertIn("filesystem", parsed)
+        self.assertEqual(parsed["filesystem"]["command"], "npx")
 
 
 if __name__ == "__main__":
