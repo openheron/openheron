@@ -122,7 +122,8 @@ class DebugCallbacksTests(unittest.TestCase):
 
         self.assertEqual(buf.getvalue(), "")
         self.assertIsInstance(function_call.id, str)
-        self.assertTrue(function_call.id.startswith("adk-auto-inv-fc-"))
+        self.assertTrue(function_call.id.startswith("t_"))
+        self.assertLessEqual(len(function_call.id), 40)
 
     def test_before_model_patches_missing_function_response_id_from_pending_tool_call(self) -> None:
         callback_context = pytypes.SimpleNamespace(invocation_id="inv-fr", session=pytypes.SimpleNamespace(id="s-5"))
@@ -160,6 +161,47 @@ class DebugCallbacksTests(unittest.TestCase):
             before_model_debug_callback(callback_context, llm_request)
 
         self.assertIsInstance(function_call.id, str)
+        self.assertLessEqual(len(function_call.id), 40)
+        self.assertEqual(function_response.id, function_call.id)
+
+    def test_before_model_normalizes_overlong_tool_ids(self) -> None:
+        callback_context = pytypes.SimpleNamespace(invocation_id="inv-long", session=pytypes.SimpleNamespace(id="s-6"))
+        long_id = "toolcall_" + ("x" * 72)
+        function_call = pytypes.SimpleNamespace(id=long_id, name="cron", args={"action": "list"})
+        function_response = pytypes.SimpleNamespace(id=long_id, response={"ok": True})
+        llm_request = pytypes.SimpleNamespace(
+            model="openai/gpt-5.2",
+            config=pytypes.SimpleNamespace(system_instruction="sys"),
+            contents=[
+                pytypes.SimpleNamespace(
+                    role="model",
+                    parts=[
+                        pytypes.SimpleNamespace(
+                            text="",
+                            function_call=function_call,
+                            function_response=None,
+                        )
+                    ],
+                ),
+                pytypes.SimpleNamespace(
+                    role="tool",
+                    parts=[
+                        pytypes.SimpleNamespace(
+                            text="",
+                            function_call=None,
+                            function_response=function_response,
+                        )
+                    ],
+                ),
+            ],
+            tools_dict={},
+        )
+
+        with patch.dict(os.environ, {"SENTIENTAGENT_V2_DEBUG": "0"}, clear=False):
+            before_model_debug_callback(callback_context, llm_request)
+
+        self.assertLessEqual(len(function_call.id), 40)
+        self.assertLessEqual(len(function_response.id), 40)
         self.assertEqual(function_response.id, function_call.id)
 
 

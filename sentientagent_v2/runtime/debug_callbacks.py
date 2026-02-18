@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import uuid
+from hashlib import sha1
 from typing import Any
 
 from google.adk.agents.callback_context import CallbackContext
@@ -16,6 +17,7 @@ from google.adk.models.llm_response import LlmResponse
 from ..env_utils import env_enabled
 
 _DEFAULT_MAX_TEXT_CHARS = 2000
+_MAX_TOOL_CALL_ID_CHARS = 40
 _SECRET_PATTERNS = [
     re.compile(r"sk-[A-Za-z0-9_-]{16,}"),
     re.compile(r"AIza[0-9A-Za-z_-]{16,}"),
@@ -94,46 +96,91 @@ def _non_empty_str(value: Any) -> str | None:
     return None
 
 
+def _tool_id_from_source(source: str, prefix: str) -> str:
+    digest = sha1(source.encode("utf-8")).hexdigest()[:20]
+    return f"{prefix}_{digest}"
+
+
+def _normalize_tool_id(raw_id: Any) -> str | None:
+    current_id = _non_empty_str(raw_id)
+    if current_id is None:
+        return None
+
+    if len(current_id) > _MAX_TOOL_CALL_ID_CHARS:
+        return _tool_id_from_source(current_id, "t")
+    return current_id
+
+
+def _ensure_unique_tool_id(base_id: str, used_ids: set[str]) -> str:
+    if base_id not in used_ids:
+        return base_id
+    # Keep IDs unique in a single request while remaining within provider length limits.
+    suffix = 1
+    while True:
+        candidate = f"{base_id[:_MAX_TOOL_CALL_ID_CHARS - 3]}_{suffix:02d}"
+        if candidate not in used_ids:
+            return candidate
+        suffix += 1
+
+
+def _new_tool_id(invocation_id: str, fallback_counter: int, prefix: str) -> str:
+    seed = f"{invocation_id}:{fallback_counter}:{uuid.uuid4().hex[:6]}"
+    return _tool_id_from_source(seed, prefix)
+
+
 def _sanitize_tool_ids(callback_context: CallbackContext, llm_request: LlmRequest) -> int:
     """Ensure tool call / tool response ids are present before provider call."""
     invocation_id = _non_empty_str(getattr(callback_context, "invocation_id", None)) or "inv"
     patched = 0
     fallback_counter = 0
     pending_tool_call_ids: list[str] = []
+    used_ids: set[str] = set()
 
-    for content_index, content in enumerate(getattr(llm_request, "contents", []) or []):
+    for content in getattr(llm_request, "contents", []) or []:
         parts = getattr(content, "parts", None) or []
-        for part_index, part in enumerate(parts):
+        for part in parts:
             function_call = getattr(part, "function_call", None)
             if function_call is not None:
-                current_id = _non_empty_str(getattr(function_call, "id", None))
+                raw_id = getattr(function_call, "id", None)
+                current_id = _normalize_tool_id(raw_id)
                 if current_id is None:
                     fallback_counter += 1
-                    current_id = (
-                        f"adk-auto-{invocation_id}-{content_index}-{part_index}-{fallback_counter}-{uuid.uuid4().hex[:8]}"
-                    )
+                    current_id = _new_tool_id(invocation_id, fallback_counter, "t")
+                    while current_id in used_ids:
+                        fallback_counter += 1
+                        current_id = _new_tool_id(invocation_id, fallback_counter, "t")
+                current_id = _ensure_unique_tool_id(current_id, used_ids)
+                if current_id != raw_id:
                     function_call.id = current_id
                     patched += 1
                 pending_tool_call_ids.append(current_id)
+                used_ids.add(current_id)
 
             function_response = getattr(part, "function_response", None)
             if function_response is not None:
-                response_id = _non_empty_str(getattr(function_response, "id", None))
+                raw_response_id = getattr(function_response, "id", None)
+                response_id = _normalize_tool_id(raw_response_id)
                 if response_id is None:
                     if pending_tool_call_ids:
                         response_id = pending_tool_call_ids.pop(0)
                     else:
                         fallback_counter += 1
-                        response_id = (
-                            f"adk-auto-resp-{invocation_id}-{content_index}-{part_index}-{fallback_counter}-{uuid.uuid4().hex[:8]}"
-                        )
-                    function_response.id = response_id
-                    patched += 1
+                        response_id = _new_tool_id(invocation_id, fallback_counter, "t")
+                        while response_id in used_ids:
+                            fallback_counter += 1
+                            response_id = _new_tool_id(invocation_id, fallback_counter, "t")
                 else:
-                    try:
+                    if response_id in pending_tool_call_ids:
                         pending_tool_call_ids.remove(response_id)
-                    except ValueError:
+                    elif response_id in used_ids:
+                        # Response IDs may legally match prior function call IDs.
                         pass
+                    else:
+                        response_id = _ensure_unique_tool_id(response_id, used_ids)
+                if response_id != raw_response_id:
+                    patched += 1
+                function_response.id = response_id
+                used_ids.add(response_id)
 
     return patched
 
