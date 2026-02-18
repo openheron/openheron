@@ -16,6 +16,7 @@ from ..bus.queue import MessageBus
 from .base import BaseChannel
 from .feishu import FEISHU_AVAILABLE, FeishuChannel
 from .local import LocalChannel
+from .telegram import TelegramChannel
 
 
 LocalWriter = Callable[[str], None] | None
@@ -63,6 +64,22 @@ def _validate_feishu() -> list[str]:
     return issues
 
 
+def _build_telegram(bus: MessageBus, _local_writer: LocalWriter) -> BaseChannel:
+    allow_from = [item.strip() for item in os.getenv("TELEGRAM_ALLOW_FROM", "").split(",") if item.strip()]
+    return TelegramChannel(
+        bus=bus,
+        token=os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
+        allow_from=allow_from,
+        proxy=os.getenv("TELEGRAM_PROXY", "").strip(),
+    )
+
+
+def _validate_telegram() -> list[str]:
+    if os.getenv("TELEGRAM_BOT_TOKEN", "").strip():
+        return []
+    return ["Missing TELEGRAM_BOT_TOKEN for telegram channel."]
+
+
 def _build_not_implemented(_bus: MessageBus, _local_writer: LocalWriter) -> None:
     # Channel is known by configuration but has no runtime adapter yet.
     return None
@@ -100,6 +117,11 @@ def _make_registry() -> dict[str, ChannelSpec]:
             name="feishu",
             build=_build_feishu,
             validate_setup=_validate_feishu,
+        ),
+        "telegram": ChannelSpec(
+            name="telegram",
+            build=_build_telegram,
+            validate_setup=_validate_telegram,
         ),
     }
 

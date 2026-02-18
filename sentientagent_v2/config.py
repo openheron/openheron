@@ -346,6 +346,12 @@ def config_to_env(config: dict[str, Any]) -> dict[str, str]:
     feishu_allow_from = feishu.get("allowFrom", [])
     if not isinstance(feishu_allow_from, list):
         feishu_allow_from = []
+    telegram = channels.get("telegram", {}) if isinstance(channels, dict) else {}
+    if not isinstance(telegram, dict):
+        telegram = {}
+    telegram_allow_from = telegram.get("allowFrom", [])
+    if not isinstance(telegram_allow_from, list):
+        telegram_allow_from = []
     provider_name, provider_enabled, model, provider_api_key = _resolve_provider(cfg)
     web_enabled, web_search_enabled, web_search_provider, web_search_max_results, web_search_api_key = _resolve_web(
         cfg
@@ -371,6 +377,9 @@ def config_to_env(config: dict[str, Any]) -> dict[str, str]:
         "FEISHU_ENCRYPT_KEY": str(feishu.get("encryptKey", "")).strip(),
         "FEISHU_VERIFICATION_TOKEN": str(feishu.get("verificationToken", "")).strip(),
         "FEISHU_ALLOW_FROM": ",".join(normalize_allowlist(feishu_allow_from)),
+        "TELEGRAM_BOT_TOKEN": str(telegram.get("token", "")).strip(),
+        "TELEGRAM_ALLOW_FROM": ",".join(normalize_allowlist(telegram_allow_from)),
+        "TELEGRAM_PROXY": str(telegram.get("proxy", "")).strip(),
         "BRAVE_API_KEY": web_search_api_key,
         "SENTIENTAGENT_V2_WEB_ENABLED": "1" if web_enabled else "0",
         "SENTIENTAGENT_V2_WEB_SEARCH_ENABLED": "1" if web_search_enabled else "0",

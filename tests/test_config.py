@@ -86,6 +86,10 @@ class ConfigTests(unittest.TestCase):
             cfg["channels"]["feishu"]["appId"] = "app-id"
             cfg["channels"]["feishu"]["appSecret"] = "app-secret"
             cfg["channels"]["feishu"]["allowFrom"] = ["ou_1", "ou_2"]
+            cfg["channels"]["telegram"]["enabled"] = True
+            cfg["channels"]["telegram"]["token"] = "tg-token"
+            cfg["channels"]["telegram"]["allowFrom"] = ["u1", "u2"]
+            cfg["channels"]["telegram"]["proxy"] = "http://127.0.0.1:7890"
             cfg["session"]["dbUrl"] = "sqlite+aiosqlite:////tmp/sessions.db"
             cfg["providers"]["google"]["apiKey"] = "google-key"
             cfg["web"]["search"]["enabled"] = False
@@ -98,6 +102,9 @@ class ConfigTests(unittest.TestCase):
             os.environ.pop("SENTIENTAGENT_V2_CHANNELS", None)
             os.environ.pop("FEISHU_APP_ID", None)
             os.environ.pop("FEISHU_ALLOW_FROM", None)
+            os.environ.pop("TELEGRAM_BOT_TOKEN", None)
+            os.environ.pop("TELEGRAM_ALLOW_FROM", None)
+            os.environ.pop("TELEGRAM_PROXY", None)
             os.environ.pop("SENTIENTAGENT_V2_SESSION_DB_URL", None)
             os.environ.pop("GOOGLE_API_KEY", None)
             os.environ.pop("BRAVE_API_KEY", None)
@@ -109,9 +116,12 @@ class ConfigTests(unittest.TestCase):
             loaded = bootstrap_env_from_config(path)
 
         self.assertIsNotNone(loaded)
-        self.assertEqual(os.environ["SENTIENTAGENT_V2_CHANNELS"], "feishu")
+        self.assertEqual(os.environ["SENTIENTAGENT_V2_CHANNELS"], "feishu,telegram")
         self.assertEqual(os.environ["FEISHU_APP_ID"], "app-id")
         self.assertEqual(os.environ["FEISHU_ALLOW_FROM"], "ou_1,ou_2")
+        self.assertEqual(os.environ["TELEGRAM_BOT_TOKEN"], "tg-token")
+        self.assertEqual(os.environ["TELEGRAM_ALLOW_FROM"], "u1,u2")
+        self.assertEqual(os.environ["TELEGRAM_PROXY"], "http://127.0.0.1:7890")
         self.assertEqual(os.environ["SENTIENTAGENT_V2_SESSION_DB_URL"], "sqlite+aiosqlite:////tmp/sessions.db")
         self.assertEqual(os.environ["GOOGLE_API_KEY"], "google-key")
         self.assertEqual(os.environ["SENTIENTAGENT_V2_WEB_SEARCH_ENABLED"], "0")
