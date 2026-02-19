@@ -372,6 +372,12 @@ def config_to_env(config: dict[str, Any]) -> dict[str, str]:
     slack_poll_channels = slack.get("pollChannels", [])
     if not isinstance(slack_poll_channels, list):
         slack_poll_channels = []
+    qq = channels.get("qq", {}) if isinstance(channels, dict) else {}
+    if not isinstance(qq, dict):
+        qq = {}
+    qq_allow_from = qq.get("allowFrom", [])
+    if not isinstance(qq_allow_from, list):
+        qq_allow_from = []
     provider_name, provider_enabled, model, provider_api_key = _resolve_provider(cfg)
     web_enabled, web_search_enabled, web_search_provider, web_search_max_results, web_search_api_key = _resolve_web(
         cfg
@@ -426,6 +432,9 @@ def config_to_env(config: dict[str, Any]) -> dict[str, str]:
         "SLACK_POLL_CHANNELS": ",".join(normalize_allowlist(slack_poll_channels)),
         "SLACK_POLL_INTERVAL_SECONDS": str(slack.get("pollIntervalSeconds", 15)),
         "SLACK_INCLUDE_BOTS": "1" if is_enabled(slack.get("includeBots"), default=False) else "0",
+        "QQ_APP_ID": str(qq.get("appId", "")).strip(),
+        "QQ_SECRET": str(qq.get("secret", "")).strip(),
+        "QQ_ALLOW_FROM": ",".join(normalize_allowlist(qq_allow_from)),
         "BRAVE_API_KEY": web_search_api_key,
         "SENTIENTAGENT_V2_WEB_ENABLED": "1" if web_enabled else "0",
         "SENTIENTAGENT_V2_WEB_SEARCH_ENABLED": "1" if web_search_enabled else "0",

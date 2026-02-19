@@ -49,6 +49,12 @@ class ChannelFactoryTests(unittest.TestCase):
         self.assertTrue(any("SLACK_BOT_TOKEN" in item for item in issues))
         self.assertFalse(any("Unsupported channels" in item for item in issues))
 
+    def test_validate_reports_qq_setup_issues(self) -> None:
+        issues = validate_channel_setup(["qq"])
+        self.assertTrue(any("QQ_APP_ID" in item for item in issues))
+        self.assertTrue(any("QQ_SECRET" in item for item in issues))
+        self.assertFalse(any("Unsupported channels" in item for item in issues))
+
     def test_build_local_channel_manager(self) -> None:
         manager, local_channel = build_channel_manager(bus=MessageBus(), channel_names=["local"])
         self.assertIsNotNone(local_channel)
@@ -73,6 +79,12 @@ class ChannelFactoryTests(unittest.TestCase):
         os.environ["SLACK_BOT_TOKEN"] = "xoxb-token"
         manager, _ = build_channel_manager(bus=MessageBus(), channel_names=["slack"])
         self.assertIn("slack", manager.channels)
+
+    def test_build_manager_registers_qq_when_configured(self) -> None:
+        os.environ["QQ_APP_ID"] = "app-id"
+        os.environ["QQ_SECRET"] = "app-secret"
+        manager, _ = build_channel_manager(bus=MessageBus(), channel_names=["qq"])
+        self.assertIn("qq", manager.channels)
 
 
 if __name__ == "__main__":

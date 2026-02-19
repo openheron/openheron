@@ -17,6 +17,7 @@ from .base import BaseChannel
 from .email import EmailChannel
 from .feishu import FEISHU_AVAILABLE, FeishuChannel
 from .local import LocalChannel
+from .qq import QQ_AVAILABLE, QQChannel
 from .slack import SlackChannel
 from .telegram import TelegramChannel
 
@@ -155,6 +156,27 @@ def _validate_slack() -> list[str]:
     return ["Missing SLACK_BOT_TOKEN for slack channel."]
 
 
+def _build_qq(bus: MessageBus, _local_writer: LocalWriter) -> BaseChannel:
+    allow_from = [item.strip() for item in os.getenv("QQ_ALLOW_FROM", "").split(",") if item.strip()]
+    return QQChannel(
+        bus=bus,
+        app_id=os.getenv("QQ_APP_ID", "").strip(),
+        secret=os.getenv("QQ_SECRET", "").strip(),
+        allow_from=allow_from,
+    )
+
+
+def _validate_qq() -> list[str]:
+    issues: list[str] = []
+    if not QQ_AVAILABLE:
+        issues.append("QQ channel requires `qq-botpy` (pip install qq-botpy).")
+    if not os.getenv("QQ_APP_ID", "").strip():
+        issues.append("Missing QQ_APP_ID for qq channel.")
+    if not os.getenv("QQ_SECRET", "").strip():
+        issues.append("Missing QQ_SECRET for qq channel.")
+    return issues
+
+
 def _build_not_implemented(_bus: MessageBus, _local_writer: LocalWriter) -> None:
     # Channel is known by configuration but has no runtime adapter yet.
     return None
@@ -207,6 +229,11 @@ def _make_registry() -> dict[str, ChannelSpec]:
             name="slack",
             build=_build_slack,
             validate_setup=_validate_slack,
+        ),
+        "qq": ChannelSpec(
+            name="qq",
+            build=_build_qq,
+            validate_setup=_validate_qq,
         ),
     }
 
