@@ -456,6 +456,150 @@ class FeishuChannel(BaseChannel):
         if self._loop and self._loop.is_running():
             asyncio.run_coroutine_threadsafe(self._on_message(data), self._loop)
 
+    @staticmethod
+    def _extract_text_content(raw_content: str) -> str:
+        """Extract plain text from Feishu text message payload."""
+        try:
+            return json.loads(raw_content).get("text", "")
+        except json.JSONDecodeError:
+            return raw_content
+
+    async def _download_image(self, image_key: str, message_id: str) -> Path:
+        """Run image download in executor and return local path."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            self._download_image_sync,
+            image_key,
+            message_id,
+        )
+
+    async def _download_file(self, file_key: str, file_name: str, message_id: str) -> Path:
+        """Run file download in executor and return local path."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            self._download_file_sync,
+            file_key,
+            file_name,
+            message_id,
+        )
+
+    async def _handle_post_message(
+        self,
+        *,
+        raw_content: str,
+        message_id: str,
+        metadata: dict[str, Any],
+    ) -> tuple[str, list[str]]:
+        """Handle Feishu `post` message payload and return normalized content/media."""
+        post_payload: dict[str, Any] = {}
+        try:
+            parsed = json.loads(raw_content)
+            if isinstance(parsed, dict):
+                post_payload = parsed
+        except Exception:
+            post_payload = {}
+
+        text_content = _extract_post_text(post_payload) if post_payload else ""
+        image_keys = _extract_post_image_keys(post_payload) if post_payload else []
+        image_paths: list[str] = []
+        image_errors: list[str] = []
+        if image_keys:
+            metadata["image_keys"] = image_keys
+            for image_key in image_keys:
+                try:
+                    local_path = await self._download_image(image_key, message_id)
+                    image_paths.append(str(local_path))
+                except Exception as exc:
+                    logger.exception(
+                        "Failed downloading Feishu image in post (message_id=%s image_key=%s)",
+                        message_id,
+                        image_key,
+                    )
+                    image_errors.append(f"{image_key}: {exc}")
+        if image_paths:
+            metadata["image_paths"] = image_paths
+        if image_errors:
+            metadata["image_download_errors"] = image_errors
+
+        parts: list[str] = []
+        if text_content:
+            parts.append(text_content)
+        if image_paths:
+            parts.append("Received images:\n" + "\n".join(image_paths))
+        if image_errors:
+            parts.append("Failed downloading images:\n" + "\n".join(image_errors))
+        return "\n\n".join(parts).strip(), image_paths
+
+    async def _handle_image_message(
+        self,
+        *,
+        raw_content: str,
+        message_id: str,
+        metadata: dict[str, Any],
+    ) -> tuple[str, list[str]]:
+        """Handle Feishu `image` message payload and return normalized content/media."""
+        image_key = ""
+        try:
+            payload = json.loads(raw_content)
+            if isinstance(payload, dict):
+                image_key = str(payload.get("image_key", "")).strip()
+        except Exception:
+            pass
+        metadata["image_key"] = image_key
+        if not image_key:
+            return "Received an image message without image_key.", []
+
+        try:
+            local_path = await self._download_image(image_key, message_id)
+            metadata["local_path"] = str(local_path)
+            return f"Received image: {local_path}", [str(local_path)]
+        except Exception as exc:
+            logger.exception(
+                "Failed downloading Feishu image (message_id=%s image_key=%s)",
+                message_id,
+                image_key,
+            )
+            metadata["download_error"] = str(exc)
+            return f"Received image but download failed: {image_key}", []
+
+    async def _handle_file_message(
+        self,
+        *,
+        raw_content: str,
+        message_id: str,
+        metadata: dict[str, Any],
+    ) -> tuple[str, list[str]]:
+        """Handle Feishu `file` message payload and return normalized content/media."""
+        file_key = ""
+        file_name = ""
+        try:
+            payload = json.loads(raw_content)
+            if isinstance(payload, dict):
+                file_key = str(payload.get("file_key", "")).strip()
+                file_name = str(payload.get("file_name", "")).strip()
+        except Exception:
+            pass
+        metadata["file_key"] = file_key
+        metadata["file_name"] = file_name
+        if not file_key:
+            return "Received a file message without file_key.", []
+
+        try:
+            local_path = await self._download_file(file_key, file_name, message_id)
+            metadata["local_path"] = str(local_path)
+            return f"Received file: {local_path}", [str(local_path)]
+        except Exception as exc:
+            logger.exception(
+                "Failed downloading Feishu file (message_id=%s file_key=%s)",
+                message_id,
+                file_key,
+            )
+            metadata["download_error"] = str(exc)
+            name_hint = file_name or file_key
+            return f"Received file but download failed: {name_hint}", []
+
     async def _on_message(self, data: "P2ImMessageReceiveV1") -> None:
         try:
             event = data.event
@@ -481,126 +625,28 @@ class FeishuChannel(BaseChannel):
                 "chat_type": chat_type,
                 "message_id": message_id,
             }
+            content = ""
             media_paths: list[str] = []
-
             if msg_type == "text":
-                try:
-                    content = json.loads(raw_content).get("text", "")
-                except json.JSONDecodeError:
-                    content = raw_content
+                content = self._extract_text_content(raw_content)
             elif msg_type == "post":
-                post_payload: dict[str, Any] = {}
-                try:
-                    parsed = json.loads(raw_content)
-                    if isinstance(parsed, dict):
-                        post_payload = parsed
-                except Exception:
-                    post_payload = {}
-                text_content = _extract_post_text(post_payload) if post_payload else ""
-                image_keys = _extract_post_image_keys(post_payload) if post_payload else []
-                image_paths: list[str] = []
-                image_errors: list[str] = []
-                if image_keys:
-                    metadata["image_keys"] = image_keys
-                    loop = asyncio.get_running_loop()
-                    for image_key in image_keys:
-                        try:
-                            local_path = await loop.run_in_executor(
-                                None,
-                                self._download_image_sync,
-                                image_key,
-                                message_id,
-                            )
-                            image_paths.append(str(local_path))
-                        except Exception as exc:
-                            logger.exception(
-                                "Failed downloading Feishu image in post (message_id=%s image_key=%s)",
-                                message_id,
-                                image_key,
-                            )
-                            image_errors.append(f"{image_key}: {exc}")
-                if image_paths:
-                    metadata["image_paths"] = image_paths
-                    media_paths.extend(image_paths)
-                if image_errors:
-                    metadata["image_download_errors"] = image_errors
-                parts: list[str] = []
-                if text_content:
-                    parts.append(text_content)
-                if image_paths:
-                    parts.append("Received images:\n" + "\n".join(image_paths))
-                if image_errors:
-                    parts.append("Failed downloading images:\n" + "\n".join(image_errors))
-                content = "\n\n".join(parts).strip()
+                content, media_paths = await self._handle_post_message(
+                    raw_content=raw_content,
+                    message_id=message_id,
+                    metadata=metadata,
+                )
             elif msg_type == "image":
-                image_key = ""
-                try:
-                    payload = json.loads(raw_content)
-                    if isinstance(payload, dict):
-                        image_key = str(payload.get("image_key", "")).strip()
-                except Exception:
-                    pass
-                metadata["image_key"] = image_key
-                if image_key:
-                    try:
-                        loop = asyncio.get_running_loop()
-                        local_path = await loop.run_in_executor(
-                            None,
-                            self._download_image_sync,
-                            image_key,
-                            message_id,
-                        )
-                        metadata["local_path"] = str(local_path)
-                        media_paths.append(str(local_path))
-                        content = f"Received image: {local_path}"
-                    except Exception as exc:
-                        logger.exception(
-                            "Failed downloading Feishu image (message_id=%s image_key=%s)",
-                            message_id,
-                            image_key,
-                        )
-                        metadata["download_error"] = str(exc)
-                        content = f"Received image but download failed: {image_key}"
-                else:
-                    content = "Received an image message without image_key."
+                content, media_paths = await self._handle_image_message(
+                    raw_content=raw_content,
+                    message_id=message_id,
+                    metadata=metadata,
+                )
             elif msg_type == "file":
-                file_key = ""
-                file_name = ""
-                try:
-                    payload = json.loads(raw_content)
-                    if isinstance(payload, dict):
-                        file_key = str(payload.get("file_key", "")).strip()
-                        file_name = str(payload.get("file_name", "")).strip()
-                except Exception:
-                    pass
-                metadata["file_key"] = file_key
-                metadata["file_name"] = file_name
-                if file_key:
-                    try:
-                        loop = asyncio.get_running_loop()
-                        local_path = await loop.run_in_executor(
-                            None,
-                            self._download_file_sync,
-                            file_key,
-                            file_name,
-                            message_id,
-                        )
-                        metadata["local_path"] = str(local_path)
-                        media_paths.append(str(local_path))
-                        content = f"Received file: {local_path}"
-                    except Exception as exc:
-                        logger.exception(
-                            "Failed downloading Feishu file (message_id=%s file_key=%s)",
-                            message_id,
-                            file_key,
-                        )
-                        metadata["download_error"] = str(exc)
-                        name_hint = file_name or file_key
-                        content = f"Received file but download failed: {name_hint}"
-                else:
-                    content = "Received a file message without file_key."
-            else:
-                content = ""
+                content, media_paths = await self._handle_file_message(
+                    raw_content=raw_content,
+                    message_id=message_id,
+                    metadata=metadata,
+                )
 
             if not content:
                 return

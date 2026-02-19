@@ -17,10 +17,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from loguru import logger
-
 from .bus.events import OutboundMessage
 from .env_utils import env_enabled
+from .logging_utils import emit_debug
 from .runtime.cron_helpers import cron_store_path, format_schedule
 from .runtime.cron_schedule_parser import parse_schedule_input
 from .runtime.cron_service import CronService
@@ -874,18 +873,10 @@ def _debug_enabled() -> bool:
     return env_enabled("SENTIENTAGENT_V2_DEBUG", default=False)
 
 
-def _debug_body(payload: object) -> str:
-    """Serialize debug payloads for stable structured log lines."""
-    try:
-        return payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False, default=str)
-    except Exception:
-        return str(payload)
-
-
 def _debug(tag: str, payload: object, *, depth: int = 1) -> None:
     if not _debug_enabled():
         return
-    logger.opt(depth=depth).debug("[DEBUG] {}: {}", tag, _debug_body(payload))
+    emit_debug(tag, payload, depth=depth + 1)
 
 
 def _ret(tag: str, value: str) -> str:

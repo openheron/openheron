@@ -8,12 +8,17 @@ from typing import Any
 from loguru import logger
 
 
-def emit_debug(tag: str, payload: Any) -> None:
-    """Emit a debug line in a consistent format."""
+def debug_body(payload: Any) -> str:
+    """Serialize debug payloads for stable structured log lines."""
     try:
-        body = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False, default=str)
+        return payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False, default=str)
     except Exception:
-        body = str(payload)
+        return str(payload)
 
-    # depth=2 points to the original caller above local `_debug` wrappers.
-    logger.opt(depth=2).debug("[DEBUG] {}: {}", tag, body)
+
+def emit_debug(tag: str, payload: Any, *, depth: int = 2) -> None:
+    """Emit a debug line in a consistent format."""
+    body = debug_body(payload)
+
+    # Default `depth=2` points to the original caller above local `_debug` wrappers.
+    logger.opt(depth=depth).debug("[DEBUG] {}: {}", tag, body)
