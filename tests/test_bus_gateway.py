@@ -151,6 +151,42 @@ class GatewayTests(unittest.TestCase):
         self.assertNotEqual(rotated_session_id, "local:c1")
         self.assertTrue(str(rotated_session_id).startswith("local:c1:new:"))
 
+    def test_process_message_new_command_persists_current_session_to_memory(self) -> None:
+        fake_event = pytypes.SimpleNamespace(
+            content=pytypes.SimpleNamespace(parts=[pytypes.SimpleNamespace(text="ok")])
+        )
+        fake_session = pytypes.SimpleNamespace(id="local:c1")
+        memory_service = pytypes.SimpleNamespace(add_session_to_memory=AsyncMock(return_value=None))
+        session_service = pytypes.SimpleNamespace(get_session=AsyncMock(return_value=fake_session))
+
+        class _FakeRunner:
+            def __init__(self, *, memory_service, app_name: str) -> None:
+                self.memory_service = memory_service
+                self.app_name = app_name
+
+            async def run_async(self, **kwargs):
+                yield fake_event
+
+        fake_agent = pytypes.SimpleNamespace(name="sentientagent_v2")
+        with patch(
+            "sentientagent_v2.gateway.create_runner",
+            side_effect=[
+                (_FakeRunner(memory_service=memory_service, app_name="sentientagent_v2"), session_service),
+                (_FakeRunner(memory_service=memory_service, app_name="sentientagent_v2"), session_service),
+            ],
+        ):
+            gateway = Gateway(agent=fake_agent, app_name="sentientagent_v2", bus=MessageBus())
+            inbound = InboundMessage(channel="local", sender_id="u1", chat_id="c1", content="/new")
+            outbound = asyncio.run(gateway.process_message(inbound))
+
+        self.assertEqual(outbound.content, "Started a new conversation session.")
+        session_service.get_session.assert_awaited_once_with(
+            app_name="sentientagent_v2",
+            user_id="u1",
+            session_id="local:c1",
+        )
+        memory_service.add_session_to_memory.assert_awaited_once_with(fake_session)
+
 
 class GatewayLoopResilienceTests(unittest.IsolatedAsyncioTestCase):
     async def test_consume_inbound_continues_after_processing_error(self) -> None:

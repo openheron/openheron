@@ -56,7 +56,8 @@
   - 直接返回命令说明
   - 不调用模型
 - `/new`
-  - 为当前 `channel:chat_id` 绑定一个新的 ADK `session_id`
+  - 先尝试将当前活动 session 写入 memory（若已启用 memory service）
+  - 再为当前 `channel:chat_id` 绑定一个新的 ADK `session_id`
   - 后续对话进入新会话上下文
   - 不调用模型
 

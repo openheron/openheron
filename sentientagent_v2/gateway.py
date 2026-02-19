@@ -106,6 +106,45 @@ class Gateway:
         workspace = load_security_policy().workspace_root
         return cron_store_path(workspace)
 
+    async def _persist_session_memory_snapshot(self, *, user_id: str, session_id: str) -> None:
+        """Persist one session snapshot into configured memory service.
+
+        This is used by explicit session-boundary commands (for example `/new`)
+        so users can force a memory flush before switching to a new session id.
+        """
+        memory_service = getattr(self.runner, "memory_service", None)
+        if memory_service is None:
+            return
+
+        try:
+            session = await self.session_service.get_session(
+                app_name=self.runner.app_name,
+                user_id=user_id,
+                session_id=session_id,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to load session before memory snapshot (user_id=%s session_id=%s)",
+                user_id,
+                session_id,
+            )
+            return
+
+        if session is None:
+            return
+
+        try:
+            await memory_service.add_session_to_memory(session)
+        except ValueError:
+            # Align with root agent callback: memory service may be absent/disabled.
+            return
+        except Exception:
+            logger.exception(
+                "Failed to persist session memory snapshot (user_id=%s session_id=%s)",
+                user_id,
+                session_id,
+            )
+
     async def _run_text_stream(
         self,
         *,
@@ -188,6 +227,11 @@ class Gateway:
                 metadata=msg.metadata,
             )
         if command == "/new":
+            active_session_id = self._session_overrides.get(msg.session_key, msg.session_key)
+            await self._persist_session_memory_snapshot(
+                user_id=msg.sender_id,
+                session_id=active_session_id,
+            )
             self._session_overrides[msg.session_key] = f"{msg.session_key}:new:{uuid.uuid4().hex[:12]}"
             return OutboundMessage(
                 channel=msg.channel,
