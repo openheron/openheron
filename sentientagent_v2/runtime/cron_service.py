@@ -99,12 +99,11 @@ def _compute_next_cron_run(expr: str, now_ms: int, tz_name: str | None) -> int |
         return None
 
     try:
-        minute_values, minute_any = _parse_cron_values(parts[0], 0, 59)
-        hour_values, hour_any = _parse_cron_values(parts[1], 0, 23)
+        minute_values, _ = _parse_cron_values(parts[0], 0, 59)
+        hour_values, _ = _parse_cron_values(parts[1], 0, 23)
         dom_values, dom_any = _parse_cron_values(parts[2], 1, 31)
-        month_values, month_any = _parse_cron_values(parts[3], 1, 12)
+        month_values, _ = _parse_cron_values(parts[3], 1, 12)
         dow_values, dow_any = _parse_cron_values(parts[4], 0, 7, normalize_dow=True)
-        _ = (minute_any, hour_any, month_any)  # keep unpack symmetry explicit
     except Exception:
         return None
 
@@ -390,8 +389,6 @@ class CronService:
         current_mtime = self._read_store_mtime_ns()
         if self._store is not None:
             if current_mtime == self._store_mtime_ns:
-                return self._store
-            if current_mtime is None and self._store_mtime_ns is None:
                 return self._store
 
         if current_mtime is None:
