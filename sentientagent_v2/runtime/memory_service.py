@@ -19,8 +19,8 @@ class MemoryConfig:
     Attributes:
         enabled: Whether long-term memory is enabled for the runner.
         backend: Memory backend name. Supported values:
-            - ``in_memory`` (default)
-            - ``markdown``
+            - ``markdown`` (default)
+            - ``in_memory`` (debug fallback)
         markdown_dir: Root directory for markdown memory files.
     """
 
@@ -44,14 +44,16 @@ def load_memory_config() -> MemoryConfig:
 
     Environment variables:
         - ``SENTIENTAGENT_V2_MEMORY_ENABLED`` (default: ``1``)
-        - ``SENTIENTAGENT_V2_MEMORY_BACKEND`` (default: ``in_memory``)
+        - ``SENTIENTAGENT_V2_MEMORY_BACKEND`` (default: ``markdown``)
         - ``SENTIENTAGENT_V2_MEMORY_MARKDOWN_DIR`` (optional)
     """
     enabled = _parse_enabled(
         os.getenv("SENTIENTAGENT_V2_MEMORY_ENABLED"),
         default=True,
     )
-    backend = (os.getenv("SENTIENTAGENT_V2_MEMORY_BACKEND", "in_memory").strip().lower() or "in_memory")
+    backend = (
+        os.getenv("SENTIENTAGENT_V2_MEMORY_BACKEND", "markdown").strip().lower() or "markdown"
+    )
     markdown_dir = os.getenv("SENTIENTAGENT_V2_MEMORY_MARKDOWN_DIR", "").strip() or str(
         Path.home() / ".sentientagent_v2" / "memory"
     )

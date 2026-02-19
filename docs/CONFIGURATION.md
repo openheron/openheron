@@ -71,7 +71,7 @@ Provider 选择由 `enabled` 控制，建议保持“仅一个 provider 为 true
 |---|---|---|---|
 | `SENTIENTAGENT_V2_SESSION_DB_URL` | 自动生成 SQLite 路径 | 覆盖会话数据库地址 | 需要把 session 存到自定义数据库时 |
 | `SENTIENTAGENT_V2_MEMORY_ENABLED` | `1` | 是否启用 ADK memory 写入链路 | 临时排查 memory 行为时可设为 `0` |
-| `SENTIENTAGENT_V2_MEMORY_BACKEND` | `in_memory` | 选择 memory 后端：`in_memory` 或 `markdown` | 需要本地可审计记忆时改为 `markdown` |
+| `SENTIENTAGENT_V2_MEMORY_BACKEND` | `markdown` | 选择 memory 后端：`markdown`（默认）或 `in_memory`（调试） | 仅在本地调试临时关闭落盘时使用 `in_memory` |
 | `SENTIENTAGENT_V2_MEMORY_MARKDOWN_DIR` | `~/.sentientagent_v2/memory` | Markdown memory 根目录 | 需要把记忆落盘到指定目录时 |
 | `SENTIENTAGENT_V2_COMPACTION_ENABLED` | `1` | 是否启用 ADK events compaction | 需要原样保留完整事件流时可关掉 |
 | `SENTIENTAGENT_V2_COMPACTION_INTERVAL` | `8` | 每隔多少事件触发一次 compaction 检查（最小为 1） | 长对话频繁撑窗口时可适当调小 |

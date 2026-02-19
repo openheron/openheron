@@ -67,11 +67,11 @@
 
 通过 `SENTIENTAGENT_V2_MEMORY_BACKEND` 选择：
 
-- `in_memory`（默认）
-  - 进程内记忆，不落盘
-- `markdown`
+- `markdown`（默认）
   - 本地落盘到 `SENTIENTAGENT_V2_MEMORY_MARKDOWN_DIR`
   - 默认目录：`~/.sentientagent_v2/memory`
+- `in_memory`（调试）
+  - 进程内记忆，不落盘
 
 可通过 `SENTIENTAGENT_V2_MEMORY_ENABLED` 控制是否启用记忆（默认开启）。
 
