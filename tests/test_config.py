@@ -272,6 +272,38 @@ class ConfigTests(unittest.TestCase):
         self.assertNotIn("FEISHU_APP_ID", os.environ)
         self.assertNotIn("FEISHU_APP_SECRET", os.environ)
 
+    def test_bootstrap_env_keeps_shell_api_key_when_active_provider_key_is_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            cfg = default_config()
+            cfg["providers"]["google"]["apiKey"] = ""
+            save_config(cfg, path)
+
+            os.environ["GOOGLE_API_KEY"] = "google-key-from-shell"
+            os.environ["OPENAI_API_KEY"] = "stale-openai-key"
+            bootstrap_env_from_config(path)
+
+        self.assertEqual(os.environ["GOOGLE_API_KEY"], "google-key-from-shell")
+        self.assertNotIn("OPENAI_API_KEY", os.environ)
+
+    def test_bootstrap_env_keeps_shell_api_key_for_non_default_active_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            cfg = default_config()
+            cfg["providers"]["google"]["enabled"] = False
+            cfg["providers"]["google"]["apiKey"] = ""
+            cfg["providers"]["openai"]["enabled"] = True
+            cfg["providers"]["openai"]["apiKey"] = ""
+            save_config(cfg, path)
+
+            os.environ["OPENAI_API_KEY"] = "openai-key-from-shell"
+            os.environ["GOOGLE_API_KEY"] = "stale-google-key"
+            bootstrap_env_from_config(path)
+
+        self.assertEqual(os.environ["SENTIENTAGENT_V2_PROVIDER"], "openai")
+        self.assertEqual(os.environ["OPENAI_API_KEY"], "openai-key-from-shell")
+        self.assertNotIn("GOOGLE_API_KEY", os.environ)
+
     def test_web_search_api_key_is_loaded_from_web_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config.json"

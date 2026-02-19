@@ -533,6 +533,18 @@ def _managed_env_keys() -> set[str]:
     return set(config_to_env(default_config()).keys())
 
 
+def _active_provider_fallback_api_key_env(cfg: dict[str, Any]) -> str | None:
+    """Return API-key env name to preserve when active provider key is omitted.
+
+    When the selected provider is enabled but its config `apiKey` is empty, the
+    runtime should keep an existing shell env API key instead of clearing it.
+    """
+    provider_name, provider_enabled, _, provider_api_key, _, _ = _resolve_provider(cfg)
+    if not provider_enabled or provider_api_key:
+        return None
+    return provider_api_key_env(provider_name)
+
+
 def apply_config_to_env(
     config: dict[str, Any],
     *,
@@ -540,7 +552,9 @@ def apply_config_to_env(
     clear_missing: bool = False,
 ) -> None:
     """Inject config fields into environment variables."""
-    mapped = config_to_env(config)
+    cfg = normalize_config(config)
+    mapped = config_to_env(cfg)
+    fallback_api_key_env = _active_provider_fallback_api_key_env(cfg)
     if clear_missing:
         for key in _managed_env_keys():
             if key not in mapped:
@@ -549,6 +563,9 @@ def apply_config_to_env(
     for key, value in mapped.items():
         if not value and key != "SENTIENTAGENT_V2_DEBUG":
             if clear_missing:
+                if key == fallback_api_key_env and os.getenv(key, "").strip():
+                    # Preserve shell key as fallback when config omits active key.
+                    continue
                 os.environ.pop(key, None)
             continue
         if overwrite or key not in os.environ:
