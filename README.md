@@ -14,10 +14,59 @@ Compared with larger systems, this project keeps the core runtime compact and ea
 ## Quick Start
 
 ```bash
-cd openheron
+cd openheron_root
+python3.14 -m venv .venv
+source .venv/bin/activate
 pip install -e .
 openheron onboard
 python -m openheron.cli -m "Describe what you can do"
+```
+
+`openheron onboard` initializes:
+
+- `~/.openheron/config.json`
+- `~/.openheron/workspace`
+
+## Quick Ops Summary (from `docs/OPERATIONS.md`)
+
+```bash
+# single-turn call
+python -m openheron.cli -m "Describe what you can do"
+python -m openheron.cli -m "Describe what you can do" --user-id local --session-id demo001
+
+# local gateway
+python -m openheron.cli gateway-local
+
+# multi-channel gateway
+openheron gateway --channels local,feishu --interactive-local
+export OPENHERON_CHANNELS=feishu
+openheron gateway
+
+# diagnostics and providers
+openheron doctor
+openheron skills
+openheron provider list
+openheron provider status
+openheron provider login github-copilot
+openheron provider login openai-codex
+```
+
+WhatsApp bridge quick flow:
+
+```bash
+openheron channels login
+openheron channels bridge start
+openheron channels bridge status
+openheron channels bridge stop
+scripts/whatsapp_bridge_e2e.sh smoke
+```
+
+Cron quick flow (jobs run only while gateway is running):
+
+```bash
+openheron cron list
+openheron cron add --name daily --message "daily report" --cron "0 9 * * 1-5" --tz Asia/Shanghai
+openheron cron status
 ```
 
 ## Common Commands
@@ -46,7 +95,7 @@ openheron skills
 ## Project Layout
 
 ```text
-openheron/
+openheron_root/
 ├── README.md
 ├── docs/
 ├── openheron/
