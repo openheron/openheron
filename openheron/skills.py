@@ -36,15 +36,23 @@ class SkillRegistry:
         ).resolve()
 
     def list_skills(self) -> list[SkillInfo]:
-        """List workspace + bundled skills, workspace taking precedence."""
+        """List workspace + bundled skills, builtin taking precedence on name collisions."""
         discovered: dict[str, SkillInfo] = {}
 
-        for info in self._scan(self.workspace_skills_dir, source="workspace"):
+        for info in self._scan(self.builtin_skills_dir, source="builtin"):
             discovered[info.name] = info
 
-        for info in self._scan(self.builtin_skills_dir, source="builtin"):
-            if info.name not in discovered:
-                discovered[info.name] = info
+        for info in self._scan(self.workspace_skills_dir, source="workspace"):
+            if info.name in discovered:
+                # Workspace skills are not allowed to shadow bundled skills.
+                # Keep bundled behavior deterministic and ignore conflicting local copies.
+                logger.warning(
+                    "Ignoring workspace skill '{}' at {} because a builtin skill with the same name exists.",
+                    info.name,
+                    info.path,
+                )
+                continue
+            discovered[info.name] = info
 
         items = sorted(discovered.values(), key=lambda item: item.name.lower())
         if _debug_enabled():

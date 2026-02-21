@@ -13,6 +13,7 @@ from google.adk.tools.preload_memory_tool import PreloadMemoryTool
 from .mcp_registry import build_mcp_toolsets_from_env
 from .provider import build_adk_model_from_env
 from .runtime.debug_callbacks import after_model_debug_callback, before_model_debug_callback
+from .runtime.workspace_bootstrap import before_model_workspace_bootstrap_callback
 from .skills import get_registry, list_skills, read_skill
 from .tools import (
     cron,
@@ -100,7 +101,10 @@ root_agent = LlmAgent(
     model=build_adk_model_from_env(),
     instruction=_build_instruction(),
     after_agent_callback=_after_agent_memory_callback,
-    before_model_callback=before_model_debug_callback,
+    before_model_callback=[
+        before_model_workspace_bootstrap_callback,
+        before_model_debug_callback,
+    ],
     after_model_callback=after_model_debug_callback,
     tools=_build_tools(),
 )

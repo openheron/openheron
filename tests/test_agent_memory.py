@@ -38,6 +38,14 @@ class AgentMemoryTests(unittest.TestCase):
 
         self.assertIs(agent.root_agent.after_agent_callback, agent._after_agent_memory_callback)
 
+    def test_root_agent_registers_workspace_bootstrap_before_model_callback(self) -> None:
+        from openheron import agent
+        from openheron.runtime.workspace_bootstrap import before_model_workspace_bootstrap_callback
+
+        callbacks = agent.root_agent.before_model_callback
+        self.assertIsInstance(callbacks, list)
+        self.assertIn(before_model_workspace_bootstrap_callback, callbacks)
+
     def test_mcp_toolsets_still_appended_after_memory_tool(self) -> None:
         from openheron import agent
 
@@ -49,4 +57,3 @@ class AgentMemoryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
