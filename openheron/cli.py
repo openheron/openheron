@@ -1007,14 +1007,14 @@ def _cmd_onboard(force: bool) -> int:
     workspace.mkdir(parents=True, exist_ok=True)
     (workspace / "skills").mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"Config {state}: {saved_to}")
-    logger.info(f"Workspace ready: {workspace}")
-    logger.info("Next steps:")
-    logger.info(f"1. Edit config: {saved_to}")
-    logger.info("2. Configure providers/channels/web sections and their `enabled` flags")
-    logger.info("3. Fill providers.<provider>.apiKey for the enabled provider (and channel credentials if needed)")
-    logger.info("4. Start gateway: openheron gateway")
-    logger.info("5. Dry run: openheron doctor")
+    print(f"Config {state}: {saved_to}")
+    print(f"Workspace ready: {workspace}")
+    print("Next steps:")
+    print(f"1. Edit config: {saved_to}")
+    print("2. Configure providers/channels/web sections and their `enabled` flags")
+    print("3. Fill providers.<provider>.apiKey for the enabled provider (and channel credentials if needed)")
+    print("4. Start gateway: openheron gateway")
+    print("5. Dry run: openheron doctor")
     return 0
 
 
