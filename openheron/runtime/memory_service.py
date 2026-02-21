@@ -39,6 +39,18 @@ def _parse_enabled(raw: str | None, *, default: bool) -> bool:
     return normalized not in {"0", "false", "off", "no"}
 
 
+def _default_markdown_dir() -> Path:
+    """Resolve default markdown memory directory.
+
+    By default memory files are colocated with workspace bootstrap files so the
+    runtime consistently uses ``<workspace>/memory/{MEMORY.md,HISTORY.md}``.
+    """
+    workspace = os.getenv("OPENHERON_WORKSPACE", "").strip()
+    if workspace:
+        return Path(workspace).expanduser() / "memory"
+    return Path.home() / ".openheron" / "workspace" / "memory"
+
+
 def load_memory_config() -> MemoryConfig:
     """Load memory configuration from environment variables.
 
@@ -54,9 +66,7 @@ def load_memory_config() -> MemoryConfig:
     backend = (
         os.getenv("OPENHERON_MEMORY_BACKEND", "markdown").strip().lower() or "markdown"
     )
-    markdown_dir = os.getenv("OPENHERON_MEMORY_MARKDOWN_DIR", "").strip() or str(
-        Path.home() / ".openheron" / "memory"
-    )
+    markdown_dir = os.getenv("OPENHERON_MEMORY_MARKDOWN_DIR", "").strip() or str(_default_markdown_dir())
     return MemoryConfig(
         enabled=enabled,
         backend=backend,

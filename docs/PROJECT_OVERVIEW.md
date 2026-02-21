@@ -69,7 +69,7 @@
 
 - `markdown`（默认）
   - 本地落盘到 `OPENHERON_MEMORY_MARKDOWN_DIR`
-  - 默认目录：`~/.openheron/memory`
+  - 默认目录：`~/.openheron/workspace/memory`
 - `in_memory`（调试）
   - 进程内记忆，不落盘
 
@@ -81,15 +81,17 @@
 
 ```text
 <memory_root>/
-  <app_name>/
-    <user_id>/
-      MEMORY.md
-      .event_ids.json
+  MEMORY.md
+  HISTORY.md
+  .event_ids.<app_name>.<user_id>.json
 ```
 
 - `MEMORY.md`
-  - 追加写入文本化记忆块（`SessionEvents` / `ExplicitMemory`）
-- `.event_ids.json`
+  - 仅保存长期事实（偏好/上下文/关系等），每条都带原始对话时间戳
+  - `search_memory` 只检索该文件
+- `HISTORY.md`
+  - 纯文本对话转录（append-only，只追加不改写）
+- `.event_ids.<app_name>.<user_id>.json`
   - 已摄取 event id 去重索引，避免重复写入
 
 ## 4. Context Compaction（防上下文膨胀）

@@ -26,12 +26,21 @@ class MemoryServiceFactoryTests(unittest.TestCase):
     def test_load_memory_config_defaults_to_enabled_markdown(self) -> None:
         os.environ.pop("OPENHERON_MEMORY_ENABLED", None)
         os.environ.pop("OPENHERON_MEMORY_BACKEND", None)
+        os.environ.pop("OPENHERON_WORKSPACE", None)
 
         cfg = load_memory_config()
 
         self.assertTrue(cfg.enabled)
         self.assertEqual(cfg.backend, "markdown")
-        self.assertIn(".openheron/memory", cfg.markdown_dir)
+        self.assertIn(".openheron/workspace/memory", cfg.markdown_dir)
+
+    def test_load_memory_config_prefers_workspace_memory_dir_when_available(self) -> None:
+        os.environ["OPENHERON_WORKSPACE"] = "/tmp/openheron-workspace"
+        os.environ.pop("OPENHERON_MEMORY_MARKDOWN_DIR", None)
+
+        cfg = load_memory_config()
+
+        self.assertEqual(cfg.markdown_dir, "/tmp/openheron-workspace/memory")
 
     def test_create_memory_service_can_be_disabled(self) -> None:
         service = create_memory_service(MemoryConfig(False, "in_memory", ""))

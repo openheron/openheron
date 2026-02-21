@@ -6,6 +6,8 @@ import asyncio
 import tempfile
 import unittest
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 
 from openheron.runtime.markdown_memory_service import MarkdownMemoryService
 
@@ -25,6 +27,7 @@ class _Event:
     id: str
     author: str
     content: _Content
+    timestamp: float | None = None
 
 
 @dataclass(slots=True)
@@ -41,8 +44,18 @@ class MarkdownMemoryServiceTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmp:
                 service = MarkdownMemoryService(root_dir=tmp)
                 events = [
-                    _Event(id="e1", author="user", content=_Content(parts=[_Part(text="My project is Alpha")])),
-                    _Event(id="e2", author="agent", content=_Content(parts=[_Part(text="Noted project details")])),
+                    _Event(
+                        id="e1",
+                        author="user",
+                        content=_Content(parts=[_Part(text="My project is Alpha")]),
+                        timestamp=1710000000.0,
+                    ),
+                    _Event(
+                        id="e2",
+                        author="agent",
+                        content=_Content(parts=[_Part(text="Noted project details")]),
+                        timestamp=1710000001.0,
+                    ),
                 ]
                 await service.add_events_to_memory(
                     app_name="openheron",
@@ -58,6 +71,16 @@ class MarkdownMemoryServiceTests(unittest.TestCase):
                 self.assertEqual(len(response.memories), 1)
                 text = response.memories[0].content.parts[0].text or ""
                 self.assertIn("Alpha", text)
+
+                memory_text = (Path(tmp) / "MEMORY.md").read_text(encoding="utf-8")
+                history_text = (Path(tmp) / "HISTORY.md").read_text(encoding="utf-8")
+                expected_ts = datetime.fromtimestamp(1710000000.0, tz=timezone.utc).isoformat()
+
+                self.assertIn("My project is Alpha", memory_text)
+                self.assertIn("[category=context]", memory_text)
+                self.assertIn(expected_ts, memory_text)
+                self.assertIn("My project is Alpha", history_text)
+                self.assertIn("Noted project details", history_text)
 
         asyncio.run(_scenario())
 
@@ -96,7 +119,7 @@ class MarkdownMemoryServiceTests(unittest.TestCase):
                         _Event(
                             id="event-42",
                             author="user",
-                            content=_Content(parts=[_Part(text="Remember deduplication behavior")]),
+                            content=_Content(parts=[_Part(text="I prefer concise updates")]),
                         )
                     ],
                 )
@@ -105,9 +128,11 @@ class MarkdownMemoryServiceTests(unittest.TestCase):
                 response = await service.search_memory(
                     app_name="openheron",
                     user_id="user-2",
-                    query="deduplication",
+                    query="concise",
                 )
                 self.assertEqual(len(response.memories), 1)
+                history_text = (Path(tmp) / "HISTORY.md").read_text(encoding="utf-8")
+                self.assertEqual(history_text.count("I prefer concise updates"), 1)
 
         asyncio.run(_scenario())
 
@@ -133,4 +158,3 @@ class MarkdownMemoryServiceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
