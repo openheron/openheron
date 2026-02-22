@@ -505,6 +505,7 @@ class ConfigTests(unittest.TestCase):
             cfg = default_config()
             cfg["tools"]["mcpServers"] = {
                 "filesystem": {
+                    "enabled": False,
                     "command": "npx",
                     "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
                 }
@@ -518,6 +519,7 @@ class ConfigTests(unittest.TestCase):
         self.assertIsNotNone(raw)
         parsed = json.loads(raw or "{}")
         self.assertIn("filesystem", parsed)
+        self.assertFalse(parsed["filesystem"]["enabled"])
         self.assertEqual(parsed["filesystem"]["command"], "npx")
 
 

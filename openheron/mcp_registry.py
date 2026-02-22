@@ -18,6 +18,8 @@ from google.adk.tools.mcp_tool.mcp_session_manager import (
 from loguru import logger
 from mcp import StdioServerParameters
 
+from .env_utils import is_enabled
+
 _MCP_SERVERS_ENV = "OPENHERON_MCP_SERVERS_JSON"
 _TRANSIENT_ERROR_HINTS = (
     "timeout",
@@ -139,6 +141,13 @@ def _pick(raw: dict[str, Any], snake: str, camel: str, default: Any = None) -> A
     if camel in raw:
         return raw[camel]
     return default
+
+
+def _is_server_enabled(raw_cfg: dict[str, Any]) -> bool:
+    """Resolve per-server enabled flag with a default of true."""
+    if "enabled" not in raw_cfg:
+        return True
+    return is_enabled(raw_cfg.get("enabled"), default=False)
 
 
 def _toolset_meta(toolset: SafeMcpToolset) -> dict[str, str]:
@@ -329,6 +338,7 @@ def build_mcp_toolsets(mcp_servers: dict[str, Any], *, log_registered: bool = Tr
     """Build configured MCP toolsets.
 
     Supported per-server config keys:
+    - `enabled` (optional, default true)
     - `command` + `args` + `env` (stdio)
     - `url` (+ optional `headers`, `transport=sse|http`)
     - `toolFilter` / `tool_filter`
@@ -339,6 +349,9 @@ def build_mcp_toolsets(mcp_servers: dict[str, Any], *, log_registered: bool = Tr
     for server_name, raw_cfg in mcp_servers.items():
         if not isinstance(raw_cfg, dict):
             logger.warning("MCP server '{}' config must be an object; got {}", server_name, type(raw_cfg).__name__)
+            continue
+        if not _is_server_enabled(raw_cfg):
+            logger.info("MCP server '{}' disabled via config; skipping", server_name)
             continue
 
         built = _build_connection_params(str(server_name), raw_cfg)

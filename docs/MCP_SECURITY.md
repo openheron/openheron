@@ -6,6 +6,7 @@
 
 ### 每个服务可配置字段
 
+- `enabled`：可选，默认 `true`；设为 `false` 时跳过该 MCP 服务
 - `command` + `args` + `env`：stdio MCP 服务
 - `url`：远端 MCP 服务
 - `transport`：可选，`sse` / `http`

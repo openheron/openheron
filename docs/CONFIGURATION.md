@@ -22,7 +22,7 @@
 - `channels.<name>.*`
 - `web.enabled` / `web.search.*`
 - `security.restrictToWorkspace / allowExec / allowNetwork / execAllowlist`
-- `tools.mcpServers`
+- `tools.mcpServers`（每个 server 支持 `enabled`，默认 `true`）
 - `debug`
 - `env`（可选）：通用环境变量覆盖映射，支持任意运行时 env 配置项
 
@@ -179,6 +179,7 @@ Provider 选择由 `enabled` 控制，建议保持“仅一个 provider 为 true
   "tools": {
     "mcpServers": {
       "filesystem": {
+        "enabled": true,
         "command": "npx",
         "args": [
           "-y",
