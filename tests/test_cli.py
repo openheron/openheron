@@ -104,7 +104,7 @@ class CLITests(unittest.TestCase):
     def test_cmd_provider_list_includes_runtime_and_default_model(self) -> None:
         from openheron import cli
 
-        with patch.object(cli.logger, "info") as mocked_info:
+        with patch("builtins.print") as mocked_info:
             code = cli._cmd_provider_list()
         self.assertEqual(code, 0)
         lines = [call.args[0] for call in mocked_info.call_args_list if call.args]
@@ -147,7 +147,7 @@ class CLITests(unittest.TestCase):
     def test_cmd_provider_login_rejects_non_oauth_provider(self) -> None:
         from openheron import cli
 
-        with patch.object(cli.logger, "info") as mocked_info:
+        with patch("builtins.print") as mocked_info:
             code = cli._cmd_provider_login("openai")
         self.assertEqual(code, 1)
         self.assertIn("Unknown OAuth provider", mocked_info.call_args[0][0])
@@ -157,7 +157,7 @@ class CLITests(unittest.TestCase):
 
         handler = Mock()
         with patch.dict(cli._PROVIDER_LOGIN_HANDLERS, {"openai_codex": handler}, clear=False):
-            with patch.object(cli.logger, "info"):
+            with patch("builtins.print"):
                 code = cli._cmd_provider_login("openai-codex")
         self.assertEqual(code, 0)
         handler.assert_called_once_with()
@@ -167,7 +167,7 @@ class CLITests(unittest.TestCase):
 
         handler = Mock()
         with patch.dict(cli._PROVIDER_LOGIN_HANDLERS, {"openai_codex": handler}, clear=False):
-            with patch.object(cli.logger, "info"):
+            with patch("builtins.print"):
                 code = cli._cmd_provider_login("codex")
         self.assertEqual(code, 0)
         handler.assert_called_once_with()
@@ -181,7 +181,7 @@ class CLITests(unittest.TestCase):
             login_oauth_interactive=Mock(return_value=token),
         )
         with patch.dict(sys.modules, {"oauth_cli_kit": fake_oauth_module}):
-            with patch.object(cli.logger, "info"):
+            with patch("builtins.print"):
                 code = cli._cmd_provider_login("openai-codex")
         self.assertEqual(code, 0)
         fake_oauth_module.login_oauth_interactive.assert_not_called()
@@ -195,7 +195,7 @@ class CLITests(unittest.TestCase):
             login_oauth_interactive=Mock(return_value=token),
         )
         with patch.dict(sys.modules, {"oauth_cli_kit": fake_oauth_module}):
-            with patch.object(cli.logger, "info") as mocked_info:
+            with patch("builtins.print") as mocked_info:
                 code = cli._cmd_provider_login("openai-codex")
 
         self.assertEqual(code, 1)
@@ -316,7 +316,7 @@ class CLITests(unittest.TestCase):
                                                     new=AsyncMock(return_value=[fake_mcp_result]),
                                                 ):
                                                     with patch.object(cli.logger, "debug"):
-                                                        with patch.object(cli.logger, "info") as mocked_info:
+                                                        with patch("builtins.print") as mocked_info:
                                                             code = cli._cmd_doctor(output_json=False, verbose=False)
 
         self.assertEqual(code, 1)
@@ -446,7 +446,7 @@ class CLITests(unittest.TestCase):
         from openheron import cli
 
         with patch.object(cli, "summarize_mcp_toolsets", return_value=[]):
-            with patch.object(cli.logger, "info") as mocked_info:
+            with patch("builtins.print") as mocked_info:
                 cli._log_mcp_startup_summary([])
         mocked_info.assert_called_once_with("MCP toolsets: none configured")
 
@@ -455,7 +455,7 @@ class CLITests(unittest.TestCase):
             "summarize_mcp_toolsets",
             return_value=[{"name": "filesystem", "transport": "stdio", "prefix": "mcp_filesystem_"}],
         ):
-            with patch.object(cli.logger, "info") as mocked_info:
+            with patch("builtins.print") as mocked_info:
                 cli._log_mcp_startup_summary([object()])
         self.assertEqual(mocked_info.call_count, 2)
         self.assertEqual(mocked_info.call_args_list[0].args[0], "MCP toolsets: 1 server(s) configured")
@@ -495,19 +495,42 @@ class CLITests(unittest.TestCase):
                         }
                     ),
                 ):
-                    with patch.object(cli.logger, "info") as mocked_info:
+                    with patch("builtins.print") as mocked_info:
                         code = cli._cmd_mcps()
 
         self.assertEqual(code, 0)
         info_text = "\n".join(call.args[0] for call in mocked_info.call_args_list if call.args)
         self.assertIn("Connected MCP servers: 1", info_text)
-        self.assertIn("filesystem (stdio)", info_text)
-        self.assertIn("APIs (2):", info_text)
+        self.assertIn("- filesystem (stdio) | APIs: 2", info_text)
+        self.assertIn("  - read_file: Read file content", info_text)
         self.assertIn("read_file", info_text)
-        self.assertIn("功能: Read file content", info_text)
-        self.assertIn("输入: fields=path(required)", info_text)
-        self.assertIn("输出: type=string", info_text)
-        self.assertNotIn("bad_remote (http)", info_text)
+        self.assertIn("Read file content", info_text)
+        self.assertNotIn("输入:", info_text)
+        self.assertNotIn("输出:", info_text)
+        self.assertNotIn("- bad_remote (http)", info_text)
+
+    def test_cmd_mcps_closes_toolsets_in_same_run(self) -> None:
+        from openheron import cli
+
+        fake_toolset = pytypes.SimpleNamespace(
+            meta=pytypes.SimpleNamespace(name="filesystem"),
+            close=AsyncMock(),
+        )
+        fake_results = [
+            {"name": "filesystem", "transport": "stdio", "status": "ok"},
+        ]
+        with patch.object(cli, "build_mcp_toolsets_from_env", return_value=[fake_toolset]):
+            with patch.object(cli, "probe_mcp_toolsets", new=AsyncMock(return_value=fake_results)):
+                with patch.object(
+                    cli,
+                    "_collect_connected_mcp_apis",
+                    new=AsyncMock(return_value={"filesystem": []}),
+                ):
+                    with patch("builtins.print"):
+                        code = cli._cmd_mcps()
+
+        self.assertEqual(code, 0)
+        fake_toolset.close.assert_awaited_once()
 
     def test_collect_connected_mcp_apis_extracts_input_output_and_description(self) -> None:
         from openheron import cli
@@ -568,7 +591,7 @@ class CLITests(unittest.TestCase):
 
             fake_policy = pytypes.SimpleNamespace(workspace_root=Path(tmp))
             with patch.object(cli, "load_security_policy", return_value=fake_policy):
-                with patch.object(cli.logger, "info") as mocked_info:
+                with patch("builtins.print") as mocked_info:
                     code = cli._cmd_spawn()
 
         self.assertEqual(code, 0)
@@ -652,7 +675,7 @@ class CLITests(unittest.TestCase):
                         "_required_mcp_preflight",
                         new=AsyncMock(return_value=["required MCP failed health check (error/transient)"]),
                     ):
-                        with patch.object(cli.logger, "warning") as mocked_warning:
+                        with patch("builtins.print") as mocked_warning:
                             with patch.object(cli.asyncio, "sleep", new=AsyncMock(side_effect=KeyboardInterrupt)):
                                 code = cli._cmd_gateway(
                                     channels="local",
@@ -696,7 +719,7 @@ class CLITests(unittest.TestCase):
                             "_check_whatsapp_bridge_ready",
                             return_value="WhatsApp bridge precheck failed",
                         ):
-                            with patch.object(cli.logger, "info") as mocked_info:
+                            with patch("builtins.print") as mocked_info:
                                 code = cli._cmd_gateway(
                                     channels="whatsapp",
                                     sender_id="u1",
@@ -748,7 +771,7 @@ class CLITests(unittest.TestCase):
 
         with patch.dict("sys.modules", {"openheron.agent": fake_agent_module}):
             with patch("openheron.cli.create_runner", return_value=(_FakeRunner(), object())):
-                with patch.object(cli.logger, "info") as mocked_info:
+                with patch("builtins.print") as mocked_info:
                     code = cli._cmd_message("hello", user_id="u1", session_id="s1")
 
         self.assertEqual(code, 0)
@@ -779,7 +802,7 @@ class CLITests(unittest.TestCase):
 
         with patch.dict("sys.modules", {"openheron.agent": fake_agent_module}):
             with patch("openheron.cli.create_runner", return_value=(_FakeRunner(), object())):
-                with patch.object(cli.logger, "info") as mocked_info:
+                with patch("builtins.print") as mocked_info:
                     code = cli._cmd_message("hello", user_id="u1", session_id="s1")
 
         self.assertEqual(code, 0)
@@ -833,7 +856,7 @@ class CLITests(unittest.TestCase):
     def test_cmd_cron_add_validates_deliver_target(self) -> None:
         from openheron import cli
 
-        with patch.object(cli.logger, "info") as mocked_info:
+        with patch("builtins.print") as mocked_info:
             code = cli._cmd_cron_add(
                 name="demo",
                 message="hello",
@@ -853,7 +876,7 @@ class CLITests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict(os.environ, {"OPENHERON_WORKSPACE": tmp}, clear=False):
-                with patch.object(cli.logger, "info") as mocked_info:
+                with patch("builtins.print") as mocked_info:
                     code = cli._cmd_cron_add(
                         name="demo",
                         message="hello cron",
@@ -889,7 +912,7 @@ class CLITests(unittest.TestCase):
                 )
                 self.assertEqual(add_code, 0)
                 job_id = cli._cron_service().list_jobs(include_disabled=True)[0].id
-                with patch.object(cli.logger, "info") as mocked_info:
+                with patch("builtins.print") as mocked_info:
                     code = cli._cmd_cron_run(job_id, force=False)
 
         self.assertEqual(code, 1)
@@ -909,7 +932,7 @@ class CLITests(unittest.TestCase):
             }
         )
         with patch.object(cli, "_cron_service", return_value=fake_service):
-            with patch.object(cli.logger, "info") as mocked_info:
+            with patch("builtins.print") as mocked_info:
                 code = cli._cmd_cron_status()
 
         self.assertEqual(code, 0)
@@ -928,14 +951,12 @@ class CLITests(unittest.TestCase):
 
         with patch.object(cli, "_cron_service", return_value=fake_service):
             with patch("builtins.print") as mocked_print:
-                with patch.object(cli.logger, "info") as mocked_info:
-                    code = cli._cmd_cron_list(include_disabled=True)
+                code = cli._cmd_cron_list(include_disabled=True)
 
         self.assertEqual(code, 0)
         self.assertEqual(mocked_print.call_count, 2)
         mocked_print.assert_any_call("Scheduled jobs:")
         mocked_print.assert_any_call("- demo (id: j1, every:30s, enabled, next=-)")
-        mocked_info.assert_not_called()
 
     def test_cmd_doctor_reports_whatsapp_bridge_precheck_issue(self) -> None:
         from openheron import cli
@@ -982,7 +1003,7 @@ class CLITests(unittest.TestCase):
     def test_cmd_channels_login_rejects_unknown_channel(self) -> None:
         from openheron import cli
 
-        with patch.object(cli.logger, "info") as mocked_info:
+        with patch("builtins.print") as mocked_info:
             code = cli._cmd_channels_login(channel_name="telegram")
         self.assertEqual(code, 1)
         self.assertIn("Unsupported channel", mocked_info.call_args[0][0])
@@ -1042,7 +1063,7 @@ class CLITests(unittest.TestCase):
         from openheron import cli
 
         with patch.object(cli, "_get_bridge_dir", side_effect=PermissionError("no permission")):
-            with patch.object(cli.logger, "info") as mocked_info:
+            with patch("builtins.print") as mocked_info:
                 code = cli._cmd_channels_bridge_start(channel_name="whatsapp")
         self.assertEqual(code, 1)
         self.assertIn("Failed to prepare bridge directory", mocked_info.call_args[0][0])
@@ -1057,7 +1078,7 @@ class CLITests(unittest.TestCase):
             state_path.write_text(json.dumps({"pid": 10001}), encoding="utf-8")
             with patch.object(cli, "_bridge_base_dir", return_value=runtime_base):
                 with patch.object(cli, "_is_pid_running", return_value=True):
-                    with patch.object(cli.logger, "info") as mocked_info:
+                    with patch("builtins.print") as mocked_info:
                         code = cli._cmd_channels_bridge_status(channel_name="whatsapp")
 
         self.assertEqual(code, 0)
@@ -1073,7 +1094,7 @@ class CLITests(unittest.TestCase):
             state_path.write_text(json.dumps({"pid": 10001}), encoding="utf-8")
             with patch.object(cli, "_bridge_base_dir", return_value=runtime_base):
                 with patch.object(cli, "_is_pid_running", return_value=False):
-                    with patch.object(cli.logger, "info"):
+                    with patch("builtins.print"):
                         code = cli._cmd_channels_bridge_stop(channel_name="whatsapp")
 
             self.assertEqual(code, 0)

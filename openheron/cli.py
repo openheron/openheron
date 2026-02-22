@@ -136,7 +136,7 @@ def _cmd_skills() -> int:
         }
         for info in registry.list_skills()
     ]
-    logger.info(json.dumps(payload, ensure_ascii=False, indent=2))
+    _stdout_line(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -231,57 +231,69 @@ def _cmd_mcps() -> int:
     """List connected MCP servers and available APIs for each server."""
     toolsets = build_mcp_toolsets_from_env(log_registered=False)
     if not toolsets:
-        logger.info("MCP: no servers configured")
+        _stdout_line("MCP: no servers configured")
         return 0
 
-    probe_policy = _load_mcp_probe_policy(
-        timeout_env_name="OPENHERON_MCP_LIST_TIMEOUT_SECONDS",
-        timeout_default=5.0,
-    )
-    try:
-        results = asyncio.run(
-            probe_mcp_toolsets(
+    async def _run_mcps() -> tuple[int, list[dict[str, Any]], dict[str, list[dict[str, str]]]]:
+        probe_policy = _load_mcp_probe_policy(
+            timeout_env_name="OPENHERON_MCP_LIST_TIMEOUT_SECONDS",
+            timeout_default=5.0,
+        )
+        toolsets_by_name = {toolset.meta.name: toolset for toolset in toolsets}
+        try:
+            results = await probe_mcp_toolsets(
                 toolsets,
                 timeout_seconds=probe_policy.timeout_seconds,
                 retry_attempts=probe_policy.retry_attempts,
                 retry_backoff_seconds=probe_policy.retry_backoff_seconds,
             )
-        )
-    except Exception as exc:
-        logger.info(f"MCP probe failed: {exc}")
-        return 1
+            connected_names = [str(item.get("name", "")) for item in results if str(item.get("status")) == "ok"]
+            if not connected_names:
+                return 0, results, {}
+            connected_toolsets = [toolsets_by_name[name] for name in connected_names if name in toolsets_by_name]
+            api_names_by_server = await _collect_connected_mcp_apis(
+                connected_toolsets,
+                timeout_seconds=probe_policy.timeout_seconds,
+            )
+            return 0, results, api_names_by_server
+        finally:
+            # Keep MCP session cleanup on the same event loop as probe/list calls
+            # to avoid "original event loop is closed" warnings from ADK.
+            for toolset in toolsets:
+                try:
+                    await toolset.close()
+                except Exception:
+                    continue
 
-    toolsets_by_name = {toolset.meta.name: toolset for toolset in toolsets}
-    connected_names = [str(item.get("name", "")) for item in results if str(item.get("status")) == "ok"]
-    if not connected_names:
-        logger.info("MCP: no connected servers")
+    try:
+        code, results, api_names_by_server = asyncio.run(_run_mcps())
+    except Exception as exc:
+        _stdout_line(f"MCP probe failed: {exc}")
+        return 1
+    if code != 0:
+        return code
+
+    connected = [item for item in results if str(item.get("status")) == "ok"]
+    if not connected:
+        _stdout_line("MCP: no connected servers")
         return 0
 
-    connected_toolsets = [toolsets_by_name[name] for name in connected_names if name in toolsets_by_name]
-    api_names_by_server = asyncio.run(
-        _collect_connected_mcp_apis(
-            connected_toolsets,
-            timeout_seconds=probe_policy.timeout_seconds,
-        )
-    )
-
-    logger.info(f"Connected MCP servers: {len(connected_toolsets)}")
-    for item in results:
-        if str(item.get("status")) != "ok":
-            continue
+    _stdout_line(f"Connected MCP servers: {len(connected)}")
+    _stdout_line("")
+    for item in connected:
         server_name = str(item.get("name", "unknown"))
         transport = str(item.get("transport", "unknown"))
         api_rows = api_names_by_server.get(server_name, [])
-        logger.info(f"- {server_name} ({transport})")
-        if api_rows:
-            logger.info(f"  APIs ({len(api_rows)}):")
-            for api in api_rows:
-                logger.info(f"  - {api.get('name', '')}")
-                logger.info(f"    功能: {api.get('description', '(未提供)')}")
-                logger.info(f"    输入: {api.get('input', '(未声明)')}")
-                logger.info(f"    输出: {api.get('output', '(未声明)')}")
-        else:
-            logger.info("  APIs (0): (none)")
+        _stdout_line(f"- {server_name} ({transport}) | APIs: {len(api_rows)}")
+        if not api_rows:
+            _stdout_line("  (none)")
+            _stdout_line("")
+            continue
+        for api in api_rows:
+            api_name = str(api.get("name", "")).strip()
+            api_description = str(api.get("description", "(未提供)")).strip() or "(未提供)"
+            _stdout_line(f"  - {api_name}: {api_description}")
+        _stdout_line("")
     return 0
 
 
@@ -315,10 +327,10 @@ def _cmd_spawn() -> int:
     """List sub-agent tasks created by `spawn_subagent`."""
     records = _read_subagent_records(limit=50)
     if not records:
-        logger.info("Subagents: none")
+        _stdout_line("Subagents: none")
         return 0
 
-    logger.info(f"Subagents: {len(records)} recent task(s)")
+    _stdout_line(f"Subagents: {len(records)} recent task(s)")
     for item in records:
         task_id = str(item.get("task_id", "unknown"))
         status = str(item.get("status", "unknown"))
@@ -326,11 +338,11 @@ def _cmd_spawn() -> int:
         chat_id = str(item.get("chat_id", "unknown"))
         created_at = str(item.get("timestamp", ""))
         prompt_preview = str(item.get("prompt_preview", "")).strip()
-        logger.info(
+        _stdout_line(
             f"- {task_id} status={status} target={channel}:{chat_id} created_at={created_at}"
         )
         if prompt_preview:
-            logger.info(f"  prompt: {prompt_preview}")
+            _stdout_line(f"  prompt: {prompt_preview}")
     return 0
 
 
@@ -613,16 +625,16 @@ def _cmd_doctor(*, output_json: bool = False, verbose: bool = False) -> int:
                 f"error={result.get('error')}"
             )
     if verbose:
-        logger.info("Doctor details:")
-        logger.info(json.dumps(report, ensure_ascii=False, indent=2))
+        _stdout_line("Doctor details:")
+        _stdout_line(json.dumps(report, ensure_ascii=False, indent=2))
 
     if issues:
-        logger.info("Issues:")
+        _stdout_line("Issues:")
         for item in issues:
-            logger.info(f"- {item}")
+            _stdout_line(f"- {item}")
         return 1
 
-    logger.info("Environment looks good.")
+    _stdout_line("Environment looks good.")
     return 0
 
 
@@ -656,7 +668,7 @@ def _provider_login_openai_codex() -> None:
     has_access = bool(token and getattr(token, "access", ""))
     has_account_id = bool(token and getattr(token, "account_id", ""))
     if not (has_access and has_account_id):
-        logger.info("Starting interactive OAuth login for OpenAI Codex...")
+        _stdout_line("Starting interactive OAuth login for OpenAI Codex...")
         token = login_oauth_interactive(
             print_fn=lambda s: _stdout_line(str(s)),
             prompt_fn=lambda s: input(str(s)),
@@ -667,13 +679,13 @@ def _provider_login_openai_codex() -> None:
         raise RuntimeError(f"OpenAI Codex authentication failed ({detail}).")
 
     account_id = str(getattr(token, "account_id", "")).strip()
-    logger.info(f"OpenAI Codex OAuth authenticated ({account_id}).")
+    _stdout_line(f"OpenAI Codex OAuth authenticated ({account_id}).")
 
 
 @_register_provider_login("github_copilot")
 def _provider_login_github_copilot() -> None:
     """Authenticate GitHub Copilot via LiteLLM device flow."""
-    logger.info("Starting GitHub Copilot OAuth device flow...")
+    _stdout_line("Starting GitHub Copilot OAuth device flow...")
 
     async def _trigger() -> None:
         from litellm import acompletion
@@ -685,19 +697,19 @@ def _provider_login_github_copilot() -> None:
         )
 
     asyncio.run(_trigger())
-    logger.info("GitHub Copilot OAuth authenticated.")
+    _stdout_line("GitHub Copilot OAuth authenticated.")
 
 
 def _cmd_provider_list() -> int:
     """List providers known by the runtime."""
-    logger.info("Providers:")
+    _stdout_line("Providers:")
     for name in provider_names():
         spec = find_provider_spec(name)
         if not spec:
-            logger.info(f"- {name}")
+            _stdout_line(f"- {name}")
             continue
         oauth_flag = ", oauth=true" if spec.is_oauth else ""
-        logger.info(
+        _stdout_line(
             f"- {name}: runtime={spec.runtime}, default_model={spec.default_model}{oauth_flag}"
         )
     return 0
@@ -745,25 +757,25 @@ def _cmd_provider_status(*, output_json: bool = False) -> int:
         _stdout_line(json.dumps(report, ensure_ascii=False))
         return 0 if report["ok"] else 1
 
-    logger.info(
+    _stdout_line(
         f"Provider: {provider_name} (enabled={provider_enabled}, model={provider_model})"
     )
     if provider_key_env:
-        logger.info(f"API key: {provider_key_env}={'configured' if provider_key_configured else 'missing'}")
+        _stdout_line(f"API key: {provider_key_env}={'configured' if provider_key_configured else 'missing'}")
     else:
-        logger.info("API key: not required")
-    logger.info(
+        _stdout_line("API key: not required")
+    _stdout_line(
         "OAuth: "
         f"required={provider_oauth.get('required')}, "
         f"authenticated={provider_oauth.get('authenticated')}, "
         f"message={provider_oauth.get('message')}"
     )
     if issues:
-        logger.info("Issues:")
+        _stdout_line("Issues:")
         for issue in issues:
-            logger.info(f"- {issue}")
+            _stdout_line(f"- {issue}")
         return 1
-    logger.info("Provider is ready.")
+    _stdout_line("Provider is ready.")
     return 0
 
 
@@ -773,7 +785,7 @@ def _cmd_provider_login(provider_name: str) -> int:
     spec = find_provider_spec(normalized)
     oauth_names = ", ".join(name.replace("_", "-") for name in oauth_provider_names())
     if spec is None or not spec.is_oauth:
-        logger.info(
+        _stdout_line(
             f"Unknown OAuth provider '{provider_name}'. "
             f"Supported providers: {oauth_names}"
         )
@@ -781,13 +793,13 @@ def _cmd_provider_login(provider_name: str) -> int:
 
     handler = _PROVIDER_LOGIN_HANDLERS.get(spec.name)
     if handler is None:
-        logger.info(f"OAuth login is not implemented for provider '{provider_name}'.")
+        _stdout_line(f"OAuth login is not implemented for provider '{provider_name}'.")
         return 1
 
     try:
         handler()
     except Exception as exc:
-        logger.info(f"OAuth login failed for {provider_name}: {exc}")
+        _stdout_line(f"OAuth login failed for {provider_name}: {exc}")
         return 1
     return 0
 
@@ -938,16 +950,16 @@ def _cmd_channels_login(*, channel_name: str) -> int:
     """Start channel login helper (currently WhatsApp QR bridge only)."""
     target = channel_name.strip().lower()
     if target != "whatsapp":
-        logger.info(f"Unsupported channel for login: {channel_name}. Supported: whatsapp")
+        _stdout_line(f"Unsupported channel for login: {channel_name}. Supported: whatsapp")
         return 1
 
     try:
         bridge_dir = _get_bridge_dir()
     except RuntimeError as exc:
-        logger.info(str(exc))
+        _stdout_line(str(exc))
         return 1
     except Exception as exc:
-        logger.info(f"Failed to prepare bridge directory: {exc}")
+        _stdout_line(f"Failed to prepare bridge directory: {exc}")
         return 1
 
     env = dict(os.environ)
@@ -955,14 +967,14 @@ def _cmd_channels_login(*, channel_name: str) -> int:
     if bridge_token:
         env["BRIDGE_TOKEN"] = bridge_token
 
-    logger.info("Starting WhatsApp bridge. Scan the QR code in this terminal to connect.")
+    _stdout_line("Starting WhatsApp bridge. Scan the QR code in this terminal to connect.")
     try:
         subprocess.run(["npm", "start"], cwd=bridge_dir, check=True, env=env)
     except subprocess.CalledProcessError as exc:
-        logger.info(f"Bridge failed: {exc}")
+        _stdout_line(f"Bridge failed: {exc}")
         return 1
     except FileNotFoundError:
-        logger.info("npm not found. Please install Node.js >= 20.")
+        _stdout_line("npm not found. Please install Node.js >= 20.")
         return 1
     except KeyboardInterrupt:
         return 0
@@ -1006,24 +1018,24 @@ def _cmd_channels_bridge_start(*, channel_name: str) -> int:
     """Start channel bridge in background process."""
     target = channel_name.strip().lower()
     if target != "whatsapp":
-        logger.info(f"Unsupported channel bridge: {channel_name}. Supported: whatsapp")
+        _stdout_line(f"Unsupported channel bridge: {channel_name}. Supported: whatsapp")
         return 1
 
     state = _read_bridge_runtime_state()
     if state:
         existing_pid = _state_pid(state)
         if existing_pid and _is_pid_running(existing_pid):
-            logger.info(f"Bridge is already running (pid={existing_pid}).")
+            _stdout_line(f"Bridge is already running (pid={existing_pid}).")
             return 0
         _clear_bridge_runtime_state()
 
     try:
         bridge_dir = _get_bridge_dir()
     except RuntimeError as exc:
-        logger.info(str(exc))
+        _stdout_line(str(exc))
         return 1
     except Exception as exc:
-        logger.info(f"Failed to prepare bridge directory: {exc}")
+        _stdout_line(f"Failed to prepare bridge directory: {exc}")
         return 1
 
     env = dict(os.environ)
@@ -1044,10 +1056,10 @@ def _cmd_channels_bridge_start(*, channel_name: str) -> int:
                 start_new_session=True,
             )
     except FileNotFoundError:
-        logger.info("npm not found. Please install Node.js >= 20.")
+        _stdout_line("npm not found. Please install Node.js >= 20.")
         return 1
     except Exception as exc:
-        logger.info(f"Failed to start bridge: {exc}")
+        _stdout_line(f"Failed to start bridge: {exc}")
         return 1
 
     started_at_ms = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
@@ -1060,7 +1072,7 @@ def _cmd_channels_bridge_start(*, channel_name: str) -> int:
             "log_path": str(log_path),
         }
     )
-    logger.info(f"Bridge started in background (pid={proc.pid}).")
+    _stdout_line(f"Bridge started in background (pid={proc.pid}).")
     return 0
 
 
@@ -1068,19 +1080,19 @@ def _cmd_channels_bridge_status(*, channel_name: str) -> int:
     """Print bridge runtime status."""
     target = channel_name.strip().lower()
     if target != "whatsapp":
-        logger.info(f"Unsupported channel bridge: {channel_name}. Supported: whatsapp")
+        _stdout_line(f"Unsupported channel bridge: {channel_name}. Supported: whatsapp")
         return 1
 
     state = _read_bridge_runtime_state()
     if not state:
-        logger.info("Bridge is not running (no runtime state).")
+        _stdout_line("Bridge is not running (no runtime state).")
         return 0
 
     pid = _state_pid(state)
     if pid and _is_pid_running(pid):
-        logger.info(f"Bridge is running (pid={pid}).")
+        _stdout_line(f"Bridge is running (pid={pid}).")
         return 0
-    logger.info("Bridge is not running (stale runtime state found).")
+    _stdout_line("Bridge is not running (stale runtime state found).")
     return 0
 
 
@@ -1088,31 +1100,31 @@ def _cmd_channels_bridge_stop(*, channel_name: str) -> int:
     """Stop background bridge process tracked by runtime state."""
     target = channel_name.strip().lower()
     if target != "whatsapp":
-        logger.info(f"Unsupported channel bridge: {channel_name}. Supported: whatsapp")
+        _stdout_line(f"Unsupported channel bridge: {channel_name}. Supported: whatsapp")
         return 1
 
     state = _read_bridge_runtime_state()
     if not state:
-        logger.info("Bridge is not running.")
+        _stdout_line("Bridge is not running.")
         return 0
 
     pid = _state_pid(state)
     if pid is None:
         _clear_bridge_runtime_state()
-        logger.info("Bridge runtime state was invalid and has been cleared.")
+        _stdout_line("Bridge runtime state was invalid and has been cleared.")
         return 0
 
     if not _is_pid_running(pid):
         _clear_bridge_runtime_state()
-        logger.info(f"Bridge is not running (stale pid={pid} removed).")
+        _stdout_line(f"Bridge is not running (stale pid={pid} removed).")
         return 0
 
     if not _stop_bridge_pid(pid):
-        logger.info(f"Failed to stop bridge process pid={pid}.")
+        _stdout_line(f"Failed to stop bridge process pid={pid}.")
         return 1
 
     _clear_bridge_runtime_state()
-    logger.info(f"Bridge stopped (pid={pid}).")
+    _stdout_line(f"Bridge stopped (pid={pid}).")
     return 0
 
 
@@ -1175,7 +1187,7 @@ def _dispatch_channels_command(args: argparse.Namespace, parser: argparse.Argume
 
 def _cmd_run(passthrough_args: list[str]) -> int:
     if shutil.which("adk") is None:
-        logger.info("`adk` CLI not found. Install with: pip install google-adk")
+        _stdout_line("`adk` CLI not found. Install with: pip install google-adk")
         return 1
 
     agent_dir = Path(__file__).parent.resolve()
@@ -1295,28 +1307,28 @@ def _cmd_gateway(
         issues = validate_channel_setup(names)
         if issues:
             for item in issues:
-                logger.info(f"[doctor] {item}")
+                _stdout_line(f"[doctor] {item}")
             return 1
         if "whatsapp" in names and _whatsapp_bridge_precheck_enabled():
             bridge_issue = _check_whatsapp_bridge_ready()
             if bridge_issue:
-                logger.info(f"[doctor] {bridge_issue}")
+                _stdout_line(f"[doctor] {bridge_issue}")
                 return 1
         mcp_issues = await _required_mcp_preflight(list(getattr(root_agent, "tools", [])))
         if mcp_issues:
             blocking_issues = [item for item in mcp_issues if not _is_non_blocking_mcp_issue(item)]
             non_blocking_issues = [item for item in mcp_issues if _is_non_blocking_mcp_issue(item)]
             for item in non_blocking_issues:
-                logger.warning(f"[mcp] {item}; marked unavailable, gateway will continue without this MCP toolset")
+                _stdout_line(f"[mcp] {item}; marked unavailable, gateway will continue without this MCP toolset")
             if blocking_issues:
                 for item in blocking_issues:
-                    logger.info(f"[doctor] {item}")
+                    _stdout_line(f"[doctor] {item}")
                 return 1
 
         manager, local_channel = build_channel_manager(
             bus=bus,
             channel_names=names,
-            local_writer=logger.info,
+            local_writer=_stdout_line,
         )
         _log_mcp_startup_summary(list(getattr(root_agent, "tools", [])))
         gateway = Gateway(
@@ -1326,9 +1338,9 @@ def _cmd_gateway(
             channel_manager=manager,
         )
         await gateway.start()
-        logger.info(f"gateway started with channels: {', '.join(names)}")
+        _stdout_line(f"gateway started with channels: {', '.join(names)}")
         if interactive_local and local_channel:
-            logger.info("local interactive mode: type /quit or /exit to stop.")
+            _stdout_line("local interactive mode: type /quit or /exit to stop.")
         try:
             while True:
                 if interactive_local and local_channel:
@@ -1353,7 +1365,7 @@ def _cmd_gateway(
     except KeyboardInterrupt:
         return 0
     except Exception as exc:
-        logger.info(f"Error running gateway: {exc}")
+        _stdout_line(f"Error running gateway: {exc}")
         return 1
 
 
@@ -1361,16 +1373,16 @@ def _log_mcp_startup_summary(agent_tools: list[object]) -> None:
     """Print a compact MCP summary at gateway startup."""
     summaries = summarize_mcp_toolsets(agent_tools)
     if not summaries:
-        logger.info("MCP toolsets: none configured")
+        _stdout_line("MCP toolsets: none configured")
         return
-    logger.info(f"MCP toolsets: {len(summaries)} server(s) configured")
+    _stdout_line(f"MCP toolsets: {len(summaries)} server(s) configured")
     for item in summaries:
         status = str(item.get("status", "unknown"))
         status_message = str(item.get("status_message", "")).strip()
         status_suffix = f", status={status}"
         if status == "unavailable" and status_message:
             status_suffix = f"{status_suffix}, reason={status_message}"
-        logger.info(
+        _stdout_line(
             "MCP server "
             f"{item.get('name')}: transport={item.get('transport')}, prefix={item.get('prefix')}{status_suffix}"
         )
@@ -1406,13 +1418,13 @@ def _cmd_message(message: str, user_id: str, session_id: str) -> int:
     try:
         final_text = asyncio.run(_run_once())
     except Exception as exc:
-        logger.info(f"Error running agent: {exc}")
+        _stdout_line(f"Error running agent: {exc}")
         return 1
 
     if not final_text:
-        logger.info("(no response)")
+        _stdout_line("(no response)")
         return 0
-    logger.info(final_text)
+    _stdout_line(final_text)
     return 0
 
 
@@ -1457,10 +1469,10 @@ def _cmd_cron_add(
     channel: str | None,
 ) -> int:
     if tz and not cron_expr:
-        logger.info("Error: --tz can only be used with --cron")
+        _stdout_line("Error: --tz can only be used with --cron")
         return 1
     if deliver and not to:
-        logger.info("Error: --to is required when --deliver is set")
+        _stdout_line("Error: --to is required when --deliver is set")
         return 1
 
     parsed, parse_error = parse_schedule_input(
@@ -1470,10 +1482,10 @@ def _cmd_cron_add(
         tz=tz,
     )
     if parse_error:
-        logger.info(f"Error: {parse_error}")
+        _stdout_line(f"Error: {parse_error}")
         return 1
     if parsed is None:  # pragma: no cover - defensive fallback
-        logger.info("Error: failed to parse schedule")
+        _stdout_line("Error: failed to parse schedule")
         return 1
     schedule = parsed.schedule
     delete_after_run = parsed.delete_after_run
@@ -1489,25 +1501,25 @@ def _cmd_cron_add(
         to=target_to,
         delete_after_run=delete_after_run,
     )
-    logger.info(f"Added job '{job.name}' ({job.id})")
+    _stdout_line(f"Added job '{job.name}' ({job.id})")
     return 0
 
 
 def _cmd_cron_remove(job_id: str) -> int:
     if _cron_service().remove_job(job_id):
-        logger.info(f"Removed job {job_id}")
+        _stdout_line(f"Removed job {job_id}")
         return 0
-    logger.info(f"Job {job_id} not found")
+    _stdout_line(f"Job {job_id} not found")
     return 1
 
 
 def _cmd_cron_enable(job_id: str, *, disable: bool) -> int:
     job = _cron_service().enable_job(job_id, enabled=not disable)
     if job is None:
-        logger.info(f"Job {job_id} not found")
+        _stdout_line(f"Job {job_id} not found")
         return 1
     state = "disabled" if disable else "enabled"
-    logger.info(f"Job '{job.name}' {state}")
+    _stdout_line(f"Job '{job.name}' {state}")
     return 0
 
 
@@ -1517,27 +1529,27 @@ def _cmd_cron_run(job_id: str, *, force: bool) -> int:
 
     result = asyncio.run(_run())
     if result.reason == "ok":
-        logger.info("Job executed")
+        _stdout_line("Job executed")
         return 0
     if result.reason == "disabled":
-        logger.info(f"Job {job_id} is disabled. Use --force to run it once.")
+        _stdout_line(f"Job {job_id} is disabled. Use --force to run it once.")
         return 1
     if result.reason == "not_found":
-        logger.info(f"Job {job_id} not found")
+        _stdout_line(f"Job {job_id} not found")
         return 1
     if result.reason == "no_callback":
-        logger.info(
+        _stdout_line(
             "Job skipped: no executor callback is configured in this process. "
             "Run via gateway runtime to execute the agent task."
         )
         return 1
     if result.reason == "error":
         if result.error:
-            logger.info(f"Job execution failed: {result.error}")
+            _stdout_line(f"Job execution failed: {result.error}")
         else:
-            logger.info(f"Job execution failed: {job_id}")
+            _stdout_line(f"Job execution failed: {job_id}")
         return 1
-    logger.info(f"Job skipped: {result.reason}")
+    _stdout_line(f"Job skipped: {result.reason}")
     return 1
 
 
@@ -1545,7 +1557,7 @@ def _cmd_cron_status() -> int:
     info = _cron_service().status()
     runtime_pid = info.get("runtime_pid")
     runtime_pid_text = str(runtime_pid) if runtime_pid is not None else "-"
-    logger.info(
+    _stdout_line(
         "Cron status: "
         f"local_running={info['running']}, "
         f"runtime_active={info.get('runtime_active', False)}, "
