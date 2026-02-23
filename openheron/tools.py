@@ -26,6 +26,7 @@ from .logging_utils import debug_logging_enabled, emit_debug
 from .runtime.cron_helpers import cron_store_path, format_schedule
 from .runtime.cron_schedule_parser import parse_schedule_input
 from .runtime.cron_service import CronService
+from .runtime.process_sessions import get_process_session_manager
 from .runtime.tool_context import get_route
 from .security import PathGuard, SecurityPolicy, load_security_policy
 
@@ -327,7 +328,169 @@ def _validate_exec_security(command: str, argv: list[str], policy: SecurityPolic
     )
 
 
-def exec_command(command: str, working_dir: str | None = None, timeout: int = 60) -> str:
+def _format_exec_output(stdout: str, stderr: str, exit_code: int | None) -> str:
+    """Format command output using the legacy exec tool shape."""
+    parts: list[str] = []
+    if stdout:
+        parts.append(stdout)
+    if stderr:
+        parts.append(f"STDERR:\n{stderr}")
+    if exit_code not in (None, 0):
+        parts.append(f"Exit code: {exit_code}")
+    result = "\n".join(parts).strip() or "(no output)"
+    max_len = 12_000
+    if len(result) > max_len:
+        result = result[:max_len] + f"\n... (truncated, {len(result) - max_len} more chars)"
+    return result
+
+
+_PROCESS_KEY_TOKENS = {
+    "enter": "\r",
+    "return": "\r",
+    "tab": "\t",
+    "space": " ",
+    "esc": "\x1b",
+    "escape": "\x1b",
+    "backspace": "\x7f",
+    "delete": "\x1b[3~",
+    "up": "\x1b[A",
+    "down": "\x1b[B",
+    "right": "\x1b[C",
+    "left": "\x1b[D",
+    "home": "\x1b[H",
+    "end": "\x1b[F",
+    "pgup": "\x1b[5~",
+    "pageup": "\x1b[5~",
+    "pgdn": "\x1b[6~",
+    "pagedown": "\x1b[6~",
+}
+
+_PROCESS_DEFAULT_LOG_TAIL_LINES = 200
+_PROCESS_MAX_LOG_LIMIT = 5000
+
+
+def _encode_process_keys(keys: list[str] | None) -> tuple[str, list[str]]:
+    """Encode tmux-like key tokens into a writable text payload."""
+
+    if not keys:
+        return "", []
+
+    payload_parts: list[str] = []
+    warnings: list[str] = []
+    ctrl_pattern = re.compile(r"^(?:c-|ctrl[+])([a-z])$", flags=re.I)
+
+    for raw in keys:
+        token = (raw or "").strip()
+        if not token:
+            continue
+        normalized = token.lower()
+        ctrl_match = ctrl_pattern.match(normalized)
+        if ctrl_match:
+            letter = ctrl_match.group(1)
+            payload_parts.append(chr(ord(letter.upper()) - ord("A") + 1))
+            continue
+        mapped = _PROCESS_KEY_TOKENS.get(normalized)
+        if mapped is not None:
+            payload_parts.append(mapped)
+            continue
+        payload_parts.append(token)
+        warnings.append(f"Unknown key token '{token}', sent as literal text.")
+
+    return "".join(payload_parts), warnings
+
+
+def _slice_process_log_lines(
+    aggregated: str,
+    *,
+    offset: int | None,
+    limit: int | None,
+) -> tuple[str, int, bool, int, int]:
+    """Slice aggregated logs by line window for pagination."""
+
+    lines = aggregated.splitlines()
+    total_lines = len(lines)
+    using_default_tail = offset is None and limit is None
+
+    if using_default_tail:
+        start = max(0, total_lines - _PROCESS_DEFAULT_LOG_TAIL_LINES)
+        end = total_lines
+    else:
+        start = max(0, int(offset or 0))
+        if limit is None:
+            end = total_lines
+        else:
+            safe_limit = max(0, min(int(limit), _PROCESS_MAX_LOG_LIMIT))
+            end = min(total_lines, start + safe_limit)
+
+    if start >= total_lines:
+        return "", total_lines, using_default_tail, start, 0
+
+    return "\n".join(lines[start:end]), total_lines, using_default_tail, start, max(0, end - start)
+
+
+def _decode_process_hex(hex_values: list[str] | None) -> tuple[str, list[str]]:
+    """Decode hex byte strings to control-byte text for stdin writes."""
+
+    if not hex_values:
+        return "", []
+
+    chars: list[str] = []
+    warnings: list[str] = []
+
+    for raw in hex_values:
+        token = (raw or "").strip().replace(" ", "")
+        if token.lower().startswith("0x"):
+            token = token[2:]
+        if not token:
+            continue
+        if len(token) % 2 != 0:
+            warnings.append(f"Invalid hex token '{raw}', expected even number of digits.")
+            continue
+        if not re.fullmatch(r"[0-9a-fA-F]+", token):
+            warnings.append(f"Invalid hex token '{raw}', non-hex characters found.")
+            continue
+        for byte in bytes.fromhex(token):
+            if byte > 0x7F:
+                warnings.append(
+                    f"Hex byte 0x{byte:02x} is outside ASCII range; skipped to avoid UTF-8 expansion."
+                )
+                continue
+            chars.append(chr(byte))
+
+    return "".join(chars), warnings
+
+
+def _encode_process_paste(text: str, *, bracketed: bool) -> str:
+    """Encode paste payload, optionally wrapped in bracketed-paste markers."""
+
+    if not text:
+        return ""
+    if not bracketed:
+        return text
+    return f"\x1b[200~{text}\x1b[201~"
+
+
+def _resolve_process_scope(scope: str | None) -> str | None:
+    """Resolve process scope from explicit arg or current route context."""
+
+    explicit = (scope or "").strip()
+    if explicit:
+        return explicit
+    route_channel, route_chat_id = get_route()
+    if route_channel and route_chat_id:
+        return f"{route_channel}:{route_chat_id}"
+    return None
+
+
+def exec_command(
+    command: str,
+    working_dir: str | None = None,
+    timeout: int = 60,
+    yield_ms: int | None = None,
+    background: bool = False,
+    pty: bool = False,
+    scope: str | None = None,
+) -> str:
     """Execute a command safely and return combined output.
 
     Args:
@@ -335,15 +498,31 @@ def exec_command(command: str, working_dir: str | None = None, timeout: int = 60
             commands (e.g. export/&&/redirection) run via a shell.
         working_dir: Optional working directory; defaults to workspace root.
         timeout: Max execution time in seconds.
+        yield_ms: Optional max wait time in milliseconds before returning a
+            running background session.
+        background: If True, return immediately with a background session id.
+        pty: If True, request PTY mode (falls back to pipe mode when unsupported).
+        scope: Optional process-session isolation scope. Defaults to current route.
 
     Returns:
-        stdout/stderr text, optionally with exit code, or an "Error: ..." message.
+        Foreground output (legacy behavior), or a background session message.
 
     Safety:
         - Enforces security policy flags (allowExec, execAllowlist, workspace path guard).
         - Blocks known destructive command patterns.
     """
-    _debug("tool.exec.input", {"command": command, "working_dir": working_dir, "timeout": timeout})
+    _debug(
+        "tool.exec.input",
+        {
+            "command": command,
+            "working_dir": working_dir,
+            "timeout": timeout,
+            "yield_ms": yield_ms,
+            "background": background,
+            "pty": pty,
+            "scope": scope,
+        },
+    )
     cmd = command.strip()
     if not cmd:
         return _ret("tool.exec.output", "Error: command is empty")
@@ -384,33 +563,252 @@ def exec_command(command: str, working_dir: str | None = None, timeout: int = 60
             return _ret("tool.exec.output", "Error: no compatible shell found for command execution")
         command_argv = shell_argv
 
+    if not background and yield_ms is None and not pty:
+        try:
+            completed = subprocess.run(
+                command_argv,
+                shell=False,
+                cwd=str(cwd),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            return _ret("tool.exec.output", f"Error: Command timed out after {timeout} seconds")
+        except Exception as exc:
+            return _ret("tool.exec.output", f"Error executing command: {exc}")
+
+        result = _format_exec_output(completed.stdout, completed.stderr, completed.returncode)
+        _debug("tool.exec.output", {"chars": len(result), "preview": result[:240]})
+        return result
+
+    manager = get_process_session_manager()
+    effective_scope = _resolve_process_scope(scope)
     try:
-        completed = subprocess.run(
-            command_argv,
-            shell=False,
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+        session, warnings = manager.start_session(
+            command=cmd,
+            argv=command_argv,
+            cwd=cwd,
+            env=os.environ.copy(),
+            use_pty=pty,
+            scope_key=effective_scope,
         )
-    except subprocess.TimeoutExpired:
-        return _ret("tool.exec.output", f"Error: Command timed out after {timeout} seconds")
     except Exception as exc:
         return _ret("tool.exec.output", f"Error executing command: {exc}")
 
-    parts: list[str] = []
-    if completed.stdout:
-        parts.append(completed.stdout)
-    if completed.stderr:
-        parts.append(f"STDERR:\n{completed.stderr}")
-    if completed.returncode != 0:
-        parts.append(f"Exit code: {completed.returncode}")
-    result = "\n".join(parts).strip() or "(no output)"
-    max_len = 12000
-    if len(result) > max_len:
-        result = result[:max_len] + f"\n... (truncated, {len(result) - max_len} more chars)"
-    _debug("tool.exec.output", {"chars": len(result), "preview": result[:240]})
-    return result
+    yield_window = 0 if background else max(10, min(120_000, int(yield_ms or 10_000)))
+    if yield_window == 0:
+        manager.mark_backgrounded(session.session_id, scope_key=effective_scope)
+        warning_text = "\n".join(warnings)
+        result = (
+            f"{warning_text}\n\n".lstrip()
+            + f"Command still running (session {session.session_id}, pid {session.process.pid or 'n/a'}). "
+            + "Use process(action='list'|'poll'|'log'|'write'|'send-keys'|'submit'|'paste'|'kill'|'remove') for follow-up."
+        )
+        return _ret("tool.exec.output", result)
+
+    polled = manager.poll_session(session.session_id, timeout_ms=yield_window)
+    if polled is None:
+        return _ret("tool.exec.output", "Error: failed to read command output")
+
+    if bool(polled.get("exited")):
+        result = _format_exec_output(
+            str(polled.get("stdout", "")),
+            str(polled.get("stderr", "")),
+            polled.get("exit_code") if isinstance(polled.get("exit_code"), int) else None,
+        )
+        manager.remove_session(session.session_id)
+        _debug("tool.exec.output", {"chars": len(result), "preview": result[:240]})
+        return result
+
+    manager.mark_backgrounded(session.session_id, scope_key=effective_scope)
+    warning_text = "\n".join(warnings)
+    running = (
+        f"{warning_text}\n\n".lstrip()
+        + f"Command still running (session {session.session_id}, pid {session.process.pid or 'n/a'}). "
+        + "Use process(action='list'|'poll'|'log'|'write'|'send-keys'|'submit'|'paste'|'kill'|'remove') for follow-up."
+    )
+    return _ret("tool.exec.output", running)
+
+
+def process_session(
+    action: str = "list",
+    session_id: str | None = None,
+    data: str = "",
+    keys: list[str] | None = None,
+    hex_values: list[str] | None = None,
+    literal: str = "",
+    offset: int | None = None,
+    limit: int | None = None,
+    timeout_ms: int = 0,
+    bracketed: bool = True,
+    eof: bool = False,
+    scope: str | None = None,
+) -> str:
+    """Manage background exec sessions.
+
+    Args:
+        action: One of list/poll/log/write/send-keys/submit/paste/kill/remove.
+        session_id: Required for all actions except list.
+        data: Payload for write/paste.
+        keys: Optional key tokens for send-keys, e.g. ["C-c", "Enter"].
+        hex_values: Optional hex byte tokens for send-keys, e.g. ["03", "0d"].
+        literal: Optional literal text payload for send-keys.
+        offset: Optional line offset for `log` pagination.
+        limit: Optional line limit for `log` pagination.
+        timeout_ms: Optional wait window for poll.
+        bracketed: Whether `paste` uses bracketed-paste wrappers.
+        eof: Whether write should close stdin afterwards.
+        scope: Optional process-session isolation scope. Defaults to current route.
+
+    Returns:
+        Human-readable action result, or an "Error: ..." message.
+    """
+
+    manager = get_process_session_manager()
+    effective_scope = _resolve_process_scope(scope)
+    normalized = (action or "").strip().lower()
+
+    if normalized == "list":
+        sessions = manager.list_sessions(scope_key=effective_scope)
+        if not sessions:
+            return _ret("tool.process.output", "No running or recent sessions.")
+        lines = []
+        now = dt.datetime.now().timestamp()
+        for item in sessions:
+            runtime = max(0, int(now - item.started_at))
+            label = item.command.strip().replace("\n", " ")
+            if len(label) > 100:
+                label = label[:100] + "..."
+            lines.append(
+                f"{item.session_id} {item.status:9} {runtime:>4}s pid={item.pid or 'n/a'} :: {label}"
+            )
+        return _ret("tool.process.output", "\n".join(lines))
+
+    if not (session_id or "").strip():
+        return _ret("tool.process.output", "Error: session_id is required for this action")
+    sid = session_id.strip()
+
+    if normalized == "poll":
+        payload = manager.poll_session(sid, timeout_ms=timeout_ms, scope_key=effective_scope)
+        if payload is None:
+            return _ret("tool.process.output", f"Error: No session found for {sid}")
+        status = str(payload.get("status", "running"))
+        retry_in_ms = payload.get("retry_in_ms")
+        output = "\n".join(
+            part
+            for part in [
+                str(payload.get("stdout", "")).strip(),
+                str(payload.get("stderr", "")).strip(),
+            ]
+            if part
+        )
+        if not output:
+            output = "(no new output)"
+        if payload.get("exited"):
+            exit_signal = payload.get("exit_signal")
+            if status == "killed":
+                trailer = "Process was killed."
+            elif isinstance(exit_signal, int):
+                trailer = f"Process exited with signal {exit_signal}."
+            else:
+                trailer = f"Process exited with code {payload.get('exit_code', 0)}."
+        else:
+            trailer = "Process still running."
+            if isinstance(retry_in_ms, int):
+                trailer += f" Suggested next poll in ~{retry_in_ms}ms."
+        poll_meta = {
+            "status": status,
+            "retry_in_ms": retry_in_ms if isinstance(retry_in_ms, int) else None,
+            "exit_code": payload.get("exit_code"),
+            "exit_signal": payload.get("exit_signal"),
+        }
+        meta_prefix = f"[poll-meta]{json.dumps(poll_meta, ensure_ascii=False, separators=(',', ':'))}"
+        return _ret("tool.process.output", f"{meta_prefix}\n\n{output}\n\n{trailer}")
+
+    if normalized == "log":
+        payload = manager.log_session(sid, scope_key=effective_scope)
+        if payload is None:
+            return _ret("tool.process.output", f"Error: No session found for {sid}")
+        sliced, total_lines, using_default_tail, effective_offset, returned_lines = _slice_process_log_lines(
+            str(payload.get("aggregated", "")),
+            offset=offset,
+            limit=limit,
+        )
+        text = sliced.strip() or "(no output yet)"
+        if using_default_tail and total_lines > _PROCESS_DEFAULT_LOG_TAIL_LINES:
+            text += (
+                f"\n\n[showing last {_PROCESS_DEFAULT_LOG_TAIL_LINES} of {total_lines} lines; "
+                "pass offset/limit to page]"
+            )
+        window_limit: int | None
+        if using_default_tail:
+            window_limit = _PROCESS_DEFAULT_LOG_TAIL_LINES
+        elif limit is None:
+            window_limit = None
+        else:
+            window_limit = max(0, min(int(limit), _PROCESS_MAX_LOG_LIMIT))
+        log_meta = {
+            "total_lines": total_lines,
+            "offset": effective_offset,
+            "returned_lines": returned_lines,
+            "window_limit": window_limit,
+            "truncated": bool(payload.get("truncated", False)),
+        }
+        meta_prefix = f"[log-meta]{json.dumps(log_meta, ensure_ascii=False, separators=(',', ':'))}"
+        return _ret("tool.process.output", f"{meta_prefix}\n\n{text}")
+
+    if normalized == "write":
+        err = manager.write_session(sid, data, eof=eof, scope_key=effective_scope)
+        if err:
+            return _ret("tool.process.output", f"Error: {err}")
+        suffix = " (stdin closed)" if eof else ""
+        return _ret("tool.process.output", f"Wrote {len(data)} bytes to session {sid}{suffix}.")
+
+    if normalized in {"send-keys", "send_keys"}:
+        encoded_keys, key_warnings = _encode_process_keys(keys)
+        encoded_hex, hex_warnings = _decode_process_hex(hex_values)
+        payload = literal + encoded_keys + encoded_hex
+        warnings = key_warnings + hex_warnings
+        if not payload:
+            return _ret("tool.process.output", "Error: send-keys requires keys, hex_values or literal")
+        err = manager.write_session(sid, payload, eof=eof, scope_key=effective_scope)
+        if err:
+            return _ret("tool.process.output", f"Error: {err}")
+        warning_text = f"\nWarnings:\n- " + "\n- ".join(warnings) if warnings else ""
+        suffix = " (stdin closed)" if eof else ""
+        return _ret(
+            "tool.process.output",
+            f"Sent {len(payload)} bytes to session {sid}{suffix}.{warning_text}",
+        )
+
+    if normalized == "submit":
+        err = manager.write_session(sid, "\r", eof=False, scope_key=effective_scope)
+        if err:
+            return _ret("tool.process.output", f"Error: {err}")
+        return _ret("tool.process.output", f"Submitted session {sid} (sent CR).")
+
+    if normalized == "paste":
+        payload = _encode_process_paste(data, bracketed=bracketed)
+        err = manager.write_session(sid, payload, eof=False, scope_key=effective_scope)
+        if err:
+            return _ret("tool.process.output", f"Error: {err}")
+        mode = "bracketed" if bracketed else "plain"
+        return _ret("tool.process.output", f"Pasted {len(data)} chars to session {sid} ({mode}).")
+
+    if normalized == "kill":
+        err = manager.kill_session(sid, scope_key=effective_scope)
+        if err:
+            return _ret("tool.process.output", f"Error: {err}")
+        return _ret("tool.process.output", f"Termination requested for session {sid}.")
+
+    if normalized == "remove":
+        removed = manager.remove_session(sid, scope_key=effective_scope)
+        if not removed:
+            return _ret("tool.process.output", f"Error: No session found for {sid}")
+        return _ret("tool.process.output", f"Removed session {sid}.")
+
+    return _ret("tool.process.output", f"Error: Unknown action '{action}'")
 
 
 def _validate_http_url(url: str) -> tuple[bool, str]:
@@ -995,6 +1393,7 @@ def cron(
 
 # Match legacy tool naming where skills refer to `exec`.
 exec_command.__name__ = "exec"
+process_session.__name__ = "process"
 
 
 def _debug(tag: str, payload: object, *, depth: int = 1) -> None:

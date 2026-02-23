@@ -23,6 +23,7 @@ from .tools import (
     message,
     message_image,
     read_file,
+    process_session,
     spawn_subagent,
     web_fetch,
     web_search,
@@ -65,7 +66,8 @@ Rules:
 - Do not invent skill content. Always read SKILL.md first.
 - Use `message_image(path=..., caption=...)` when a local image file should be delivered to the current channel.
 - Use `spawn_subagent(prompt=...)` for background sub-tasks that should finish later.
-- Prefer these built-in tools for actions: `read_file`, `write_file`, `edit_file`, `list_dir`, `exec`, `web_search`, `web_fetch`, `message`, `message_image`, `cron`, `spawn_subagent`.
+- Prefer these built-in tools for actions: `read_file`, `write_file`, `edit_file`, `list_dir`, `exec`, `process`, `web_search`, `web_fetch`, `message`, `message_image`, `cron`, `spawn_subagent`.
+- For long-running shell tasks, use `exec(background=true|yield_ms=...)` and follow-up with `process(...)`.
 - Current time is injected into each request payload (e.g. `Current request time`).
   For relative scheduling, always use that injected request time as `now`.
 
@@ -85,6 +87,7 @@ def _build_tools() -> list[Any]:
         edit_file,
         list_dir,
         exec_command,
+        process_session,
         web_search,
         web_fetch,
         message,

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
+import time
 import types as pytypes
 import unittest
 from pathlib import Path
@@ -19,6 +21,7 @@ from openheron.tools import (
     list_dir,
     message,
     message_image,
+    process_session,
     read_file,
     spawn_subagent,
     web_fetch,
@@ -59,6 +62,250 @@ class ToolsTests(unittest.TestCase):
     def test_exec_tool(self) -> None:
         result = exec_command("echo hello")
         self.assertIn("hello", result)
+
+    def test_exec_background_then_poll_and_remove(self) -> None:
+        cmd = (
+            'python -c "import time,sys;print(\'start\');sys.stdout.flush();'
+            "time.sleep(0.4);print('end')\""
+        )
+        out = exec_command(cmd, yield_ms=20)
+        self.assertIn("session", out.lower())
+        matched = re.search(r"session ([0-9a-f-]+)", out)
+        self.assertIsNotNone(matched)
+        session_id = matched.group(1) if matched else ""
+
+        deadline = time.time() + 3
+        last_poll = ""
+        while time.time() < deadline:
+            last_poll = process_session("poll", session_id=session_id, timeout_ms=200)
+            if "Process exited with code" in last_poll:
+                break
+
+        self.assertIn("Process exited with code", last_poll)
+        log_text = process_session("log", session_id=session_id)
+        self.assertIn("start", log_text)
+        self.assertIn("end", log_text)
+        removed = process_session("remove", session_id=session_id)
+        self.assertIn("Removed session", removed)
+
+    def test_exec_background_write_stdin(self) -> None:
+        cmd = 'python -c "import sys;print(sys.stdin.readline().strip())"'
+        out = exec_command(cmd, background=True)
+        matched = re.search(r"session ([0-9a-f-]+)", out)
+        self.assertIsNotNone(matched)
+        session_id = matched.group(1) if matched else ""
+
+        write_out = process_session("write", session_id=session_id, data="hello\\n", eof=True)
+        self.assertIn("Wrote", write_out)
+
+        deadline = time.time() + 3
+        last_poll = ""
+        while time.time() < deadline:
+            last_poll = process_session("poll", session_id=session_id, timeout_ms=200)
+            if "Process exited with code" in last_poll:
+                break
+        self.assertIn("Process exited with code", last_poll)
+        log_text = process_session("log", session_id=session_id)
+        self.assertIn("hello", log_text.lower())
+
+    def test_exec_background_send_keys(self) -> None:
+        cmd = 'python -c "import sys;print(sys.stdin.readline().strip())"'
+        out = exec_command(cmd, background=True)
+        matched = re.search(r"session ([0-9a-f-]+)", out)
+        self.assertIsNotNone(matched)
+        session_id = matched.group(1) if matched else ""
+
+        send_out = process_session(
+            "send-keys",
+            session_id=session_id,
+            literal="hello",
+            keys=["Enter"],
+            eof=True,
+        )
+        self.assertIn("Sent", send_out)
+
+        deadline = time.time() + 3
+        last_poll = ""
+        while time.time() < deadline:
+            last_poll = process_session("poll", session_id=session_id, timeout_ms=200)
+            if "Process exited with code" in last_poll:
+                break
+        self.assertIn("Process exited with code", last_poll)
+        log_text = process_session("log", session_id=session_id)
+        self.assertIn("hello", log_text.lower())
+
+    def test_process_log_supports_offset_and_limit(self) -> None:
+        cmd = 'python -c "import sys;[print(f\'line-{i}\') for i in range(6)]"'
+        out = exec_command(cmd, background=True)
+        matched = re.search(r"session ([0-9a-f-]+)", out)
+        self.assertIsNotNone(matched)
+        session_id = matched.group(1) if matched else ""
+
+        deadline = time.time() + 3
+        last_poll = ""
+        while time.time() < deadline:
+            last_poll = process_session("poll", session_id=session_id, timeout_ms=200)
+            if "Process exited with code" in last_poll:
+                break
+        self.assertIn("Process exited with code", last_poll)
+
+        page = process_session("log", session_id=session_id, offset=2, limit=2)
+        meta_line = page.splitlines()[0] if page else ""
+        self.assertTrue(meta_line.startswith("[log-meta]"))
+        meta = json.loads(meta_line[len("[log-meta]") :])
+        self.assertEqual(meta["total_lines"], 6)
+        self.assertEqual(meta["offset"], 2)
+        self.assertEqual(meta["returned_lines"], 2)
+        self.assertEqual(meta["window_limit"], 2)
+        self.assertIn("truncated", meta)
+        self.assertIn("line-2", page)
+        self.assertIn("line-3", page)
+        self.assertNotIn("line-4", page)
+
+        removed = process_session("remove", session_id=session_id)
+        self.assertIn("Removed session", removed)
+
+    def test_exec_background_send_keys_supports_hex_values(self) -> None:
+        cmd = 'python -c "import sys;print(sys.stdin.readline().strip())"'
+        out = exec_command(cmd, background=True)
+        matched = re.search(r"session ([0-9a-f-]+)", out)
+        self.assertIsNotNone(matched)
+        session_id = matched.group(1) if matched else ""
+
+        send_out = process_session(
+            "send-keys",
+            session_id=session_id,
+            literal="hello",
+            hex_values=["0d"],
+            eof=True,
+        )
+        self.assertIn("Sent", send_out)
+
+        deadline = time.time() + 3
+        last_poll = ""
+        while time.time() < deadline:
+            last_poll = process_session("poll", session_id=session_id, timeout_ms=200)
+            if "Process exited with code" in last_poll:
+                break
+        self.assertIn("Process exited with code", last_poll)
+        self.assertIn("hello", last_poll.lower())
+
+    def test_exec_background_paste_bracketed_and_plain(self) -> None:
+        cmd = 'python -c "import sys;print(sys.stdin.buffer.read().hex())"'
+
+        out1 = exec_command(cmd, background=True)
+        matched1 = re.search(r"session ([0-9a-f-]+)", out1)
+        self.assertIsNotNone(matched1)
+        session1 = matched1.group(1) if matched1 else ""
+        paste1 = process_session("paste", session_id=session1, data="abc")
+        self.assertIn("bracketed", paste1.lower())
+        process_session("write", session_id=session1, eof=True)
+        deadline = time.time() + 3
+        poll1 = ""
+        while time.time() < deadline:
+            poll1 = process_session("poll", session_id=session1, timeout_ms=200)
+            if "Process exited with code" in poll1:
+                break
+        self.assertIn("Process exited with code", poll1)
+        log1 = process_session("log", session_id=session1)
+        self.assertIn("1b5b3230307e6162631b5b3230317e", log1.lower())
+
+        out2 = exec_command(cmd, background=True)
+        matched2 = re.search(r"session ([0-9a-f-]+)", out2)
+        self.assertIsNotNone(matched2)
+        session2 = matched2.group(1) if matched2 else ""
+        paste2 = process_session("paste", session_id=session2, data="abc", bracketed=False)
+        self.assertIn("plain", paste2.lower())
+        process_session("write", session_id=session2, eof=True)
+        poll2 = ""
+        deadline = time.time() + 3
+        while time.time() < deadline:
+            poll2 = process_session("poll", session_id=session2, timeout_ms=200)
+            if "Process exited with code" in poll2:
+                break
+        self.assertIn("Process exited with code", poll2)
+        log2 = process_session("log", session_id=session2)
+        self.assertIn("616263", log2.lower())
+        self.assertNotIn("1b5b3230307e", log2.lower())
+
+    def test_process_poll_returns_retry_hint(self) -> None:
+        cmd = 'python -c "import time;time.sleep(0.8);print(\'done\')"'
+        out = exec_command(cmd, background=True)
+        matched = re.search(r"session ([0-9a-f-]+)", out)
+        self.assertIsNotNone(matched)
+        session_id = matched.group(1) if matched else ""
+
+        poll = process_session("poll", session_id=session_id, timeout_ms=10)
+        first_line = poll.splitlines()[0] if poll else ""
+        self.assertTrue(first_line.startswith("[poll-meta]"))
+        meta = json.loads(first_line[len("[poll-meta]") :])
+        self.assertEqual(meta["status"], "running")
+        self.assertIsInstance(meta["retry_in_ms"], int)
+        self.assertGreaterEqual(meta["retry_in_ms"], 100)
+
+        process_session("remove", session_id=session_id)
+
+    def test_process_scope_isolation(self) -> None:
+        cmd = 'python -c "import time;time.sleep(2)"'
+        out_a = exec_command(cmd, background=True, scope="scope-a")
+        out_b = exec_command(cmd, background=True, scope="scope-b")
+        sid_a_match = re.search(r"session ([0-9a-f-]+)", out_a)
+        sid_b_match = re.search(r"session ([0-9a-f-]+)", out_b)
+        self.assertIsNotNone(sid_a_match)
+        self.assertIsNotNone(sid_b_match)
+        sid_a = sid_a_match.group(1) if sid_a_match else ""
+        sid_b = sid_b_match.group(1) if sid_b_match else ""
+
+        list_a = process_session("list", scope="scope-a")
+        self.assertIn(sid_a, list_a)
+        self.assertNotIn(sid_b, list_a)
+
+        wrong_scope_poll = process_session("poll", session_id=sid_a, scope="scope-b")
+        self.assertIn("No session found", wrong_scope_poll)
+
+        self.assertIn("Removed session", process_session("remove", session_id=sid_a, scope="scope-a"))
+        self.assertIn("Removed session", process_session("remove", session_id=sid_b, scope="scope-b"))
+
+    def test_process_remove_running_session_hides_lifecycle_immediately(self) -> None:
+        cmd = 'python -c "import time;time.sleep(5)"'
+        out = exec_command(cmd, background=True)
+        matched = re.search(r"session ([0-9a-f-]+)", out)
+        self.assertIsNotNone(matched)
+        session_id = matched.group(1) if matched else ""
+
+        removed = process_session("remove", session_id=session_id)
+        self.assertIn("Removed session", removed)
+
+        listing = process_session("list")
+        self.assertNotIn(session_id, listing)
+
+        poll = process_session("poll", session_id=session_id)
+        self.assertIn("No session found", poll)
+
+    def test_exec_background_kill_sets_killed_status(self) -> None:
+        cmd = 'python -c "import time;print(\'start\');time.sleep(10)"'
+        out = exec_command(cmd, background=True)
+        matched = re.search(r"session ([0-9a-f-]+)", out)
+        self.assertIsNotNone(matched)
+        session_id = matched.group(1) if matched else ""
+
+        kill_out = process_session("kill", session_id=session_id)
+        self.assertIn("Termination requested", kill_out)
+
+        deadline = time.time() + 3
+        last_poll = ""
+        while time.time() < deadline:
+            last_poll = process_session("poll", session_id=session_id, timeout_ms=200)
+            if "Process was killed." in last_poll:
+                break
+        self.assertIn("Process was killed.", last_poll)
+
+        listing = process_session("list")
+        self.assertIn(session_id, listing)
+        self.assertIn("killed", listing.lower())
+
+        removed = process_session("remove", session_id=session_id)
+        self.assertIn("Removed session", removed)
 
     def test_exec_tool_supports_shell_compound_command(self) -> None:
         if os.name == "nt":
