@@ -18,6 +18,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from .browser_runtime import configure_browser_runtime
+from .browser_service import BrowserDispatchRequest, get_browser_control_service
 from .bus.events import OutboundMessage
 from .env_utils import env_enabled
 from .exec_policy import command_segments as _policy_command_segments
@@ -974,6 +976,168 @@ def _validate_http_url(url: str) -> tuple[bool, str]:
         return True, ""
     except Exception as exc:
         return False, str(exc)
+
+
+def browser(
+    action: str,
+    target_url: str | None = None,
+    target_id: str | None = None,
+    profile: str | None = None,
+    target: str | None = None,
+    snapshot_format: str = "ai",
+    request: dict[str, Any] | None = None,
+    paths: list[str] | None = None,
+    ref: str | None = None,
+    accept: bool | None = None,
+    prompt_text: str | None = None,
+    screenshot_path: str | None = None,
+    screenshot_type: str | None = None,
+) -> str:
+    """Control the built-in browser runtime.
+
+    Args:
+        action: Browser action name. Supported now:
+            ``status/start/stop/profiles/tabs/open/navigate/snapshot/screenshot/upload/dialog/act``.
+        target_url: URL used by ``action="open"``.
+        target_id: Optional tab target id for ``snapshot`` / ``act``.
+        profile: Optional browser profile name (reserved for multi-profile iterations).
+        target: Reserved execution target field for future host/sandbox/node routing.
+        snapshot_format: Snapshot format for ``action="snapshot"`` (``ai`` or ``aria``).
+        request: Action payload used by ``action="act"``.
+        paths: Optional upload file paths for ``action="upload"``.
+        ref: Optional selector/ref for ``action="upload"``.
+        accept: Required bool for ``action="dialog"``.
+        prompt_text: Optional prompt text for ``action="dialog"``.
+        screenshot_path: Optional output file path for ``action="screenshot"``.
+        screenshot_type: Optional image type for ``action="screenshot"`` (`png` or `jpeg`).
+
+    Returns:
+        JSON-formatted action result payload. On errors, returns
+        ``{"ok": false, "error": ...}``.
+
+    Notes:
+        - Backend is selected by `OPENHERON_BROWSER_RUNTIME` (`playwright` or default memory).
+        - The ``target`` field is accepted for OpenClaw-compatible API shape, but
+          not used until remote routing iterations.
+    """
+
+    _debug(
+        "tool.browser.input",
+        {
+            "action": action,
+            "target_url": target_url,
+            "target_id": target_id,
+            "profile": profile,
+            "target": target,
+            "snapshot_format": snapshot_format,
+            "request": request,
+            "paths": paths,
+            "ref": ref,
+            "accept": accept,
+            "prompt_text": prompt_text,
+            "screenshot_path": screenshot_path,
+            "screenshot_type": screenshot_type,
+        },
+    )
+
+    normalized = (action or "").strip().lower()
+    query: dict[str, Any] = {}
+    if (profile or "").strip():
+        query["profile"] = profile.strip()
+    if (target or "").strip():
+        # Iteration 1 keeps the shape for future host/sandbox/node routing.
+        query["target"] = target.strip()
+
+    request_map: dict[str, BrowserDispatchRequest] = {
+        "status": BrowserDispatchRequest(method="GET", path="/", query=query),
+        "start": BrowserDispatchRequest(method="POST", path="/start", query=query),
+        "stop": BrowserDispatchRequest(method="POST", path="/stop", query=query),
+        "profiles": BrowserDispatchRequest(method="GET", path="/profiles", query=query),
+        "tabs": BrowserDispatchRequest(method="GET", path="/tabs", query=query),
+        "open": BrowserDispatchRequest(
+            method="POST",
+            path="/tabs/open",
+            query=query,
+            body={"url": target_url},
+        ),
+        "snapshot": BrowserDispatchRequest(
+            method="GET",
+            path="/snapshot",
+            query={
+                **query,
+                "targetId": (target_id or "").strip() or None,
+                "format": (snapshot_format or "ai").strip().lower() or "ai",
+            },
+        ),
+        "navigate": BrowserDispatchRequest(
+            method="POST",
+            path="/navigate",
+            query=query,
+            body={
+                "targetId": (target_id or "").strip() or None,
+                "url": target_url,
+            },
+        ),
+        "screenshot": BrowserDispatchRequest(
+            method="POST",
+            path="/screenshot",
+            query=query,
+            body={
+                "targetId": (target_id or "").strip() or None,
+                "type": (screenshot_type or "png").strip().lower() or "png",
+                "path": (screenshot_path or "").strip() or None,
+            },
+        ),
+        "upload": BrowserDispatchRequest(
+            method="POST",
+            path="/hooks/file-chooser",
+            query=query,
+            body={
+                "targetId": (target_id or "").strip() or None,
+                "paths": paths or [],
+                "ref": (ref or "").strip() or None,
+            },
+        ),
+        "dialog": BrowserDispatchRequest(
+            method="POST",
+            path="/hooks/dialog",
+            query=query,
+            body={
+                "targetId": (target_id or "").strip() or None,
+                "accept": accept,
+                "promptText": (prompt_text or "").strip() or None,
+            },
+        ),
+        "act": BrowserDispatchRequest(
+            method="POST",
+            path="/act",
+            query=query,
+            body={
+                "targetId": (target_id or "").strip() or None,
+                "request": request,
+            },
+        ),
+    }
+    dispatch_req = request_map.get(normalized)
+    if dispatch_req is None:
+        return _ret(
+            "tool.browser.output",
+            _json(
+                {
+                    "ok": False,
+                    "error": (
+                        "unknown action; supported actions are "
+                        "status,start,stop,profiles,tabs,open,navigate,snapshot,screenshot,upload,dialog,act"
+                    ),
+                }
+            ),
+        )
+
+    res = get_browser_control_service().dispatch(dispatch_req)
+    body = res.body if isinstance(res.body, dict) else {"ok": False, "error": "invalid browser response"}
+    if res.status >= 400 and isinstance(body, dict) and "status" not in body:
+        body["status"] = res.status
+    return _ret("tool.browser.output", _json(body))
 
 
 def web_search(query: str, count: int = 5) -> str:

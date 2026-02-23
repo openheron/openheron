@@ -16,6 +16,7 @@ from .runtime.debug_callbacks import after_model_debug_callback, before_model_de
 from .runtime.workspace_bootstrap import before_model_workspace_bootstrap_callback
 from .skills import get_registry, list_skills, read_skill
 from .tools import (
+    browser,
     cron,
     edit_file,
     exec_command,
@@ -66,7 +67,7 @@ Rules:
 - Do not invent skill content. Always read SKILL.md first.
 - Use `message_image(path=..., caption=...)` when a local image file should be delivered to the current channel.
 - Use `spawn_subagent(prompt=...)` for background sub-tasks that should finish later.
-- Prefer these built-in tools for actions: `read_file`, `write_file`, `edit_file`, `list_dir`, `exec`, `process`, `web_search`, `web_fetch`, `message`, `message_image`, `cron`, `spawn_subagent`.
+- Prefer these built-in tools for actions: `read_file`, `write_file`, `edit_file`, `list_dir`, `exec`, `process`, `browser`, `web_search`, `web_fetch`, `message`, `message_image`, `cron`, `spawn_subagent`.
 - For long-running shell tasks, use `exec(background=true|yield_ms=...)` and follow-up with `process(...)`.
 - Current time is injected into each request payload (e.g. `Current request time`).
   For relative scheduling, always use that injected request time as `now`.
@@ -88,6 +89,7 @@ def _build_tools() -> list[Any]:
         list_dir,
         exec_command,
         process_session,
+        browser,
         web_search,
         web_fetch,
         message,

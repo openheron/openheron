@@ -14,6 +14,8 @@ from pathlib import Path
 from openheron.runtime.tool_context import route_context
 from openheron.tools import (
     SubagentSpawnRequest,
+    browser,
+    configure_browser_runtime,
     configure_subagent_dispatcher,
     cron,
     edit_file,
@@ -35,6 +37,7 @@ class ToolsTests(unittest.TestCase):
         self._env_backup = dict(os.environ)
 
     def tearDown(self) -> None:
+        configure_browser_runtime(None)
         configure_subagent_dispatcher(None)
         os.environ.clear()
         os.environ.update(self._env_backup)
@@ -233,7 +236,8 @@ class ToolsTests(unittest.TestCase):
             if "Process exited with code" in last_poll:
                 break
         self.assertIn("Process exited with code", last_poll)
-        self.assertIn("hello", last_poll.lower())
+        log_text = process_session("log", session_id=session_id)
+        self.assertIn("hello", log_text.lower())
 
     def test_exec_background_paste_bracketed_and_plain(self) -> None:
         cmd = 'python -c "import sys;print(sys.stdin.buffer.read().hex())"'
@@ -517,6 +521,135 @@ class ToolsTests(unittest.TestCase):
             job_id = create.split("(id: ", 1)[1].rstrip(")")
             removed = cron(action="remove", job_id=job_id)
             self.assertIn("Removed job", removed)
+
+    def test_browser_tool_open_snapshot_and_act_flow(self) -> None:
+        started = json.loads(browser(action="start"))
+        self.assertTrue(started["running"])
+
+        opened = json.loads(browser(action="open", target_url="https://example.com"))
+        self.assertTrue(opened["ok"])
+        target_id = opened["targetId"]
+
+        tabs = json.loads(browser(action="tabs"))
+        self.assertTrue(tabs["running"])
+        self.assertEqual(len(tabs["tabs"]), 1)
+        self.assertEqual(tabs["tabs"][0]["targetId"], target_id)
+
+        snapshot = json.loads(browser(action="snapshot", target_id=target_id, snapshot_format="ai"))
+        self.assertTrue(snapshot["ok"])
+        self.assertEqual(snapshot["targetId"], target_id)
+        self.assertIn("snapshot", snapshot)
+
+        navigated = json.loads(browser(action="navigate", target_id=target_id, target_url="https://example.org"))
+        self.assertTrue(navigated["ok"])
+        self.assertIn("example.org", navigated["url"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            shot_path = Path(tmp) / "shots" / "shot.png"
+            screenshot = json.loads(
+                browser(
+                    action="screenshot",
+                    target_id=target_id,
+                    screenshot_path=str(shot_path),
+                    screenshot_type="jpeg",
+                )
+            )
+            self.assertTrue(screenshot["ok"])
+            self.assertEqual(screenshot["targetId"], target_id)
+            self.assertTrue(screenshot["imageBase64"])
+            self.assertEqual(screenshot["type"], "jpeg")
+            self.assertIn("jpeg", screenshot["contentType"])
+            self.assertEqual(Path(screenshot["path"]).resolve(), shot_path.resolve())
+            self.assertTrue(shot_path.exists())
+
+        with tempfile.TemporaryDirectory() as tmp:
+            upload_file = Path(tmp) / "upload.txt"
+            upload_file.write_text("demo", encoding="utf-8")
+            uploaded = json.loads(
+                browser(
+                    action="upload",
+                    target_id=target_id,
+                    paths=[str(upload_file)],
+                    ref="#file-input",
+                )
+            )
+        self.assertTrue(uploaded["ok"])
+        self.assertEqual(uploaded["uploadedPaths"], [str(upload_file)])
+
+        dialog = json.loads(
+            browser(
+                action="dialog",
+                target_id=target_id,
+                accept=True,
+                prompt_text="confirm",
+            )
+        )
+        self.assertTrue(dialog["ok"])
+        self.assertTrue(dialog["armed"])
+
+        acted = json.loads(
+            browser(
+                action="act",
+                target_id=target_id,
+                request={"kind": "type", "ref": "e2", "text": "hello"},
+            )
+        )
+        self.assertTrue(acted["ok"])
+        self.assertEqual(acted["kind"], "type")
+
+        acted_with_selector = json.loads(
+            browser(
+                action="act",
+                target_id=target_id,
+                request={"kind": "click", "selector": "button.primary"},
+            )
+        )
+        self.assertTrue(acted_with_selector["ok"])
+        self.assertEqual(acted_with_selector["kind"], "click")
+
+    def test_browser_tool_reports_errors_for_missing_inputs(self) -> None:
+        missing_url = json.loads(browser(action="open"))
+        self.assertFalse(missing_url["ok"])
+        self.assertIn("url", missing_url["error"])
+
+        missing_request = json.loads(browser(action="act"))
+        self.assertFalse(missing_request["ok"])
+        self.assertIn("kind", missing_request["error"])
+
+        missing_navigate_url = json.loads(browser(action="navigate", target_id="tab-x"))
+        self.assertFalse(missing_navigate_url["ok"])
+        self.assertIn("url", missing_navigate_url["error"])
+
+        missing_upload_paths = json.loads(browser(action="upload", target_id="tab-x"))
+        self.assertFalse(missing_upload_paths["ok"])
+        self.assertIn("paths", missing_upload_paths["error"])
+
+        missing_dialog_accept = json.loads(browser(action="dialog", target_id="tab-x"))
+        self.assertFalse(missing_dialog_accept["ok"])
+        self.assertIn("accept", missing_dialog_accept["error"])
+
+        json.loads(browser(action="start"))
+        json.loads(browser(action="open", target_url="https://example.com"))
+        invalid_screenshot_type = json.loads(browser(action="screenshot", screenshot_type="gif"))
+        self.assertFalse(invalid_screenshot_type["ok"])
+        self.assertIn("image_type", invalid_screenshot_type["error"])
+
+    def test_browser_tool_reports_runtime_errors(self) -> None:
+        not_running = json.loads(browser(action="snapshot"))
+        self.assertFalse(not_running["ok"])
+        self.assertIn("not running", not_running["error"])
+        self.assertEqual(not_running["status"], 409)
+
+    def test_browser_tool_supports_profiles_and_stop(self) -> None:
+        profiles = json.loads(browser(action="profiles"))
+        self.assertTrue(profiles["profiles"])
+        self.assertEqual(profiles["profiles"][0]["name"], "openheron")
+
+        json.loads(browser(action="start"))
+        json.loads(browser(action="open", target_url="https://example.com"))
+        stopped = json.loads(browser(action="stop"))
+        self.assertFalse(stopped["running"])
+        self.assertEqual(stopped["tabCount"], 0)
 
     def test_web_fetch_rejects_invalid_url(self) -> None:
         payload = json.loads(web_fetch("file:///tmp/test.txt"))
