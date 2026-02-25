@@ -876,6 +876,26 @@ class CLITests(unittest.TestCase):
         self.assertIsNotNone(api_key_rule.env_name_resolver)
         self.assertEqual(api_key_rule.doctor_env_backfill_code, "provider.env.api_key_backfilled")
 
+    def test_doctor_channel_backfill_schema_matches_channel_env_mappings(self) -> None:
+        from openheron import cli
+
+        self.assertEqual(
+            len(cli.DOCTOR_CHANNEL_ENV_BACKFILL_RULES),
+            len(cli.CHANNEL_ENV_BACKFILL_MAPPINGS),
+        )
+        telegram_rule = next(
+            (
+                item
+                for item in cli.DOCTOR_CHANNEL_ENV_BACKFILL_RULES
+                if item.channel == "telegram" and item.key == "token"
+            ),
+            None,
+        )
+        self.assertIsNotNone(telegram_rule)
+        self.assertEqual(telegram_rule.env_name, "TELEGRAM_BOT_TOKEN")
+        self.assertEqual(telegram_rule.code_applied, "channel.env.backfilled")
+        self.assertEqual(telegram_rule.rule, "channel_env_backfill")
+
     def test_cmd_install_prints_summary_lines(self) -> None:
         from openheron import cli
 

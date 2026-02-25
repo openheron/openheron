@@ -153,6 +153,38 @@ CHANNEL_ENV_BACKFILL_MAPPINGS: tuple[tuple[str, str, str], ...] = (
 DoctorFixOutcome = Literal["applied", "skipped", "failed"]
 
 
+@dataclass(frozen=True)
+class DoctorChannelEnvBackfillRule:
+    """Structured metadata for one doctor channel env-backfill rule."""
+
+    channel: str
+    key: str
+    env_name: str
+    rule: str = "channel_env_backfill"
+    code_applied: str = "channel.env.backfilled"
+    code_disabled: str = "channel.env.channel_disabled"
+    code_target_set: str = "channel.env.target_already_set"
+    code_source_missing: str = "channel.env.source_missing"
+
+    @property
+    def target_path(self) -> str:
+        return f"channels.{self.channel}.{self.key}"
+
+
+def _build_doctor_channel_env_backfill_rules() -> tuple[DoctorChannelEnvBackfillRule, ...]:
+    """Build doctor channel env-backfill rules from shared channel env mappings."""
+
+    return tuple(
+        DoctorChannelEnvBackfillRule(channel=channel, key=key, env_name=env_name)
+        for channel, key, env_name in CHANNEL_ENV_BACKFILL_MAPPINGS
+    )
+
+
+DOCTOR_CHANNEL_ENV_BACKFILL_RULES: tuple[DoctorChannelEnvBackfillRule, ...] = (
+    _build_doctor_channel_env_backfill_rules()
+)
+
+
 def _doctor_record_event(
     *,
     event_sink: list[dict[str, str]] | None,
@@ -625,43 +657,43 @@ def _doctor_backfill_channel_fields_from_env(
     event_sink: list[dict[str, str]] | None = None,
 ) -> None:
     """Backfill enabled channel fields from environment variables."""
-    for channel, key, env_name in CHANNEL_ENV_BACKFILL_MAPPINGS:
-        channel_cfg = channels_cfg.get(channel, {})
+    for backfill_rule in DOCTOR_CHANNEL_ENV_BACKFILL_RULES:
+        channel_cfg = channels_cfg.get(backfill_rule.channel, {})
         if not isinstance(channel_cfg, dict) or not bool(channel_cfg.get("enabled")):
             _doctor_add_skipped(
                 skipped,
                 event_sink=event_sink,
-                code="channel.env.channel_disabled",
-                rule="channel_env_backfill",
-                message=f"channels.{channel}.{key} skipped (channel disabled)",
+                code=backfill_rule.code_disabled,
+                rule=backfill_rule.rule,
+                message=f"{backfill_rule.target_path} skipped (channel disabled)",
             )
             continue
-        if str(channel_cfg.get(key, "")).strip():
+        if str(channel_cfg.get(backfill_rule.key, "")).strip():
             _doctor_add_skipped(
                 skipped,
                 event_sink=event_sink,
-                code="channel.env.target_already_set",
-                rule="channel_env_backfill",
-                message=f"channels.{channel}.{key} already set",
+                code=backfill_rule.code_target_set,
+                rule=backfill_rule.rule,
+                message=f"{backfill_rule.target_path} already set",
             )
             continue
-        env_value = os.getenv(env_name, "").strip()
+        env_value = os.getenv(backfill_rule.env_name, "").strip()
         if not env_value:
             _doctor_add_skipped(
                 skipped,
                 event_sink=event_sink,
-                code="channel.env.source_missing",
-                rule="channel_env_backfill",
-                message=f"{env_name} missing",
+                code=backfill_rule.code_source_missing,
+                rule=backfill_rule.rule,
+                message=f"{backfill_rule.env_name} missing",
             )
             continue
-        channel_cfg[key] = env_value
+        channel_cfg[backfill_rule.key] = env_value
         _doctor_add_change(
             changes,
             event_sink=event_sink,
-            code="channel.env.backfilled",
-            rule="channel_env_backfill",
-            message=f"channels.{channel}.{key} <- {env_name}",
+            code=backfill_rule.code_applied,
+            rule=backfill_rule.rule,
+            message=f"{backfill_rule.target_path} <- {backfill_rule.env_name}",
         )
 
 
