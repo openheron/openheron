@@ -185,6 +185,33 @@ DOCTOR_CHANNEL_ENV_BACKFILL_RULES: tuple[DoctorChannelEnvBackfillRule, ...] = (
 )
 
 
+@dataclass(frozen=True)
+class DoctorChannelBoolEnvBackfillRule:
+    """Structured metadata for one doctor boolean env-backfill rule."""
+
+    channel: str
+    key: str
+    env_name: str
+    rule: str = "email_consent_backfill"
+    code_applied: str = "email.consent.backfilled"
+    code_present_not_truthy: str = "email.consent.present_not_truthy"
+    code_source_missing: str = "email.consent.source_missing"
+    truthy_values: tuple[str, ...] = ("1", "true", "yes", "on")
+
+    @property
+    def target_path(self) -> str:
+        return f"channels.{self.channel}.{self.key}"
+
+
+DOCTOR_CHANNEL_BOOL_ENV_BACKFILL_RULES: tuple[DoctorChannelBoolEnvBackfillRule, ...] = (
+    DoctorChannelBoolEnvBackfillRule(
+        channel="email",
+        key="consentGranted",
+        env_name="EMAIL_CONSENT_GRANTED",
+    ),
+)
+
+
 def _doctor_record_event(
     *,
     event_sink: list[dict[str, str]] | None,
@@ -881,36 +908,37 @@ def _doctor_backfill_email_consent_from_env(
     event_sink: list[dict[str, str]] | None = None,
 ) -> None:
     """Backfill email consent flag from environment if email channel is enabled."""
-    email_cfg = channels_cfg.get("email", {})
-    if not isinstance(email_cfg, dict) or not bool(email_cfg.get("enabled")) or bool(email_cfg.get("consentGranted")):
-        return
+    for bool_rule in DOCTOR_CHANNEL_BOOL_ENV_BACKFILL_RULES:
+        channel_cfg = channels_cfg.get(bool_rule.channel, {})
+        if not isinstance(channel_cfg, dict) or not bool(channel_cfg.get("enabled")) or bool(channel_cfg.get(bool_rule.key)):
+            continue
 
-    consent_raw = os.getenv("EMAIL_CONSENT_GRANTED", "").strip()
-    if consent_raw.lower() in {"1", "true", "yes", "on"}:
-        email_cfg["consentGranted"] = True
-        _doctor_add_change(
-            changes,
-            event_sink=event_sink,
-            code="email.consent.backfilled",
-            rule="email_consent_backfill",
-            message="channels.email.consentGranted <- EMAIL_CONSENT_GRANTED",
-        )
-    elif consent_raw:
-        _doctor_add_skipped(
-            skipped,
-            event_sink=event_sink,
-            code="email.consent.present_not_truthy",
-            rule="email_consent_backfill",
-            message="EMAIL_CONSENT_GRANTED present but not truthy",
-        )
-    else:
-        _doctor_add_skipped(
-            skipped,
-            event_sink=event_sink,
-            code="email.consent.source_missing",
-            rule="email_consent_backfill",
-            message="EMAIL_CONSENT_GRANTED missing",
-        )
+        value_raw = os.getenv(bool_rule.env_name, "").strip()
+        if value_raw.lower() in set(bool_rule.truthy_values):
+            channel_cfg[bool_rule.key] = True
+            _doctor_add_change(
+                changes,
+                event_sink=event_sink,
+                code=bool_rule.code_applied,
+                rule=bool_rule.rule,
+                message=f"{bool_rule.target_path} <- {bool_rule.env_name}",
+            )
+        elif value_raw:
+            _doctor_add_skipped(
+                skipped,
+                event_sink=event_sink,
+                code=bool_rule.code_present_not_truthy,
+                rule=bool_rule.rule,
+                message=f"{bool_rule.env_name} present but not truthy",
+            )
+        else:
+            _doctor_add_skipped(
+                skipped,
+                event_sink=event_sink,
+                code=bool_rule.code_source_missing,
+                rule=bool_rule.rule,
+                message=f"{bool_rule.env_name} missing",
+            )
 
 
 def _doctor_backfill_provider_api_key_from_env(

@@ -896,6 +896,22 @@ class CLITests(unittest.TestCase):
         self.assertEqual(telegram_rule.code_applied, "channel.env.backfilled")
         self.assertEqual(telegram_rule.rule, "channel_env_backfill")
 
+    def test_doctor_channel_bool_backfill_schema_contains_email_consent_rule(self) -> None:
+        from openheron import cli
+
+        consent_rule = next(
+            (
+                item
+                for item in cli.DOCTOR_CHANNEL_BOOL_ENV_BACKFILL_RULES
+                if item.channel == "email" and item.key == "consentGranted"
+            ),
+            None,
+        )
+        self.assertIsNotNone(consent_rule)
+        self.assertEqual(consent_rule.env_name, "EMAIL_CONSENT_GRANTED")
+        self.assertEqual(consent_rule.code_applied, "email.consent.backfilled")
+        self.assertEqual(consent_rule.rule, "email_consent_backfill")
+
     def test_install_summary_requirements_cover_doctor_channel_backfill_targets(self) -> None:
         from openheron import cli
 
