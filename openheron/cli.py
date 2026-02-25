@@ -33,8 +33,14 @@ from .config import (
     save_config,
 )
 from .env_utils import env_enabled
+from . import doctor_rules, install_rules
 from .logging_utils import debug_logging_enabled, emit_debug
 from .mcp_registry import ManagedMcpToolset, build_mcp_toolsets_from_env, probe_mcp_toolsets, summarize_mcp_toolsets
+from .onboarding_adapters import (
+    ApiKeyProviderOnboardingAdapter,
+    resolve_channel_onboarding_adapter,
+    resolve_provider_onboarding_adapter,
+)
 from .provider import (
     DEFAULT_PROVIDER,
     canonical_provider_name,
@@ -111,43 +117,9 @@ class McpProbePolicy:
     retry_backoff_seconds: float
 
 
-LEGACY_PROVIDER_FIELD_MIGRATIONS: tuple[tuple[str, str], ...] = (
-    ("api_key", "apiKey"),
-    ("api_base", "apiBase"),
-)
-LEGACY_CHANNEL_FIELD_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
-    ("feishu", "app_id", "appId"),
-    ("feishu", "app_secret", "appSecret"),
-    ("telegram", "bot_token", "token"),
-    ("discord", "bot_token", "token"),
-    ("dingtalk", "client_id", "clientId"),
-    ("dingtalk", "client_secret", "clientSecret"),
-    ("slack", "bot_token", "botToken"),
-    ("whatsapp", "bridge_url", "bridgeUrl"),
-    ("mochat", "base_url", "baseUrl"),
-    ("mochat", "claw_token", "clawToken"),
-    ("email", "smtp_host", "smtpHost"),
-    ("email", "smtp_username", "smtpUsername"),
-    ("email", "smtp_password", "smtpPassword"),
-    ("qq", "app_id", "appId"),
-)
-CHANNEL_ENV_BACKFILL_MAPPINGS: tuple[tuple[str, str, str], ...] = (
-    ("feishu", "appId", "FEISHU_APP_ID"),
-    ("feishu", "appSecret", "FEISHU_APP_SECRET"),
-    ("telegram", "token", "TELEGRAM_BOT_TOKEN"),
-    ("discord", "token", "DISCORD_BOT_TOKEN"),
-    ("dingtalk", "clientId", "DINGTALK_CLIENT_ID"),
-    ("dingtalk", "clientSecret", "DINGTALK_CLIENT_SECRET"),
-    ("slack", "botToken", "SLACK_BOT_TOKEN"),
-    ("whatsapp", "bridgeUrl", "WHATSAPP_BRIDGE_URL"),
-    ("mochat", "baseUrl", "MOCHAT_BASE_URL"),
-    ("mochat", "clawToken", "MOCHAT_CLAW_TOKEN"),
-    ("email", "smtpHost", "EMAIL_SMTP_HOST"),
-    ("email", "smtpUsername", "EMAIL_SMTP_USERNAME"),
-    ("email", "smtpPassword", "EMAIL_SMTP_PASSWORD"),
-    ("qq", "appId", "QQ_APP_ID"),
-    ("qq", "secret", "QQ_SECRET"),
-)
+LEGACY_PROVIDER_FIELD_MIGRATIONS = doctor_rules.LEGACY_PROVIDER_FIELD_MIGRATIONS
+LEGACY_CHANNEL_FIELD_MIGRATIONS = doctor_rules.LEGACY_CHANNEL_FIELD_MIGRATIONS
+CHANNEL_ENV_BACKFILL_MAPPINGS = doctor_rules.CHANNEL_ENV_BACKFILL_MAPPINGS
 
 
 DoctorFixOutcome = Literal["applied", "skipped", "failed"]
@@ -180,9 +152,7 @@ def _build_doctor_channel_env_backfill_rules() -> tuple[DoctorChannelEnvBackfill
     )
 
 
-DOCTOR_CHANNEL_ENV_BACKFILL_RULES: tuple[DoctorChannelEnvBackfillRule, ...] = (
-    _build_doctor_channel_env_backfill_rules()
-)
+DOCTOR_CHANNEL_ENV_BACKFILL_RULES = doctor_rules.DOCTOR_CHANNEL_ENV_BACKFILL_RULES
 
 
 @dataclass(frozen=True)
@@ -203,13 +173,7 @@ class DoctorChannelBoolEnvBackfillRule:
         return f"channels.{self.channel}.{self.key}"
 
 
-DOCTOR_CHANNEL_BOOL_ENV_BACKFILL_RULES: tuple[DoctorChannelBoolEnvBackfillRule, ...] = (
-    DoctorChannelBoolEnvBackfillRule(
-        channel="email",
-        key="consentGranted",
-        env_name="EMAIL_CONSENT_GRANTED",
-    ),
-)
+DOCTOR_CHANNEL_BOOL_ENV_BACKFILL_RULES = doctor_rules.DOCTOR_CHANNEL_BOOL_ENV_BACKFILL_RULES
 
 
 def _doctor_record_event(
@@ -642,7 +606,7 @@ def _doctor_apply_channel_legacy_migrations(
     event_sink: list[dict[str, str]] | None = None,
 ) -> None:
     """Apply channel snake_case -> camelCase migrations from raw config."""
-    for channel_name, legacy_key, target_key in LEGACY_CHANNEL_FIELD_MIGRATIONS:
+    for channel_name, legacy_key, target_key in doctor_rules.LEGACY_CHANNEL_FIELD_MIGRATIONS:
         channel_cfg = channels_cfg.get(channel_name, {})
         raw_channel_cfg = raw_channels.get(channel_name, {})
         if not isinstance(channel_cfg, dict) or not isinstance(raw_channel_cfg, dict):
@@ -684,7 +648,7 @@ def _doctor_backfill_channel_fields_from_env(
     event_sink: list[dict[str, str]] | None = None,
 ) -> None:
     """Backfill enabled channel fields from environment variables."""
-    for backfill_rule in DOCTOR_CHANNEL_ENV_BACKFILL_RULES:
+    for backfill_rule in doctor_rules.DOCTOR_CHANNEL_ENV_BACKFILL_RULES:
         channel_cfg = channels_cfg.get(backfill_rule.channel, {})
         if not isinstance(channel_cfg, dict) or not bool(channel_cfg.get("enabled")):
             _doctor_add_skipped(
@@ -788,7 +752,7 @@ def _doctor_apply_provider_legacy_migrations(
                 rule="provider_legacy_migration",
                 message=f"providers.{canonical_name}.{key} <- providers.{raw_name}.{key}",
             )
-        for legacy_key, target_key in LEGACY_PROVIDER_FIELD_MIGRATIONS:
+        for legacy_key, target_key in doctor_rules.LEGACY_PROVIDER_FIELD_MIGRATIONS:
             if str(target.get(target_key, "")).strip():
                 _doctor_add_skipped(
                     skipped,
@@ -826,7 +790,7 @@ def _doctor_apply_provider_legacy_migrations(
         target = providers_cfg.get(canonical_name, {})
         if not isinstance(target, dict):
             continue
-        for legacy_key, target_key in LEGACY_PROVIDER_FIELD_MIGRATIONS:
+        for legacy_key, target_key in doctor_rules.LEGACY_PROVIDER_FIELD_MIGRATIONS:
             if str(target.get(target_key, "")).strip():
                 continue
             legacy_value = raw_item.get(legacy_key)
@@ -908,7 +872,7 @@ def _doctor_backfill_email_consent_from_env(
     event_sink: list[dict[str, str]] | None = None,
 ) -> None:
     """Backfill email consent flag from environment if email channel is enabled."""
-    for bool_rule in DOCTOR_CHANNEL_BOOL_ENV_BACKFILL_RULES:
+    for bool_rule in doctor_rules.DOCTOR_CHANNEL_BOOL_ENV_BACKFILL_RULES:
         channel_cfg = channels_cfg.get(bool_rule.channel, {})
         if not isinstance(channel_cfg, dict) or not bool(channel_cfg.get("enabled")) or bool(channel_cfg.get(bool_rule.key)):
             continue
@@ -955,7 +919,7 @@ def _doctor_backfill_provider_api_key_from_env(
     if not isinstance(item, dict):
         return
 
-    for requirement in INSTALL_PROVIDER_SUMMARY_REQUIREMENTS:
+    for requirement in install_rules.INSTALL_PROVIDER_SUMMARY_REQUIREMENTS:
         if requirement.env_name_resolver is None:
             continue
         env_name = requirement.env_name_resolver(active_provider) if requirement.env_name_resolver else ""
@@ -1978,242 +1942,38 @@ def _cmd_onboard(force: bool) -> int:
     return 0
 
 
-@dataclass(frozen=True)
-class InstallChannelPromptRule:
-    """Schema rule for collecting one channel credential during install setup."""
-
-    key: str
-    prompt: str
-    use_secret_reader: bool = False
-    parse_bool: bool = False
-    strip_for_presence: bool = True
-
-
-@dataclass(frozen=True)
-class InstallProviderSummaryRequirement:
-    """Schema rule for install summary provider missing checks and fix hints."""
-
-    key: str
-    fix_hint_template: str = "set providers.{provider}.{key} in {config_path}"
-    env_name_resolver: Callable[[str], str | None] | None = None
-    skip_for_oauth: bool = False
-    doctor_env_backfill_code: str | None = None
-    doctor_env_backfill_rule: str = "provider_env_backfill"
-
-    @property
-    def item_suffix(self) -> str:
-        return self.key
-
-
-@dataclass(frozen=True)
-class InstallChannelSummaryRequirement:
-    """Schema rule for install summary missing checks and fix hints."""
-
-    channel: str
-    key: str
-    presence: Literal["truthy_bool", "non_empty_strip", "non_empty_raw"] = "non_empty_strip"
-    fix_hint_template: str = "set {item} in {config_path}"
-
-    @property
-    def item(self) -> str:
-        return f"channels.{self.channel}.{self.key}"
-
-
-INSTALL_CHANNEL_PROMPT_RULES: dict[str, tuple[InstallChannelPromptRule, ...]] = {
-    "feishu": (
-        InstallChannelPromptRule("appId", "Feishu appId (required for enabled channel, press Enter to skip for now)> "),
-        InstallChannelPromptRule(
-            "appSecret",
-            "Feishu appSecret (required for enabled channel, press Enter to skip for now)> ",
-            use_secret_reader=True,
-        ),
-    ),
-    "telegram": (
-        InstallChannelPromptRule(
-            "token",
-            "Telegram bot token (required for enabled channel, press Enter to skip for now)> ",
-            use_secret_reader=True,
-        ),
-    ),
-    "discord": (
-        InstallChannelPromptRule(
-            "token",
-            "Discord bot token (required for enabled channel, press Enter to skip for now)> ",
-            use_secret_reader=True,
-        ),
-    ),
-    "dingtalk": (
-        InstallChannelPromptRule(
-            "clientId",
-            "DingTalk clientId (required for enabled channel, press Enter to skip for now)> ",
-        ),
-        InstallChannelPromptRule(
-            "clientSecret",
-            "DingTalk clientSecret (required for enabled channel, press Enter to skip for now)> ",
-            use_secret_reader=True,
-        ),
-    ),
-    "slack": (
-        InstallChannelPromptRule(
-            "botToken",
-            "Slack bot token (required for enabled channel, press Enter to skip for now)> ",
-            use_secret_reader=True,
-        ),
-    ),
-    "whatsapp": (
-        InstallChannelPromptRule(
-            "bridgeUrl",
-            "WhatsApp bridgeUrl (required for enabled channel, press Enter to skip for now)> ",
-        ),
-    ),
-    "mochat": (
-        InstallChannelPromptRule(
-            "baseUrl",
-            "Mochat baseUrl (required for enabled channel, press Enter to skip for now)> ",
-        ),
-        InstallChannelPromptRule(
-            "clawToken",
-            "Mochat clawToken (required for enabled channel, press Enter to skip for now)> ",
-            use_secret_reader=True,
-        ),
-    ),
-    "email": (
-        InstallChannelPromptRule(
-            "consentGranted",
-            "Email consent granted? (required for enabled channel, y/N, press Enter to skip for now)> ",
-            parse_bool=True,
-        ),
-        InstallChannelPromptRule(
-            "smtpHost",
-            "Email smtpHost (required for enabled channel, press Enter to skip for now)> ",
-        ),
-        InstallChannelPromptRule(
-            "smtpUsername",
-            "Email smtpUsername (required for enabled channel, press Enter to skip for now)> ",
-        ),
-        InstallChannelPromptRule(
-            "smtpPassword",
-            "Email smtpPassword (required for enabled channel, press Enter to skip for now)> ",
-            use_secret_reader=True,
-            strip_for_presence=False,
-        ),
-    ),
-    "qq": (
-        InstallChannelPromptRule(
-            "appId",
-            "QQ appId (required for enabled channel, press Enter to skip for now)> ",
-        ),
-        InstallChannelPromptRule(
-            "secret",
-            "QQ secret (required for enabled channel, press Enter to skip for now)> ",
-            use_secret_reader=True,
-        ),
-    ),
-}
+InstallChannelPromptRule = install_rules.InstallChannelPromptRule
+InstallProviderSummaryRequirement = install_rules.InstallProviderSummaryRequirement
+InstallChannelSummaryRequirement = install_rules.InstallChannelSummaryRequirement
+INSTALL_CHANNEL_PROMPT_RULES = install_rules.INSTALL_CHANNEL_PROMPT_RULES
+INSTALL_CHANNEL_SUMMARY_REQUIREMENTS = install_rules.build_install_channel_summary_requirements()
+INSTALL_PROVIDER_SUMMARY_REQUIREMENTS = install_rules.INSTALL_PROVIDER_SUMMARY_REQUIREMENTS
 
 
 def _build_install_channel_summary_requirements() -> tuple[InstallChannelSummaryRequirement, ...]:
-    """Build install summary requirements from shared doctor channel backfill rules."""
+    """Compatibility wrapper: delegate summary requirement build to install rules module."""
 
-    requirements: list[InstallChannelSummaryRequirement] = []
-    bool_requirements: dict[tuple[str, str], InstallChannelSummaryRequirement] = {}
-    for bool_rule in DOCTOR_CHANNEL_BOOL_ENV_BACKFILL_RULES:
-        bool_requirements[(bool_rule.channel, bool_rule.key)] = InstallChannelSummaryRequirement(
-            channel=bool_rule.channel,
-            key=bool_rule.key,
-            presence="truthy_bool",
-            fix_hint_template=f"set channels.{bool_rule.channel}.{bool_rule.key}=true in {{config_path}}",
-        )
-
-    for backfill_rule in DOCTOR_CHANNEL_ENV_BACKFILL_RULES:
-        channel = backfill_rule.channel
-        key = backfill_rule.key
-        bool_requirement = bool_requirements.get((channel, key))
-        if bool_requirement is not None:
-            requirements.append(bool_requirement)
-        fix_hint_template = (
-            "set {item} in {config_path} (Feishu credentials)"
-            if channel == "feishu"
-            else "set {item} in {config_path}"
-        )
-        presence: Literal["truthy_bool", "non_empty_strip", "non_empty_raw"] = "non_empty_strip"
-        if channel == "email" and key == "smtpPassword":
-            presence = "non_empty_raw"
-        requirements.append(
-            InstallChannelSummaryRequirement(
-                channel=channel,
-                key=key,
-                presence=presence,
-                fix_hint_template=fix_hint_template,
-            )
-        )
-    for summary_requirement in bool_requirements.values():
-        if summary_requirement not in requirements:
-            requirements.append(summary_requirement)
-    return tuple(requirements)
+    return install_rules.build_install_channel_summary_requirements()
 
 
-INSTALL_CHANNEL_SUMMARY_REQUIREMENTS: tuple[InstallChannelSummaryRequirement, ...] = (
-    _build_install_channel_summary_requirements()
-)
+def _install_summary_provider_missing(*, selected_provider: str, provider_cfg: dict[str, Any]) -> list[str]:
+    """Compatibility wrapper: delegate provider missing checks to install rules module."""
+
+    return install_rules.install_summary_provider_missing(
+        selected_provider=selected_provider,
+        provider_cfg=provider_cfg,
+        requirements=INSTALL_PROVIDER_SUMMARY_REQUIREMENTS,
+    )
 
 
-INSTALL_PROVIDER_SUMMARY_REQUIREMENTS: tuple[InstallProviderSummaryRequirement, ...] = (
-    InstallProviderSummaryRequirement(
-        "apiKey",
-        env_name_resolver=provider_api_key_env,
-        skip_for_oauth=True,
-        doctor_env_backfill_code="provider.env.api_key_backfilled",
-    ),
-)
+def _install_summary_provider_fix_hints(*, selected_provider: str, config_path: Path) -> dict[str, str]:
+    """Compatibility wrapper: delegate provider hint rendering to install rules module."""
 
-
-def _install_summary_provider_missing(
-    *,
-    selected_provider: str,
-    provider_cfg: dict[str, Any],
-) -> list[str]:
-    """Collect missing provider fields for install summary."""
-
-    if selected_provider == "-":
-        return []
-    provider_item = provider_cfg.get(selected_provider, {})
-    if not isinstance(provider_item, dict):
-        return []
-
-    provider_spec = find_provider_spec(selected_provider)
-    missing: list[str] = []
-    for requirement in INSTALL_PROVIDER_SUMMARY_REQUIREMENTS:
-        if requirement.skip_for_oauth and provider_spec and provider_spec.is_oauth:
-            continue
-        if requirement.env_name_resolver is not None:
-            env_name = requirement.env_name_resolver(selected_provider)
-            if env_name and not str(provider_item.get(requirement.key, "")).strip():
-                missing.append(f"{selected_provider}.{requirement.item_suffix}")
-            continue
-        if not str(provider_item.get(requirement.key, "")).strip():
-            missing.append(f"{selected_provider}.{requirement.item_suffix}")
-    return missing
-
-
-def _install_summary_provider_fix_hints(
-    *,
-    selected_provider: str,
-    config_path: Path,
-) -> dict[str, str]:
-    """Build install summary fix hint map for provider missing fields."""
-
-    if selected_provider == "-":
-        return {}
-    hints: dict[str, str] = {}
-    for requirement in INSTALL_PROVIDER_SUMMARY_REQUIREMENTS:
-        item = f"{selected_provider}.{requirement.item_suffix}"
-        hints[item] = requirement.fix_hint_template.format(
-            provider=selected_provider,
-            key=requirement.key,
-            config_path=config_path,
-        )
-    return hints
+    return install_rules.install_summary_provider_fix_hints(
+        selected_provider=selected_provider,
+        config_path=config_path,
+        requirements=INSTALL_PROVIDER_SUMMARY_REQUIREMENTS,
+    )
 
 
 def _install_channel_value_missing(
@@ -2222,43 +1982,27 @@ def _install_channel_value_missing(
     key: str,
     presence: Literal["truthy_bool", "non_empty_strip", "non_empty_raw"],
 ) -> bool:
-    """Return whether a channel field is considered missing by install summary rules."""
+    """Compatibility wrapper: delegate channel missing predicate to install rules module."""
 
-    value = cfg.get(key)
-    if presence == "truthy_bool":
-        return not bool(value)
-    if presence == "non_empty_raw":
-        return not str(value or "")
-    return not str(value or "").strip()
+    return install_rules.install_channel_value_missing(cfg=cfg, key=key, presence=presence)
 
 
 def _install_summary_channel_missing(channels_cfg: dict[str, Any]) -> list[str]:
-    """Collect missing channel fields for install summary in stable rule order."""
+    """Compatibility wrapper: delegate channel missing checks to install rules module."""
 
-    missing: list[str] = []
-    for requirement in INSTALL_CHANNEL_SUMMARY_REQUIREMENTS:
-        channel_cfg = channels_cfg.get(requirement.channel, {})
-        if not isinstance(channel_cfg, dict) or not bool(channel_cfg.get("enabled")):
-            continue
-        if _install_channel_value_missing(
-            cfg=channel_cfg,
-            key=requirement.key,
-            presence=requirement.presence,
-        ):
-            missing.append(requirement.item)
-    return missing
+    return install_rules.install_summary_channel_missing(
+        channels_cfg=channels_cfg,
+        requirements=INSTALL_CHANNEL_SUMMARY_REQUIREMENTS,
+    )
 
 
 def _install_summary_channel_fix_hints(config_path: Path) -> dict[str, str]:
-    """Build install summary fix hint map for channel missing fields."""
+    """Compatibility wrapper: delegate channel hint rendering to install rules module."""
 
-    hints: dict[str, str] = {}
-    for requirement in INSTALL_CHANNEL_SUMMARY_REQUIREMENTS:
-        hints[requirement.item] = requirement.fix_hint_template.format(
-            item=requirement.item,
-            config_path=config_path,
-        )
-    return hints
+    return install_rules.install_summary_channel_fix_hints(
+        config_path=config_path,
+        requirements=INSTALL_CHANNEL_SUMMARY_REQUIREMENTS,
+    )
 
 
 def _install_summary_missing(
@@ -2267,42 +2011,27 @@ def _install_summary_missing(
     provider_cfg: dict[str, Any],
     channels_cfg: dict[str, Any],
 ) -> list[str]:
-    """Collect all install summary missing items in a stable order."""
+    """Compatibility wrapper: delegate missing aggregation to install rules module."""
 
-    missing: list[str] = []
-    missing.extend(
-        _install_summary_provider_missing(
-            selected_provider=selected_provider,
-            provider_cfg=provider_cfg,
-        )
+    return install_rules.install_summary_missing(
+        selected_provider=selected_provider,
+        provider_cfg=provider_cfg,
+        channels_cfg=channels_cfg,
+        provider_requirements=INSTALL_PROVIDER_SUMMARY_REQUIREMENTS,
+        channel_requirements=INSTALL_CHANNEL_SUMMARY_REQUIREMENTS,
     )
-    missing.extend(_install_summary_channel_missing(channels_cfg))
-    return missing
 
 
-def _install_summary_fix_hints(
-    *,
-    missing: list[str],
-    selected_provider: str,
-    config_path: Path,
-) -> list[str]:
-    """Render install summary fix hints for both provider and channel missing items."""
+def _install_summary_fix_hints(*, missing: list[str], selected_provider: str, config_path: Path) -> list[str]:
+    """Compatibility wrapper: delegate fix-hint rendering to install rules module."""
 
-    provider_fix_hints = _install_summary_provider_fix_hints(
+    return install_rules.install_summary_fix_hints(
+        missing=missing,
         selected_provider=selected_provider,
         config_path=config_path,
+        provider_requirements=INSTALL_PROVIDER_SUMMARY_REQUIREMENTS,
+        channel_requirements=INSTALL_CHANNEL_SUMMARY_REQUIREMENTS,
     )
-    channel_fix_hints = _install_summary_channel_fix_hints(config_path)
-    combined_hints = {**provider_fix_hints, **channel_fix_hints}
-
-    rendered: list[str] = []
-    for item in missing:
-        hint = combined_hints.get(item)
-        if hint:
-            rendered.append(hint)
-        else:
-            rendered.append(f"set {item} in {config_path}")
-    return rendered
 
 
 def _apply_install_channel_prompt_rules(
@@ -2312,33 +2041,14 @@ def _apply_install_channel_prompt_rules(
     input_fn: Callable[[str], str],
     secret_input_fn: Callable[[str], str] | None = None,
 ) -> None:
-    """Collect missing channel credentials using table-driven prompt rules."""
+    """Compatibility wrapper: delegate channel credential prompts to install rules module."""
 
-    default_secret_reader = secret_input_fn or input_fn
-    for channel_name in enabled_channels:
-        channel_cfg = channels_cfg.get(channel_name, {})
-        if not isinstance(channel_cfg, dict):
-            continue
-        rules = INSTALL_CHANNEL_PROMPT_RULES.get(channel_name, ())
-        for rule in rules:
-            if rule.parse_bool:
-                if bool(channel_cfg.get(rule.key)):
-                    continue
-                raw = input_fn(rule.prompt).strip().lower()
-                if raw in {"y", "yes", "true", "1", "on"}:
-                    channel_cfg[rule.key] = True
-                elif raw in {"n", "no", "false", "0", "off"}:
-                    channel_cfg[rule.key] = False
-                continue
-
-            value = channel_cfg.get(rule.key, "")
-            has_value = bool(str(value).strip()) if rule.strip_for_presence else bool(str(value))
-            if has_value:
-                continue
-            reader = default_secret_reader if rule.use_secret_reader else input_fn
-            raw = reader(rule.prompt).strip()
-            if raw:
-                channel_cfg[rule.key] = raw
+    install_rules.apply_install_channel_prompt_rules(
+        channels_cfg=channels_cfg,
+        enabled_channels=enabled_channels,
+        input_fn=input_fn,
+        secret_input_fn=secret_input_fn,
+    )
 
 
 def _run_install_interactive_setup(
@@ -2388,13 +2098,18 @@ def _run_install_interactive_setup(
 
     key_env = provider_api_key_env(enabled_now)
     provider_spec = find_provider_spec(enabled_now)
-    if key_env and not (provider_spec and provider_spec.is_oauth):
-        reader = secret_input_fn or input_fn
-        key_value = reader(
-            f"API key for {enabled_now} (recommended now, press Enter to skip for now)> "
-        ).strip()
-        if key_value:
-            providers_cfg[enabled_now]["apiKey"] = key_value
+    provider_adapter = resolve_provider_onboarding_adapter(enabled_now)
+    if provider_adapter is None and key_env and not (provider_spec and provider_spec.is_oauth):
+        provider_adapter = ApiKeyProviderOnboardingAdapter(
+            provider_name=enabled_now,
+            prompt=f"API key for {enabled_now} (recommended now, press Enter to skip for now)> ",
+        )
+    if provider_adapter is not None:
+        provider_adapter.collect_credentials(
+            provider_cfg=providers_cfg[enabled_now],
+            input_fn=input_fn,
+            secret_input_fn=secret_input_fn,
+        )
 
     channels_cfg = config.get("channels", {})
     if isinstance(channels_cfg, dict):
@@ -2436,12 +2151,27 @@ def _run_install_interactive_setup(
                     if not any(bool(channels_cfg.get(name, {}).get("enabled")) for name in channel_names) and "local" in channel_names:
                         channels_cfg["local"]["enabled"] = True
         enabled_after = [name for name in channel_names if bool(channels_cfg.get(name, {}).get("enabled"))]
-        _apply_install_channel_prompt_rules(
-            channels_cfg=channels_cfg,
-            enabled_channels=enabled_after,
-            input_fn=input_fn,
-            secret_input_fn=secret_input_fn,
-        )
+        fallback_channels: list[str] = []
+        for channel_name in enabled_after:
+            channel_cfg = channels_cfg.get(channel_name, {})
+            if not isinstance(channel_cfg, dict):
+                continue
+            channel_adapter = resolve_channel_onboarding_adapter(channel_name)
+            if channel_adapter is None:
+                fallback_channels.append(channel_name)
+                continue
+            channel_adapter.collect_credentials(
+                channel_cfg=channel_cfg,
+                input_fn=input_fn,
+                secret_input_fn=secret_input_fn,
+            )
+        if fallback_channels:
+            install_rules.apply_install_channel_prompt_rules(
+                channels_cfg=channels_cfg,
+                enabled_channels=fallback_channels,
+                input_fn=input_fn,
+                secret_input_fn=secret_input_fn,
+            )
 
     save_config(config, config_path=config_path)
     _stdout_line(f"Install setup saved: {config_path}")
@@ -2532,19 +2262,23 @@ def _install_summary_lines(config_path: Path) -> list[str]:
 
     provider_cfg_dict = provider_cfg if isinstance(provider_cfg, dict) else {}
     channels_cfg_dict = channels_cfg if isinstance(channels_cfg, dict) else {}
-    missing = _install_summary_missing(
+    missing = install_rules.install_summary_missing(
         selected_provider=selected_provider,
         provider_cfg=provider_cfg_dict,
         channels_cfg=channels_cfg_dict,
+        provider_requirements=install_rules.INSTALL_PROVIDER_SUMMARY_REQUIREMENTS,
+        channel_requirements=INSTALL_CHANNEL_SUMMARY_REQUIREMENTS,
     )
 
     lines = [f"Install summary: provider={selected_provider}, channels={enabled_channels or ['(none)']}"]
     if missing:
         lines.append(f"Install summary: missing={missing}")
-        fix_hints = _install_summary_fix_hints(
+        fix_hints = install_rules.install_summary_fix_hints(
             missing=missing,
             selected_provider=selected_provider,
             config_path=config_path,
+            provider_requirements=install_rules.INSTALL_PROVIDER_SUMMARY_REQUIREMENTS,
+            channel_requirements=INSTALL_CHANNEL_SUMMARY_REQUIREMENTS,
         )
         lines.append(f"Install summary: fixes={fix_hints}")
         lines.append("Install summary: next[1]=openheron doctor")

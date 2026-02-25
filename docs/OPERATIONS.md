@@ -104,6 +104,13 @@ openheron gateway-service status --json
 - provider install summary 与 doctor env 回填：由 `INSTALL_PROVIDER_SUMMARY_REQUIREMENTS` 驱动。
 - install `fixes=[...]`：走统一渲染函数，不再在主流程内分支拼接。
 
+当前相关代码位置：
+
+- `openheron/doctor_rules.py`：doctor/install 共用的基础规则表与 doctor backfill 元数据。
+- `openheron/install_rules.py`：install summary/prompt 规则模型与渲染、缺失项聚合逻辑。
+- `openheron/onboarding_adapters.py`：provider/channel onboarding adapter 协议、默认 adapter 与注册表。
+- `openheron/cli.py`：命令编排层，调用上述模块执行规则与 adapter。
+
 建议后续扩展字段时，优先改规则表，再补测试，不要直接在流程函数里新增硬编码 if/else。
 
 如果只想初始化文件，不跑安装流程：

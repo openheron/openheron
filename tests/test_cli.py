@@ -684,6 +684,63 @@ class CLITests(unittest.TestCase):
         self.assertEqual(updated["channels"]["qq"]["appId"], "qq-app-id")
         self.assertEqual(updated["channels"]["qq"]["secret"], "qq-secret")
 
+    def test_install_interactive_setup_uses_provider_adapter_when_available(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["providers"]["google"]["enabled"] = True
+            cfg["providers"]["google"]["apiKey"] = ""
+            cli.save_config(cfg, config_path=config_path)
+
+            adapter = pytypes.SimpleNamespace(provider_name="google")
+            adapter.collect_credentials = Mock(
+                side_effect=lambda **kwargs: kwargs["provider_cfg"].update({"apiKey": "from-adapter"})
+            )
+            answers = iter(["skip", "", ""])
+            with patch.object(cli, "resolve_provider_onboarding_adapter", return_value=adapter):
+                with patch("builtins.print"):
+                    cli._run_install_interactive_setup(
+                        config_path=config_path,
+                        input_fn=lambda _prompt: next(answers),
+                    )
+            updated = cli.load_config(config_path=config_path)
+
+        adapter.collect_credentials.assert_called_once()
+        self.assertEqual(updated["providers"]["google"]["apiKey"], "from-adapter")
+
+    def test_install_interactive_setup_uses_channel_adapter_when_available(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["channels"]["local"]["enabled"] = False
+            cfg["channels"]["telegram"]["enabled"] = True
+            cfg["channels"]["telegram"]["token"] = ""
+            cli.save_config(cfg, config_path=config_path)
+
+            adapter = pytypes.SimpleNamespace(channel_name="telegram")
+            adapter.collect_credentials = Mock(
+                side_effect=lambda **kwargs: kwargs["channel_cfg"].update({"token": "adapter-token"})
+            )
+            answers = iter(["skip", "", ""])
+            with patch.object(
+                cli,
+                "resolve_channel_onboarding_adapter",
+                side_effect=lambda name: adapter if name == "telegram" else None,
+            ):
+                with patch("builtins.print"):
+                    cli._run_install_interactive_setup(
+                        config_path=config_path,
+                        input_fn=lambda _prompt: next(answers),
+                    )
+            updated = cli.load_config(config_path=config_path)
+
+        adapter.collect_credentials.assert_called_once()
+        self.assertEqual(updated["channels"]["telegram"]["token"], "adapter-token")
+
     def test_cmd_install_skips_interactive_setup_in_non_tty(self) -> None:
         from openheron import cli
 
