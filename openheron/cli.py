@@ -1926,6 +1926,18 @@ class InstallChannelPromptRule:
 
 
 @dataclass(frozen=True)
+class InstallProviderSummaryRequirement:
+    """Schema rule for install summary provider missing checks and fix hints."""
+
+    key: str
+    fix_hint_template: str = "set providers.{provider}.{key} in {config_path}"
+
+    @property
+    def item_suffix(self) -> str:
+        return self.key
+
+
+@dataclass(frozen=True)
 class InstallChannelSummaryRequirement:
     """Schema rule for install summary missing checks and fix hints."""
 
@@ -2070,6 +2082,57 @@ def _build_install_channel_summary_requirements() -> tuple[InstallChannelSummary
 INSTALL_CHANNEL_SUMMARY_REQUIREMENTS: tuple[InstallChannelSummaryRequirement, ...] = (
     _build_install_channel_summary_requirements()
 )
+
+
+INSTALL_PROVIDER_SUMMARY_REQUIREMENTS: tuple[InstallProviderSummaryRequirement, ...] = (
+    InstallProviderSummaryRequirement("apiKey"),
+)
+
+
+def _install_summary_provider_missing(
+    *,
+    selected_provider: str,
+    provider_cfg: dict[str, Any],
+) -> list[str]:
+    """Collect missing provider fields for install summary."""
+
+    if selected_provider == "-":
+        return []
+    provider_item = provider_cfg.get(selected_provider, {})
+    if not isinstance(provider_item, dict):
+        return []
+
+    provider_spec = find_provider_spec(selected_provider)
+    missing: list[str] = []
+    for requirement in INSTALL_PROVIDER_SUMMARY_REQUIREMENTS:
+        if requirement.key == "apiKey":
+            key_env = provider_api_key_env(selected_provider)
+            if key_env and not str(provider_item.get("apiKey", "")).strip() and not (provider_spec and provider_spec.is_oauth):
+                missing.append(f"{selected_provider}.{requirement.item_suffix}")
+            continue
+        if not str(provider_item.get(requirement.key, "")).strip():
+            missing.append(f"{selected_provider}.{requirement.item_suffix}")
+    return missing
+
+
+def _install_summary_provider_fix_hints(
+    *,
+    selected_provider: str,
+    config_path: Path,
+) -> dict[str, str]:
+    """Build install summary fix hint map for provider missing fields."""
+
+    if selected_provider == "-":
+        return {}
+    hints: dict[str, str] = {}
+    for requirement in INSTALL_PROVIDER_SUMMARY_REQUIREMENTS:
+        item = f"{selected_provider}.{requirement.item_suffix}"
+        hints[item] = requirement.fix_hint_template.format(
+            provider=selected_provider,
+            key=requirement.key,
+            config_path=config_path,
+        )
+    return hints
 
 
 def _install_channel_value_missing(
@@ -2343,17 +2406,13 @@ def _install_summary_lines(config_path: Path) -> list[str]:
     gateway_cmd = f"openheron gateway --channels {channel_args}"
 
     missing: list[str] = []
-    if selected_provider != "-":
-        provider_item = provider_cfg.get(selected_provider, {}) if isinstance(provider_cfg, dict) else {}
-        provider_spec = find_provider_spec(selected_provider)
-        key_name = provider_api_key_env(selected_provider)
-        if (
-            key_name
-            and isinstance(provider_item, dict)
-            and not str(provider_item.get("apiKey", "")).strip()
-            and not (provider_spec and provider_spec.is_oauth)
-        ):
-            missing.append(f"{selected_provider}.apiKey")
+    if isinstance(provider_cfg, dict):
+        missing.extend(
+            _install_summary_provider_missing(
+                selected_provider=selected_provider,
+                provider_cfg=provider_cfg,
+            )
+        )
 
     if isinstance(channels_cfg, dict):
         missing.extend(_install_summary_channel_missing(channels_cfg))
@@ -2362,13 +2421,14 @@ def _install_summary_lines(config_path: Path) -> list[str]:
     if missing:
         lines.append(f"Install summary: missing={missing}")
         fix_hints: list[str] = []
+        provider_fix_hints = _install_summary_provider_fix_hints(
+            selected_provider=selected_provider,
+            config_path=config_path,
+        )
         channel_fix_hints = _install_summary_channel_fix_hints(config_path)
         for item in missing:
-            if item.endswith(".apiKey"):
-                provider_name = item.split(".", 1)[0]
-                fix_hints.append(
-                    f"set providers.{provider_name}.apiKey in {config_path}"
-                )
+            if item in provider_fix_hints:
+                fix_hints.append(provider_fix_hints[item])
             elif item in channel_fix_hints:
                 fix_hints.append(channel_fix_hints[item])
             else:
