@@ -18,8 +18,60 @@ cd openheron_root
 python3.14 -m venv .venv
 source .venv/bin/activate
 pip install -e .
-openheron onboard
+openheron install
 python -m openheron.cli -m "Describe what you can do"
+```
+
+`openheron install` now includes:
+
+- `openheron onboard` initialization
+- optional interactive provider/channel setup
+- diagnostics (`openheron doctor`)
+- install summary + next command suggestions
+
+Install command variants:
+
+```bash
+openheron install
+openheron install --non-interactive --accept-risk
+openheron install --force
+openheron install --install-daemon
+openheron install --install-daemon --daemon-channels local,feishu
+```
+
+Install smoke script:
+
+```bash
+scripts/install_smoke.sh
+scripts/install_smoke.sh --with-gateway
+```
+
+Gateway service manifest commands:
+
+```bash
+openheron gateway-service install
+openheron gateway-service install --force --channels local,feishu
+openheron gateway-service install --enable
+openheron gateway-service status
+```
+
+Install output highlights:
+
+- `Install summary: provider=..., channels=...`: active provider/channel selection
+- `Install summary: missing=[...]`: key fields still missing for enabled components
+- `Install summary: fixes=[...]`: direct config fix hints (`~/.openheron/config.json`)
+- `Install summary: next[1]/next[2]`: recommended follow-up commands
+- `Install prereq: ...`: local prerequisite checks (`.venv`, `adk`, optional `questionary/rich`)
+  (`doctor` text mode renders them as `Install prereq [ok]` / `Install prereq [warn]`)
+
+Typical `missing` entries include provider API key plus channel credentials
+(feishu/telegram/discord/dingtalk/slack/whatsapp/mochat/email/qq).  
+See [`docs/OPERATIONS.md`](./docs/OPERATIONS.md) for the full field-to-fix mapping.
+
+If you only want file initialization without checks, run:
+
+```bash
+openheron onboard
 ```
 
 `openheron onboard` initializes:
@@ -44,6 +96,10 @@ openheron gateway
 
 # diagnostics and providers
 openheron doctor
+openheron doctor --fix
+openheron doctor --fix-dry-run
+openheron heartbeat status
+openheron gateway-service status
 openheron skills
 openheron provider list
 openheron provider status
@@ -112,6 +168,14 @@ Detailed docs are in [`docs/`](./docs/):
 - [`docs/CONFIGURATION.md`](./docs/CONFIGURATION.md)
 - [`docs/MCP_SECURITY.md`](./docs/MCP_SECURITY.md)
 - [`docs/README.md`](./docs/README.md)
+
+Install troubleshooting tips are in `docs/OPERATIONS.md` under
+`install 常见问题`.
+When `openheron install` reports missing setup, prioritize the
+`Install summary: fixes=[...]` hints first.
+If you consume doctor results programmatically, use
+`openheron doctor --fix --json` and read
+`fix.reasonCodes` / `fix.byRule` (see `docs/OPERATIONS.md` for examples).
 
 ## Testing
 

@@ -5,17 +5,19 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime as dt
+import importlib.util
 import json
 import os
 import signal
 import socket
 import shutil
 import subprocess
+import sys
 import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 from urllib.parse import urlparse
 
 from google.genai import types
@@ -31,9 +33,16 @@ from .config import (
     save_config,
 )
 from .env_utils import env_enabled
+from . import doctor_rules, install_rules
 from .logging_utils import debug_logging_enabled, emit_debug
 from .mcp_registry import ManagedMcpToolset, build_mcp_toolsets_from_env, probe_mcp_toolsets, summarize_mcp_toolsets
+from .onboarding_adapters import (
+    ApiKeyProviderOnboardingAdapter,
+    resolve_channel_onboarding_adapter,
+    resolve_provider_onboarding_adapter,
+)
 from .provider import (
+    DEFAULT_PROVIDER,
     canonical_provider_name,
     normalize_model_name,
     normalize_provider_name,
@@ -47,6 +56,13 @@ from .runtime.adk_utils import extract_text, merge_text_stream
 from .runtime.cron_helpers import cron_store_path, format_schedule, format_timestamp_ms
 from .runtime.cron_service import CronService
 from .runtime.cron_schedule_parser import parse_schedule_input
+from .runtime.heartbeat_status_store import read_heartbeat_status_snapshot
+from .runtime.gateway_service import (
+    detect_service_manager,
+    gateway_service_name,
+    render_launchd_plist,
+    render_systemd_unit,
+)
 from .runtime.message_time import inject_request_time
 from .runtime.runner_factory import create_runner
 from .runtime.session_service import load_session_config
@@ -99,6 +115,125 @@ class McpProbePolicy:
     timeout_seconds: float
     retry_attempts: int
     retry_backoff_seconds: float
+
+
+LEGACY_PROVIDER_FIELD_MIGRATIONS = doctor_rules.LEGACY_PROVIDER_FIELD_MIGRATIONS
+LEGACY_CHANNEL_FIELD_MIGRATIONS = doctor_rules.LEGACY_CHANNEL_FIELD_MIGRATIONS
+CHANNEL_ENV_BACKFILL_MAPPINGS = doctor_rules.CHANNEL_ENV_BACKFILL_MAPPINGS
+
+
+DoctorFixOutcome = Literal["applied", "skipped", "failed"]
+
+
+@dataclass(frozen=True)
+class DoctorChannelEnvBackfillRule:
+    """Structured metadata for one doctor channel env-backfill rule."""
+
+    channel: str
+    key: str
+    env_name: str
+    rule: str = "channel_env_backfill"
+    code_applied: str = "channel.env.backfilled"
+    code_disabled: str = "channel.env.channel_disabled"
+    code_target_set: str = "channel.env.target_already_set"
+    code_source_missing: str = "channel.env.source_missing"
+
+    @property
+    def target_path(self) -> str:
+        return f"channels.{self.channel}.{self.key}"
+
+
+def _build_doctor_channel_env_backfill_rules() -> tuple[DoctorChannelEnvBackfillRule, ...]:
+    """Build doctor channel env-backfill rules from shared channel env mappings."""
+
+    return tuple(
+        DoctorChannelEnvBackfillRule(channel=channel, key=key, env_name=env_name)
+        for channel, key, env_name in CHANNEL_ENV_BACKFILL_MAPPINGS
+    )
+
+
+DOCTOR_CHANNEL_ENV_BACKFILL_RULES = doctor_rules.DOCTOR_CHANNEL_ENV_BACKFILL_RULES
+
+
+@dataclass(frozen=True)
+class DoctorChannelBoolEnvBackfillRule:
+    """Structured metadata for one doctor boolean env-backfill rule."""
+
+    channel: str
+    key: str
+    env_name: str
+    rule: str = "email_consent_backfill"
+    code_applied: str = "email.consent.backfilled"
+    code_present_not_truthy: str = "email.consent.present_not_truthy"
+    code_source_missing: str = "email.consent.source_missing"
+    truthy_values: tuple[str, ...] = ("1", "true", "yes", "on")
+
+    @property
+    def target_path(self) -> str:
+        return f"channels.{self.channel}.{self.key}"
+
+
+DOCTOR_CHANNEL_BOOL_ENV_BACKFILL_RULES = doctor_rules.DOCTOR_CHANNEL_BOOL_ENV_BACKFILL_RULES
+
+
+def _doctor_record_event(
+    *,
+    event_sink: list[dict[str, str]] | None,
+    outcome: DoctorFixOutcome,
+    code: str,
+    rule: str,
+    message: str,
+) -> None:
+    """Record a structured doctor-fix event for optional downstream diagnostics."""
+    if event_sink is None:
+        return
+    event_sink.append(
+        {
+            "outcome": outcome,
+            "code": code,
+            "rule": rule,
+            "message": message,
+        }
+    )
+
+
+def _doctor_add_change(
+    changes: list[str],
+    *,
+    event_sink: list[dict[str, str]] | None,
+    code: str,
+    rule: str,
+    message: str,
+) -> None:
+    """Append one applied change and its structured event."""
+    changes.append(message)
+    _doctor_record_event(event_sink=event_sink, outcome="applied", code=code, rule=rule, message=message)
+
+
+def _doctor_add_skipped(
+    skipped: list[str],
+    *,
+    event_sink: list[dict[str, str]] | None,
+    code: str,
+    rule: str,
+    message: str,
+) -> None:
+    """Append one skipped item and its structured event."""
+    skipped.append(message)
+    _doctor_record_event(event_sink=event_sink, outcome="skipped", code=code, rule=rule, message=message)
+
+
+def _doctor_add_failed(
+    failed: list[str],
+    *,
+    event_sink: list[dict[str, str]] | None,
+    code: str,
+    rule: str,
+    message: str,
+) -> None:
+    """Append one failed item and its structured event."""
+    failed.append(message)
+    _doctor_record_event(event_sink=event_sink, outcome="failed", code=code, rule=rule, message=message)
 
 
 def _load_mcp_probe_policy(*, timeout_env_name: str, timeout_default: float) -> McpProbePolicy:
@@ -462,11 +597,551 @@ def _provider_oauth_health(provider_name: str) -> tuple[str | None, dict[str, An
     return None, status
 
 
-def _cmd_doctor(*, output_json: bool = False, verbose: bool = False) -> int:
+def _doctor_apply_channel_legacy_migrations(
+    *,
+    channels_cfg: dict[str, Any],
+    raw_channels: dict[str, Any],
+    changes: list[str],
+    skipped: list[str],
+    event_sink: list[dict[str, str]] | None = None,
+) -> None:
+    """Apply channel snake_case -> camelCase migrations from raw config."""
+    for channel_name, legacy_key, target_key in doctor_rules.LEGACY_CHANNEL_FIELD_MIGRATIONS:
+        channel_cfg = channels_cfg.get(channel_name, {})
+        raw_channel_cfg = raw_channels.get(channel_name, {})
+        if not isinstance(channel_cfg, dict) or not isinstance(raw_channel_cfg, dict):
+            continue
+        if str(channel_cfg.get(target_key, "")).strip():
+            _doctor_add_skipped(
+                skipped,
+                event_sink=event_sink,
+                code="channel.legacy.target_already_set",
+                rule="channel_legacy_migration",
+                message=f"channels.{channel_name}.{target_key} already set",
+            )
+            continue
+        legacy_value = raw_channel_cfg.get(legacy_key)
+        if not str(legacy_value or "").strip():
+            _doctor_add_skipped(
+                skipped,
+                event_sink=event_sink,
+                code="channel.legacy.source_empty",
+                rule="channel_legacy_migration",
+                message=f"channels.{channel_name}.{legacy_key} empty",
+            )
+            continue
+        channel_cfg[target_key] = str(legacy_value).strip()
+        _doctor_add_change(
+            changes,
+            event_sink=event_sink,
+            code="channel.legacy.migrated",
+            rule="channel_legacy_migration",
+            message=f"channels.{channel_name}.{target_key} <- channels.{channel_name}.{legacy_key}",
+        )
+
+
+def _doctor_backfill_channel_fields_from_env(
+    *,
+    channels_cfg: dict[str, Any],
+    changes: list[str],
+    skipped: list[str],
+    event_sink: list[dict[str, str]] | None = None,
+) -> None:
+    """Backfill enabled channel fields from environment variables."""
+    for backfill_rule in doctor_rules.DOCTOR_CHANNEL_ENV_BACKFILL_RULES:
+        channel_cfg = channels_cfg.get(backfill_rule.channel, {})
+        if not isinstance(channel_cfg, dict) or not bool(channel_cfg.get("enabled")):
+            _doctor_add_skipped(
+                skipped,
+                event_sink=event_sink,
+                code=backfill_rule.code_disabled,
+                rule=backfill_rule.rule,
+                message=f"{backfill_rule.target_path} skipped (channel disabled)",
+            )
+            continue
+        if str(channel_cfg.get(backfill_rule.key, "")).strip():
+            _doctor_add_skipped(
+                skipped,
+                event_sink=event_sink,
+                code=backfill_rule.code_target_set,
+                rule=backfill_rule.rule,
+                message=f"{backfill_rule.target_path} already set",
+            )
+            continue
+        env_value = os.getenv(backfill_rule.env_name, "").strip()
+        if not env_value:
+            _doctor_add_skipped(
+                skipped,
+                event_sink=event_sink,
+                code=backfill_rule.code_source_missing,
+                rule=backfill_rule.rule,
+                message=f"{backfill_rule.env_name} missing",
+            )
+            continue
+        channel_cfg[backfill_rule.key] = env_value
+        _doctor_add_change(
+            changes,
+            event_sink=event_sink,
+            code=backfill_rule.code_applied,
+            rule=backfill_rule.rule,
+            message=f"{backfill_rule.target_path} <- {backfill_rule.env_name}",
+        )
+
+
+def _doctor_apply_provider_legacy_migrations(
+    *,
+    providers_cfg: dict[str, Any],
+    raw_providers: dict[str, Any],
+    changes: list[str],
+    skipped: list[str],
+    event_sink: list[dict[str, str]] | None = None,
+) -> None:
+    """Apply provider legacy key migrations from raw config."""
+    canonical_names = set(provider_names())
+    for raw_name, raw_item in raw_providers.items():
+        if not isinstance(raw_item, dict):
+            continue
+        canonical_name = canonical_provider_name(str(raw_name))
+        if canonical_name == str(raw_name) or canonical_name not in canonical_names:
+            continue
+        target = providers_cfg.get(canonical_name, {})
+        if not isinstance(target, dict):
+            continue
+        if bool(raw_item.get("enabled")) and not bool(target.get("enabled")):
+            target["enabled"] = True
+            _doctor_add_change(
+                changes,
+                event_sink=event_sink,
+                code="provider.legacy.enabled_migrated",
+                rule="provider_legacy_migration",
+                message=f"providers.{canonical_name}.enabled <- providers.{raw_name}.enabled",
+            )
+        elif bool(raw_item.get("enabled")) and bool(target.get("enabled")):
+            _doctor_add_skipped(
+                skipped,
+                event_sink=event_sink,
+                code="provider.legacy.enabled_kept",
+                rule="provider_legacy_migration",
+                message=f"providers.{canonical_name}.enabled kept existing value (source providers.{raw_name}.enabled)",
+            )
+        for key in ("apiKey", "model", "apiBase"):
+            if str(target.get(key, "")).strip():
+                _doctor_add_skipped(
+                    skipped,
+                    event_sink=event_sink,
+                    code="provider.legacy.target_already_set",
+                    rule="provider_legacy_migration",
+                    message=f"providers.{canonical_name}.{key} already set",
+                )
+                continue
+            value = raw_item.get(key)
+            if not str(value or "").strip():
+                _doctor_add_skipped(
+                    skipped,
+                    event_sink=event_sink,
+                    code="provider.legacy.source_empty",
+                    rule="provider_legacy_migration",
+                    message=f"providers.{raw_name}.{key} empty",
+                )
+                continue
+            target[key] = str(value).strip()
+            _doctor_add_change(
+                changes,
+                event_sink=event_sink,
+                code="provider.legacy.migrated",
+                rule="provider_legacy_migration",
+                message=f"providers.{canonical_name}.{key} <- providers.{raw_name}.{key}",
+            )
+        for legacy_key, target_key in doctor_rules.LEGACY_PROVIDER_FIELD_MIGRATIONS:
+            if str(target.get(target_key, "")).strip():
+                _doctor_add_skipped(
+                    skipped,
+                    event_sink=event_sink,
+                    code="provider.legacy.target_already_set",
+                    rule="provider_legacy_migration",
+                    message=f"providers.{canonical_name}.{target_key} already set",
+                )
+                continue
+            legacy_value = raw_item.get(legacy_key)
+            if not str(legacy_value or "").strip():
+                _doctor_add_skipped(
+                    skipped,
+                    event_sink=event_sink,
+                    code="provider.legacy.source_empty",
+                    rule="provider_legacy_migration",
+                    message=f"providers.{raw_name}.{legacy_key} empty",
+                )
+                continue
+            target[target_key] = str(legacy_value).strip()
+            _doctor_add_change(
+                changes,
+                event_sink=event_sink,
+                code="provider.legacy.migrated",
+                rule="provider_legacy_migration",
+                message=f"providers.{canonical_name}.{target_key} <- providers.{raw_name}.{legacy_key}",
+            )
+
+    for raw_name, raw_item in raw_providers.items():
+        if not isinstance(raw_item, dict):
+            continue
+        canonical_name = canonical_provider_name(str(raw_name))
+        if canonical_name not in canonical_names:
+            continue
+        target = providers_cfg.get(canonical_name, {})
+        if not isinstance(target, dict):
+            continue
+        for legacy_key, target_key in doctor_rules.LEGACY_PROVIDER_FIELD_MIGRATIONS:
+            if str(target.get(target_key, "")).strip():
+                continue
+            legacy_value = raw_item.get(legacy_key)
+            if not str(legacy_value or "").strip():
+                continue
+            target[target_key] = str(legacy_value).strip()
+            _doctor_add_change(
+                changes,
+                event_sink=event_sink,
+                code="provider.legacy.migrated",
+                rule="provider_legacy_migration",
+                message=f"providers.{canonical_name}.{target_key} <- providers.{raw_name}.{legacy_key}",
+            )
+
+
+def _doctor_ensure_active_provider(
+    *,
+    providers_cfg: dict[str, Any],
+    changes: list[str],
+    event_sink: list[dict[str, str]] | None = None,
+) -> str | None:
+    """Ensure one provider is enabled and return the active provider name."""
+    active_provider = next(
+        (
+            str(name)
+            for name, item in providers_cfg.items()
+            if isinstance(item, dict) and bool(item.get("enabled"))
+        ),
+        None,
+    )
+    if active_provider is not None:
+        return active_provider
+
+    default_provider_cfg = providers_cfg.get(DEFAULT_PROVIDER, {})
+    if isinstance(default_provider_cfg, dict):
+        default_provider_cfg["enabled"] = True
+        _doctor_add_change(
+            changes,
+            event_sink=event_sink,
+            code="provider.default.enabled",
+            rule="provider_default_enable",
+            message=f"providers.{DEFAULT_PROVIDER}.enabled <- true (doctor default)",
+        )
+        return DEFAULT_PROVIDER
+    return None
+
+
+def _doctor_ensure_at_least_one_enabled_channel(
+    *,
+    channels_cfg: dict[str, Any],
+    changes: list[str],
+    event_sink: list[dict[str, str]] | None = None,
+) -> None:
+    """Ensure at least one channel is enabled, falling back to local channel."""
+    enabled_channels = [
+        name
+        for name, item in channels_cfg.items()
+        if isinstance(item, dict) and bool(item.get("enabled"))
+    ]
+    if enabled_channels:
+        return
+    local_cfg = channels_cfg.get("local", {})
+    if isinstance(local_cfg, dict):
+        local_cfg["enabled"] = True
+        _doctor_add_change(
+            changes,
+            event_sink=event_sink,
+            code="channel.default.local_enabled",
+            rule="channel_default_enable",
+            message="channels.local.enabled <- true (doctor default)",
+        )
+
+
+def _doctor_backfill_email_consent_from_env(
+    *,
+    channels_cfg: dict[str, Any],
+    changes: list[str],
+    skipped: list[str],
+    event_sink: list[dict[str, str]] | None = None,
+) -> None:
+    """Backfill email consent flag from environment if email channel is enabled."""
+    for bool_rule in doctor_rules.DOCTOR_CHANNEL_BOOL_ENV_BACKFILL_RULES:
+        channel_cfg = channels_cfg.get(bool_rule.channel, {})
+        if not isinstance(channel_cfg, dict) or not bool(channel_cfg.get("enabled")) or bool(channel_cfg.get(bool_rule.key)):
+            continue
+
+        value_raw = os.getenv(bool_rule.env_name, "").strip()
+        if value_raw.lower() in set(bool_rule.truthy_values):
+            channel_cfg[bool_rule.key] = True
+            _doctor_add_change(
+                changes,
+                event_sink=event_sink,
+                code=bool_rule.code_applied,
+                rule=bool_rule.rule,
+                message=f"{bool_rule.target_path} <- {bool_rule.env_name}",
+            )
+        elif value_raw:
+            _doctor_add_skipped(
+                skipped,
+                event_sink=event_sink,
+                code=bool_rule.code_present_not_truthy,
+                rule=bool_rule.rule,
+                message=f"{bool_rule.env_name} present but not truthy",
+            )
+        else:
+            _doctor_add_skipped(
+                skipped,
+                event_sink=event_sink,
+                code=bool_rule.code_source_missing,
+                rule=bool_rule.rule,
+                message=f"{bool_rule.env_name} missing",
+            )
+
+
+def _doctor_backfill_provider_api_key_from_env(
+    *,
+    providers_cfg: dict[str, Any],
+    active_provider: str | None,
+    changes: list[str],
+    event_sink: list[dict[str, str]] | None = None,
+) -> None:
+    """Backfill active provider apiKey from env when apiKey is empty."""
+    if not active_provider:
+        return
+    item = providers_cfg.get(active_provider, {})
+    if not isinstance(item, dict):
+        return
+
+    for requirement in install_rules.INSTALL_PROVIDER_SUMMARY_REQUIREMENTS:
+        if requirement.env_name_resolver is None:
+            continue
+        env_name = requirement.env_name_resolver(active_provider) if requirement.env_name_resolver else ""
+        env_value = os.getenv(env_name, "").strip() if env_name else ""
+        if env_value and not str(item.get(requirement.key, "")).strip():
+            item[requirement.key] = env_value
+            _doctor_add_change(
+                changes,
+                event_sink=event_sink,
+                code=requirement.doctor_env_backfill_code or "provider.env.backfilled",
+                rule=requirement.doctor_env_backfill_rule,
+                message=f"providers.{active_provider}.{requirement.key} <- {env_name}",
+            )
+
+
+def _doctor_apply_minimal_fixes(
+    config_path: Path,
+    *,
+    dry_run: bool = False,
+    event_sink: list[dict[str, str]] | None = None,
+) -> tuple[list[str], list[str], list[str]]:
+    """Apply minimal config fixes from current environment values.
+
+    This is intentionally conservative: only fills missing fields for the
+    currently enabled provider/channels when matching env values are already
+    present.
+    """
+
+    cfg = load_config(config_path=config_path)
+    changes: list[str] = []
+    skipped: list[str] = []
+    failed: list[str] = []
+    raw: dict[str, Any] = {}
+    try:
+        raw_loaded = json.loads(config_path.read_text(encoding="utf-8"))
+        if isinstance(raw_loaded, dict):
+            raw = raw_loaded
+    except Exception:
+        raw = {}
+
+    providers_cfg = cfg.get("providers", {})
+    if isinstance(providers_cfg, dict):
+        # Migrate common legacy provider keys (e.g. openai-codex -> openai_codex)
+        # from raw config before normalized defaults drop unknown keys.
+        raw_providers = raw.get("providers", {}) if isinstance(raw, dict) else {}
+        if isinstance(raw_providers, dict):
+            _doctor_apply_provider_legacy_migrations(
+                providers_cfg=providers_cfg,
+                raw_providers=raw_providers,
+                changes=changes,
+                skipped=skipped,
+                event_sink=event_sink,
+            )
+
+        active_provider = _doctor_ensure_active_provider(
+            providers_cfg=providers_cfg,
+            changes=changes,
+            event_sink=event_sink,
+        )
+        _doctor_backfill_provider_api_key_from_env(
+            providers_cfg=providers_cfg,
+            active_provider=active_provider,
+            changes=changes,
+            event_sink=event_sink,
+        )
+
+    channels_cfg = cfg.get("channels", {})
+    raw_channels = raw.get("channels", {}) if isinstance(raw, dict) else {}
+    if isinstance(channels_cfg, dict) and isinstance(raw_channels, dict):
+        _doctor_apply_channel_legacy_migrations(
+            channels_cfg=channels_cfg,
+            raw_channels=raw_channels,
+            changes=changes,
+            skipped=skipped,
+            event_sink=event_sink,
+        )
+
+    if isinstance(channels_cfg, dict):
+        _doctor_ensure_at_least_one_enabled_channel(
+            channels_cfg=channels_cfg,
+            changes=changes,
+            event_sink=event_sink,
+        )
+
+        _doctor_backfill_channel_fields_from_env(
+            channels_cfg=channels_cfg,
+            changes=changes,
+            skipped=skipped,
+            event_sink=event_sink,
+        )
+
+        _doctor_backfill_email_consent_from_env(
+            channels_cfg=channels_cfg,
+            changes=changes,
+            skipped=skipped,
+            event_sink=event_sink,
+        )
+
+    if changes and not dry_run:
+        try:
+            save_config(cfg, config_path=config_path)
+        except Exception as exc:
+            _doctor_add_failed(
+                failed,
+                event_sink=event_sink,
+                code="config.save.failed",
+                rule="persist_config",
+                message=f"save_config failed: {exc}",
+            )
+    return changes, skipped, failed
+
+
+def _doctor_event_summary(events: list[dict[str, str]]) -> tuple[dict[str, int], dict[str, dict[str, int]]]:
+    """Build reason-code and per-rule counters from structured doctor events."""
+    reason_codes: dict[str, int] = {}
+    by_rule: dict[str, dict[str, int]] = {}
+    for event in events:
+        code = str(event.get("code", "")).strip()
+        rule = str(event.get("rule", "")).strip() or "unknown"
+        outcome = str(event.get("outcome", "")).strip()
+        if code:
+            reason_codes[code] = reason_codes.get(code, 0) + 1
+        if rule not in by_rule:
+            by_rule[rule] = {"applied": 0, "skipped": 0, "failed": 0, "total": 0}
+        if outcome in {"applied", "skipped", "failed"}:
+            by_rule[rule][outcome] += 1
+        by_rule[rule]["total"] += 1
+    return reason_codes, by_rule
+
+
+def _doctor_fix_summary(
+    changes: list[str],
+    skipped: list[str],
+    failed: list[str],
+    *,
+    events: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Build grouped summary for doctor fix changes."""
+
+    grouped: dict[str, list[str]] = {
+        "defaults": [],
+        "env_backfill": [],
+        "legacy_migration": [],
+        "other": [],
+    }
+    for item in changes:
+        if "(doctor default)" in item:
+            grouped["defaults"].append(item)
+            continue
+        rhs = item.split("<-", 1)[1].strip() if "<-" in item else ""
+        if rhs and rhs.isupper() and "_" in rhs:
+            grouped["env_backfill"].append(item)
+            continue
+        if rhs.startswith("providers.") or rhs.startswith("channels."):
+            grouped["legacy_migration"].append(item)
+            continue
+        grouped["other"].append(item)
+    counts = {name: len(items) for name, items in grouped.items()}
+    reason_codes: dict[str, int] = {}
+    by_rule: dict[str, dict[str, int]] = {}
+    if events:
+        reason_codes, by_rule = _doctor_event_summary(events)
+
+    return {
+        "applied": len(changes),
+        "skipped": len(skipped),
+        "failed": len(failed),
+        "counts": counts,
+        "grouped": grouped,
+        "skippedItems": skipped,
+        "failedItems": failed,
+        "reasonCodes": reason_codes,
+        "byRule": by_rule,
+    }
+
+
+def _cmd_doctor(
+    *,
+    output_json: bool = False,
+    verbose: bool = False,
+    fix: bool = False,
+    fix_dry_run: bool = False,
+) -> int:
     """Run runtime diagnostics and return a process exit code.
 
     When `output_json` is true, emits one machine-readable JSON payload.
     """
+    config_path = get_config_path()
+    fix_changes: list[str] = []
+    fix_skipped: list[str] = []
+    fix_failed: list[str] = []
+    fix_events: list[dict[str, str]] = []
+    if fix:
+        fix_changes, fix_skipped, fix_failed = _doctor_apply_minimal_fixes(
+            config_path,
+            dry_run=fix_dry_run,
+            event_sink=fix_events,
+        )
+        fix_summary = _doctor_fix_summary(fix_changes, fix_skipped, fix_failed, events=fix_events)
+        if not output_json:
+            if fix_changes:
+                for item in fix_changes:
+                    _stdout_line(f"Doctor fix {'planned' if fix_dry_run else 'applied'}: {item}")
+                _stdout_line(
+                    "Doctor fix summary: "
+                    f"dry_run={fix_dry_run}, "
+                    f"applied={fix_summary['applied']}, "
+                    f"skipped={fix_summary['skipped']}, "
+                    f"failed={fix_summary['failed']}, "
+                    f"defaults={fix_summary['counts']['defaults']}, "
+                    f"env_backfill={fix_summary['counts']['env_backfill']}, "
+                    f"legacy_migration={fix_summary['counts']['legacy_migration']}, "
+                    f"other={fix_summary['counts']['other']}"
+                )
+                if fix_failed:
+                    for item in fix_failed:
+                        _stdout_line(f"Doctor fix failed: {item}")
+            else:
+                _stdout_line("Doctor fix: no config changes applied.")
+    else:
+        fix_summary = _doctor_fix_summary([], [], [], events=[])
+
     issues: list[str] = []
     if shutil.which("adk") is None:
         issues.append("Missing `adk` CLI. Install with: pip install google-adk")
@@ -490,7 +1165,6 @@ def _cmd_doctor(*, output_json: bool = False, verbose: bool = False) -> int:
         if oauth_issue:
             issues.append(oauth_issue)
 
-    config_path = get_config_path()
     registry = get_registry()
     skills_count = len(registry.list_skills())
     session_cfg = load_session_config()
@@ -501,6 +1175,8 @@ def _cmd_doctor(*, output_json: bool = False, verbose: bool = False) -> int:
         bridge_issue = _check_whatsapp_bridge_ready()
         if bridge_issue:
             issues.append(bridge_issue)
+    heartbeat_snapshot = read_heartbeat_status_snapshot(registry.workspace)
+    install_prereqs = _install_prereq_lines()
     web_enabled = env_enabled("OPENHERON_WEB_ENABLED", default=True)
     web_search_enabled = env_enabled("OPENHERON_WEB_SEARCH_ENABLED", default=True)
     web_search_provider = os.getenv("OPENHERON_WEB_SEARCH_PROVIDER", "brave").strip().lower() or "brave"
@@ -548,9 +1224,22 @@ def _cmd_doctor(*, output_json: bool = False, verbose: bool = False) -> int:
             "model": provider_model,
             "oauth": provider_oauth,
         },
+        "fix": {
+            "applied": bool(fix_changes),
+            "dryRun": bool(fix_dry_run),
+            "changes": fix_changes,
+            "reasonCodes": fix_summary["reasonCodes"],
+            "byRule": fix_summary["byRule"],
+            "summary": fix_summary,
+        },
         "skills": {"count": skills_count},
         "session": {"db_url": session_cfg.db_url},
         "channels": {"configured": configured_channels},
+        "installPrereqs": install_prereqs,
+        "heartbeat": {
+            "snapshot_available": heartbeat_snapshot is not None,
+            "status": heartbeat_snapshot or {},
+        },
         "web": {
             "enabled": web_enabled and web_search_enabled,
             "provider": web_search_provider,
@@ -590,6 +1279,10 @@ def _cmd_doctor(*, output_json: bool = False, verbose: bool = False) -> int:
     logger.debug(f"Session storage: sqlite ({session_cfg.db_url})")
     logger.debug(f"Configured channels: {', '.join(configured_channels) if configured_channels else '(none)'}")
     logger.debug(
+        "Heartbeat status snapshot: "
+        f"{'available' if heartbeat_snapshot is not None else 'missing'}"
+    )
+    logger.debug(
         "Web search: "
         f"enabled={web_enabled and web_search_enabled}, "
         f"provider={web_search_provider}, "
@@ -628,6 +1321,19 @@ def _cmd_doctor(*, output_json: bool = False, verbose: bool = False) -> int:
         _stdout_line("Doctor details:")
         _stdout_line(json.dumps(report, ensure_ascii=False, indent=2))
 
+    for line in install_prereqs:
+        _stdout_line(_doctor_install_prereq_line(line))
+
+    if heartbeat_snapshot is None:
+        _stdout_line("Heartbeat: snapshot=missing")
+    else:
+        _stdout_line(
+            "Heartbeat: "
+            f"last_status={heartbeat_snapshot.get('last_status', '-')}, "
+            f"last_reason={heartbeat_snapshot.get('last_reason', '-')}, "
+            f"reasons={json.dumps(heartbeat_snapshot.get('recent_reason_counts', {}), ensure_ascii=False)}"
+        )
+
     if issues:
         _stdout_line("Issues:")
         for item in issues:
@@ -636,6 +1342,18 @@ def _cmd_doctor(*, output_json: bool = False, verbose: bool = False) -> int:
 
     _stdout_line("Environment looks good.")
     return 0
+
+
+def _doctor_install_prereq_line(line: str) -> str:
+    """Render one install prereq line with a lightweight health status tag."""
+
+    normalized = str(line).strip()
+    if normalized.lower().startswith("install prereq:"):
+        normalized = normalized.split(":", 1)[1].strip()
+    lower = normalized.lower()
+    is_warn = "not found" in lower or "missing" in lower
+    level = "warn" if is_warn else "ok"
+    return f"Install prereq [{level}]: {normalized}"
 
 
 _PROVIDER_LOGIN_HANDLERS: dict[str, Callable[[], None]] = {}
@@ -1224,6 +1942,461 @@ def _cmd_onboard(force: bool) -> int:
     return 0
 
 
+InstallChannelPromptRule = install_rules.InstallChannelPromptRule
+InstallProviderSummaryRequirement = install_rules.InstallProviderSummaryRequirement
+InstallChannelSummaryRequirement = install_rules.InstallChannelSummaryRequirement
+INSTALL_CHANNEL_PROMPT_RULES = install_rules.INSTALL_CHANNEL_PROMPT_RULES
+INSTALL_CHANNEL_SUMMARY_REQUIREMENTS = install_rules.build_install_channel_summary_requirements()
+INSTALL_PROVIDER_SUMMARY_REQUIREMENTS = install_rules.INSTALL_PROVIDER_SUMMARY_REQUIREMENTS
+
+
+def _build_install_channel_summary_requirements() -> tuple[InstallChannelSummaryRequirement, ...]:
+    """Compatibility wrapper: delegate summary requirement build to install rules module."""
+
+    return install_rules.build_install_channel_summary_requirements()
+
+
+def _install_summary_provider_missing(*, selected_provider: str, provider_cfg: dict[str, Any]) -> list[str]:
+    """Compatibility wrapper: delegate provider missing checks to install rules module."""
+
+    return install_rules.install_summary_provider_missing(
+        selected_provider=selected_provider,
+        provider_cfg=provider_cfg,
+        requirements=INSTALL_PROVIDER_SUMMARY_REQUIREMENTS,
+    )
+
+
+def _install_summary_provider_fix_hints(*, selected_provider: str, config_path: Path) -> dict[str, str]:
+    """Compatibility wrapper: delegate provider hint rendering to install rules module."""
+
+    return install_rules.install_summary_provider_fix_hints(
+        selected_provider=selected_provider,
+        config_path=config_path,
+        requirements=INSTALL_PROVIDER_SUMMARY_REQUIREMENTS,
+    )
+
+
+def _install_channel_value_missing(
+    *,
+    cfg: dict[str, Any],
+    key: str,
+    presence: Literal["truthy_bool", "non_empty_strip", "non_empty_raw"],
+) -> bool:
+    """Compatibility wrapper: delegate channel missing predicate to install rules module."""
+
+    return install_rules.install_channel_value_missing(cfg=cfg, key=key, presence=presence)
+
+
+def _install_summary_channel_missing(channels_cfg: dict[str, Any]) -> list[str]:
+    """Compatibility wrapper: delegate channel missing checks to install rules module."""
+
+    return install_rules.install_summary_channel_missing(
+        channels_cfg=channels_cfg,
+        requirements=INSTALL_CHANNEL_SUMMARY_REQUIREMENTS,
+    )
+
+
+def _install_summary_channel_fix_hints(config_path: Path) -> dict[str, str]:
+    """Compatibility wrapper: delegate channel hint rendering to install rules module."""
+
+    return install_rules.install_summary_channel_fix_hints(
+        config_path=config_path,
+        requirements=INSTALL_CHANNEL_SUMMARY_REQUIREMENTS,
+    )
+
+
+def _install_summary_missing(
+    *,
+    selected_provider: str,
+    provider_cfg: dict[str, Any],
+    channels_cfg: dict[str, Any],
+) -> list[str]:
+    """Compatibility wrapper: delegate missing aggregation to install rules module."""
+
+    return install_rules.install_summary_missing(
+        selected_provider=selected_provider,
+        provider_cfg=provider_cfg,
+        channels_cfg=channels_cfg,
+        provider_requirements=INSTALL_PROVIDER_SUMMARY_REQUIREMENTS,
+        channel_requirements=INSTALL_CHANNEL_SUMMARY_REQUIREMENTS,
+    )
+
+
+def _install_summary_fix_hints(*, missing: list[str], selected_provider: str, config_path: Path) -> list[str]:
+    """Compatibility wrapper: delegate fix-hint rendering to install rules module."""
+
+    return install_rules.install_summary_fix_hints(
+        missing=missing,
+        selected_provider=selected_provider,
+        config_path=config_path,
+        provider_requirements=INSTALL_PROVIDER_SUMMARY_REQUIREMENTS,
+        channel_requirements=INSTALL_CHANNEL_SUMMARY_REQUIREMENTS,
+    )
+
+
+def _apply_install_channel_prompt_rules(
+    *,
+    channels_cfg: dict[str, Any],
+    enabled_channels: list[str],
+    input_fn: Callable[[str], str],
+    secret_input_fn: Callable[[str], str] | None = None,
+) -> None:
+    """Compatibility wrapper: delegate channel credential prompts to install rules module."""
+
+    install_rules.apply_install_channel_prompt_rules(
+        channels_cfg=channels_cfg,
+        enabled_channels=enabled_channels,
+        input_fn=input_fn,
+        secret_input_fn=secret_input_fn,
+    )
+
+
+def _run_install_interactive_setup(
+    *,
+    config_path: Path,
+    input_fn: Callable[[str], str],
+    select_fn: Callable[[str, list[str], str], str] | None = None,
+    secret_input_fn: Callable[[str], str] | None = None,
+    multi_select_fn: Callable[[str, list[str], list[str]], list[str]] | None = None,
+) -> None:
+    """Collect minimal interactive install choices and persist config changes."""
+
+    config = load_config(config_path=config_path)
+    providers_cfg = config.get("providers", {})
+    available = [name for name in provider_names() if name in providers_cfg]
+    if not available:
+        return
+    enabled_now = next((name for name in available if providers_cfg.get(name, {}).get("enabled")), available[0])
+    labels = [f"{name}{' (current)' if name == enabled_now else ''}" for name in available]
+    label_to_provider = {label: name for label, name in zip(labels, available)}
+
+    attempts = 0
+    while attempts < 3:
+        if select_fn is not None:
+            raw_provider = select_fn(
+                "Choose provider",
+                [*labels, "skip"],
+                next((label for label in labels if label_to_provider[label] == enabled_now), labels[0]),
+            ).strip()
+        else:
+            _stdout_line(
+                f"Install setup: choose provider {available} (current: {enabled_now}, Enter keeps current, 'skip' to skip)."
+            )
+            raw_provider = input_fn("Provider> ").strip()
+        if not raw_provider or raw_provider.lower() == "skip":
+            break
+        selected = label_to_provider.get(raw_provider)
+        if not selected:
+            selected = canonical_provider_name(raw_provider)
+        if selected in available:
+            for name in available:
+                providers_cfg[name]["enabled"] = name == selected
+            enabled_now = selected
+            break
+        attempts += 1
+        _stdout_line(f"Install setup: unknown provider '{raw_provider}', try again or input 'skip'.")
+
+    key_env = provider_api_key_env(enabled_now)
+    provider_spec = find_provider_spec(enabled_now)
+    provider_adapter = resolve_provider_onboarding_adapter(enabled_now)
+    if provider_adapter is None and key_env and not (provider_spec and provider_spec.is_oauth):
+        provider_adapter = ApiKeyProviderOnboardingAdapter(
+            provider_name=enabled_now,
+            prompt=f"API key for {enabled_now} (recommended now, press Enter to skip for now)> ",
+        )
+    if provider_adapter is not None:
+        provider_adapter.collect_credentials(
+            provider_cfg=providers_cfg[enabled_now],
+            input_fn=input_fn,
+            secret_input_fn=secret_input_fn,
+        )
+
+    channels_cfg = config.get("channels", {})
+    if isinstance(channels_cfg, dict):
+        channel_names = [
+            str(name)
+            for name, item in channels_cfg.items()
+            if isinstance(item, dict) and "enabled" in item
+        ]
+        enabled_channels = [
+            name for name in channel_names if bool(channels_cfg.get(name, {}).get("enabled"))
+        ]
+        if channel_names:
+            channel_labels = [f"{name}{' (enabled)' if name in enabled_channels else ''}" for name in channel_names]
+            label_to_channel = {label: name for label, name in zip(channel_labels, channel_names)}
+            raw_channels: list[str]
+            if multi_select_fn is not None:
+                defaults = [label for label in channel_labels if label_to_channel[label] in enabled_channels]
+                raw_channels = [str(item).strip() for item in multi_select_fn("Enable channels", channel_labels, defaults)]
+            else:
+                _stdout_line(
+                    "Install setup: choose enabled channels "
+                    f"{channel_names} (comma separated, Enter keeps current)."
+                )
+                raw_text = input_fn("Channels> ").strip()
+                raw_channels = _parse_csv_list(raw_text) if raw_text else []
+            if raw_channels:
+                resolved_channels: list[str] = []
+                for raw in raw_channels:
+                    selected = label_to_channel.get(raw)
+                    if selected is None and raw in channel_names:
+                        selected = raw
+                    if selected and selected not in resolved_channels:
+                        resolved_channels.append(selected)
+                if not resolved_channels:
+                    _stdout_line("Install setup: no valid channels selected, keep current channels.")
+                else:
+                    for name in channel_names:
+                        channels_cfg[name]["enabled"] = name in resolved_channels
+                    if not any(bool(channels_cfg.get(name, {}).get("enabled")) for name in channel_names) and "local" in channel_names:
+                        channels_cfg["local"]["enabled"] = True
+        enabled_after = [name for name in channel_names if bool(channels_cfg.get(name, {}).get("enabled"))]
+        fallback_channels: list[str] = []
+        for channel_name in enabled_after:
+            channel_cfg = channels_cfg.get(channel_name, {})
+            if not isinstance(channel_cfg, dict):
+                continue
+            channel_adapter = resolve_channel_onboarding_adapter(channel_name)
+            if channel_adapter is None:
+                fallback_channels.append(channel_name)
+                continue
+            channel_adapter.collect_credentials(
+                channel_cfg=channel_cfg,
+                input_fn=input_fn,
+                secret_input_fn=secret_input_fn,
+            )
+        if fallback_channels:
+            install_rules.apply_install_channel_prompt_rules(
+                channels_cfg=channels_cfg,
+                enabled_channels=fallback_channels,
+                input_fn=input_fn,
+                secret_input_fn=secret_input_fn,
+            )
+
+    save_config(config, config_path=config_path)
+    _stdout_line(f"Install setup saved: {config_path}")
+
+
+def _install_step_line(step: int, total: int, message: str) -> None:
+    """Render one install step line, using rich style when available."""
+
+    try:
+        from rich import print as rich_print  # type: ignore
+
+        rich_print(f"[bold cyan]Install step {step}/{total}:[/bold cyan] {message}")
+    except Exception:
+        _stdout_line(f"Install step {step}/{total}: {message}")
+
+
+def _interactive_install_input(prompt: str) -> str:
+    """Read one install input value, using questionary when available."""
+
+    try:
+        import questionary  # type: ignore
+
+        answer = questionary.text(prompt).ask()
+        return str(answer or "")
+    except Exception:
+        return input(prompt)
+
+
+def _interactive_install_select(prompt: str, choices: list[str], default: str) -> str:
+    """Select one install option, using questionary when available."""
+
+    try:
+        import questionary  # type: ignore
+
+        answer = questionary.select(prompt, choices=choices, default=default).ask()
+        return str(answer or "")
+    except Exception:
+        return input(f"{prompt} {choices} (default: {default})> ")
+
+
+def _interactive_install_secret(prompt: str) -> str:
+    """Read one secret install value, using questionary password when available."""
+
+    try:
+        import questionary  # type: ignore
+
+        answer = questionary.password(prompt).ask()
+        return str(answer or "")
+    except Exception:
+        return input(prompt)
+
+
+def _interactive_install_multi_select(prompt: str, choices: list[str], defaults: list[str]) -> list[str]:
+    """Read multi-select install options, using questionary when available."""
+
+    try:
+        import questionary  # type: ignore
+
+        answer = questionary.checkbox(prompt, choices=choices, default=defaults).ask()
+        if not answer:
+            return []
+        return [str(item) for item in answer]
+    except Exception:
+        raw = input(f"{prompt} {choices} (comma separated, Enter keeps current)> ").strip()
+        return _parse_csv_list(raw) if raw else []
+
+
+def _install_summary_lines(config_path: Path) -> list[str]:
+    """Build short install summary lines for operator visibility."""
+
+    config = load_config(config_path=config_path)
+    provider_cfg = config.get("providers", {})
+    selected_provider = "-"
+    if isinstance(provider_cfg, dict):
+        for name, item in provider_cfg.items():
+            if isinstance(item, dict) and bool(item.get("enabled")):
+                selected_provider = str(name)
+                break
+
+    channels_cfg = config.get("channels", {})
+    enabled_channels: list[str] = []
+    if isinstance(channels_cfg, dict):
+        for name, item in channels_cfg.items():
+            if isinstance(item, dict) and bool(item.get("enabled")):
+                enabled_channels.append(str(name))
+    channel_args = ",".join(enabled_channels) if enabled_channels else "local"
+    gateway_cmd = f"openheron gateway --channels {channel_args}"
+
+    provider_cfg_dict = provider_cfg if isinstance(provider_cfg, dict) else {}
+    channels_cfg_dict = channels_cfg if isinstance(channels_cfg, dict) else {}
+    missing = install_rules.install_summary_missing(
+        selected_provider=selected_provider,
+        provider_cfg=provider_cfg_dict,
+        channels_cfg=channels_cfg_dict,
+        provider_requirements=install_rules.INSTALL_PROVIDER_SUMMARY_REQUIREMENTS,
+        channel_requirements=INSTALL_CHANNEL_SUMMARY_REQUIREMENTS,
+    )
+
+    lines = [f"Install summary: provider={selected_provider}, channels={enabled_channels or ['(none)']}"]
+    if missing:
+        lines.append(f"Install summary: missing={missing}")
+        fix_hints = install_rules.install_summary_fix_hints(
+            missing=missing,
+            selected_provider=selected_provider,
+            config_path=config_path,
+            provider_requirements=install_rules.INSTALL_PROVIDER_SUMMARY_REQUIREMENTS,
+            channel_requirements=INSTALL_CHANNEL_SUMMARY_REQUIREMENTS,
+        )
+        lines.append(f"Install summary: fixes={fix_hints}")
+        lines.append("Install summary: next[1]=openheron doctor")
+        lines.append(f"Install summary: next[2]={gateway_cmd}")
+    else:
+        lines.append("Install summary: no required fields missing for selected provider/channels.")
+        lines.append("Install summary: next[1]=openheron doctor")
+        lines.append(f"Install summary: next[2]={gateway_cmd}")
+    return lines
+
+
+def _install_gateway_channels(config_path: Path, preferred_channels: str | None) -> str:
+    """Resolve gateway channels used by install follow-up and daemon install."""
+
+    if preferred_channels and preferred_channels.strip():
+        return ",".join(parse_enabled_channels(preferred_channels))
+
+    config = load_config(config_path=config_path)
+    channels_cfg = config.get("channels", {})
+    enabled_channels: list[str] = []
+    if isinstance(channels_cfg, dict):
+        for name, item in channels_cfg.items():
+            if isinstance(item, dict) and bool(item.get("enabled")):
+                enabled_channels.append(str(name))
+    return ",".join(enabled_channels) if enabled_channels else "local"
+
+
+def _install_prereq_lines() -> list[str]:
+    """Build lightweight prerequisite check lines for install UX."""
+
+    lines: list[str] = []
+    cwd = Path.cwd()
+    venv_dir = cwd / ".venv"
+    unix_python = venv_dir / "bin" / "python"
+    win_python = venv_dir / "Scripts" / "python.exe"
+    if unix_python.exists() or win_python.exists():
+        lines.append(f"Install prereq: virtualenv detected at {venv_dir}")
+    else:
+        lines.append(f"Install prereq: .venv not found under {cwd} (recommended: python3.14 -m venv .venv)")
+
+    adk_path = shutil.which("adk")
+    if adk_path:
+        lines.append(f"Install prereq: adk CLI detected at {adk_path}")
+    else:
+        lines.append("Install prereq: adk CLI not found (recommended: pip install google-adk)")
+
+    if importlib.util.find_spec("questionary") is None:
+        lines.append("Install prereq: optional package questionary missing (interactive installer falls back to plain input)")
+    else:
+        lines.append("Install prereq: optional package questionary detected")
+    if importlib.util.find_spec("rich") is None:
+        lines.append("Install prereq: optional package rich missing (installer falls back to plain output)")
+    else:
+        lines.append("Install prereq: optional package rich detected")
+    return lines
+
+
+def _cmd_install(
+    *,
+    force: bool,
+    non_interactive: bool,
+    accept_risk: bool = False,
+    install_daemon: bool = False,
+    daemon_channels: str | None = None,
+) -> int:
+    """Run a minimal installation flow for first-time local setup."""
+    if non_interactive and not accept_risk:
+        _stdout_line("Non-interactive install requires explicit risk acknowledgement.")
+        _stdout_line("Re-run with: openheron install --non-interactive --accept-risk")
+        return 1
+
+    total_steps = 3 if install_daemon else 2
+    _install_step_line(1, total_steps, "initializing config and workspace...")
+    onboard_code = _cmd_onboard(force=force)
+    if onboard_code != 0:
+        return onboard_code
+
+    config_path = get_config_path()
+    if not non_interactive:
+        if sys.stdin.isatty():
+            _run_install_interactive_setup(
+                config_path=config_path,
+                input_fn=_interactive_install_input,
+                select_fn=_interactive_install_select,
+                secret_input_fn=_interactive_install_secret,
+                multi_select_fn=_interactive_install_multi_select,
+            )
+        else:
+            _stdout_line("Install setup skipped: non-interactive terminal.")
+    for line in _install_summary_lines(config_path):
+        _stdout_line(line)
+    for line in _install_prereq_lines():
+        _stdout_line(line)
+
+    bootstrap_env_from_config()
+    _install_step_line(2, total_steps, "running environment checks...")
+    doctor_code = _cmd_doctor(output_json=False, verbose=False)
+    if doctor_code != 0:
+        _stdout_line("Install completed with issues. Fix the items above, then rerun `openheron doctor`.")
+        return 1
+
+    if install_daemon:
+        channels_value = _install_gateway_channels(config_path, daemon_channels)
+        _install_step_line(3, total_steps, "installing gateway daemon...")
+        daemon_code = _cmd_gateway_service_install(force=force, channels=channels_value, enable=True)
+        if daemon_code != 0:
+            _stdout_line("Install daemon setup failed. Main install is complete; please run daemon install manually.")
+            _stdout_line(
+                f"Install daemon retry: openheron gateway-service install --enable --channels {channels_value}"
+            )
+        else:
+            _stdout_line("Install daemon setup complete.")
+
+    if not non_interactive:
+        _stdout_line("Install complete. Next: run `openheron gateway`.")
+    return 0
+
+
 def _cmd_gateway_local(sender_id: str, chat_id: str) -> int:
     return _cmd_gateway(channels="local", sender_id=sender_id, chat_id=chat_id, interactive_local=True)
 
@@ -1595,6 +2768,163 @@ def _dispatch_cron_command(args: argparse.Namespace, parser: argparse.ArgumentPa
     return handler()
 
 
+def _cmd_heartbeat_status(*, output_json: bool) -> int:
+    workspace = load_security_policy().workspace_root
+    snapshot = read_heartbeat_status_snapshot(workspace)
+    if output_json:
+        _stdout_line(json.dumps(snapshot or {}, ensure_ascii=False))
+        return 0
+    if not snapshot:
+        _stdout_line("Heartbeat status: no runtime snapshot yet.")
+        return 0
+    delivery = snapshot.get("last_delivery")
+    delivery_kind = delivery.get("kind") if isinstance(delivery, dict) else "-"
+    _stdout_line(
+        "Heartbeat status: "
+        f"running={snapshot.get('running', False)}, "
+        f"enabled={snapshot.get('enabled', False)}, "
+        f"last_status={snapshot.get('last_status', '-')}, "
+        f"last_reason={snapshot.get('last_reason', '-')}, "
+        f"target_mode={snapshot.get('target_mode', '-')}, "
+        f"last_delivery_kind={delivery_kind}"
+    )
+    _stdout_line(
+        f"Heartbeat recent reasons: {json.dumps(snapshot.get('recent_reason_counts', {}), ensure_ascii=False)}"
+    )
+    return 0
+
+
+def _gateway_service_manifest_path(manager: str, service_name: str) -> Path:
+    """Return user-level gateway service manifest path for one service manager."""
+
+    if manager == "launchd":
+        return Path.home() / "Library" / "LaunchAgents" / f"{service_name}.plist"
+    return Path.home() / ".config" / "systemd" / "user" / f"{service_name}.service"
+
+
+def _gateway_service_exec_argv(channels: str) -> tuple[str, list[str]]:
+    """Return executable argv used by generated gateway service manifests."""
+
+    openheron_bin = shutil.which("openheron")
+    if openheron_bin:
+        return openheron_bin, ["gateway", "--channels", channels]
+    return sys.executable, ["-m", "openheron.cli", "gateway", "--channels", channels]
+
+
+def _run_gateway_service_enable(*, manager: str, manifest_path: Path, service_name: str) -> tuple[bool, str]:
+    """Enable and start the gateway service via platform-native service manager."""
+
+    try:
+        if manager == "launchd":
+            subprocess.run(["launchctl", "load", "-w", str(manifest_path)], check=True)
+            return True, f"launchctl loaded: {manifest_path}"
+        subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+        subprocess.run(["systemctl", "--user", "enable", "--now", f"{service_name}.service"], check=True)
+        return True, f"systemd user service enabled: {service_name}.service"
+    except FileNotFoundError as exc:
+        return False, f"service manager command not found: {exc}"
+    except subprocess.CalledProcessError as exc:
+        return False, f"service manager command failed: {exc}"
+
+
+def _cmd_gateway_service_install(*, force: bool, channels: str, enable: bool) -> int:
+    """Install a user-level gateway service manifest for supported platforms."""
+
+    manager = detect_service_manager()
+    if manager == "unsupported":
+        _stdout_line("Gateway service install is only supported on macOS (launchd) and Linux (systemd user).")
+        return 1
+
+    channels_value = ",".join(parse_enabled_channels(channels))
+    service_name = gateway_service_name("openheron")
+    manifest_path = _gateway_service_manifest_path(manager, service_name)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    if manifest_path.exists() and not force:
+        _stdout_line(f"Gateway service manifest already exists: {manifest_path} (use --force to overwrite)")
+        return 1
+
+    program, args = _gateway_service_exec_argv(channels_value)
+    logs_dir = get_data_dir() / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    stdout_log = logs_dir / "gateway-service.out.log"
+    stderr_log = logs_dir / "gateway-service.err.log"
+    config_path = get_config_path()
+    workspace = Path(
+        str(load_config(config_path=config_path).get("agent", {}).get("workspace", "")).strip() or Path.cwd()
+    ).expanduser()
+    workspace.mkdir(parents=True, exist_ok=True)
+
+    if manager == "launchd":
+        manifest = render_launchd_plist(
+            label=service_name,
+            program=program,
+            args=args,
+            working_directory=workspace,
+            env={"OPENHERON_CHANNELS": channels_value},
+            stdout_path=stdout_log,
+            stderr_path=stderr_log,
+        )
+        enable_hint = f"launchctl load -w {manifest_path}"
+        disable_hint = f"launchctl unload {manifest_path}"
+    else:
+        exec_start = " ".join([program, *args])
+        manifest = render_systemd_unit(
+            description="Openheron Gateway Service",
+            exec_start=exec_start,
+            working_directory=workspace,
+            env={"OPENHERON_CHANNELS": channels_value},
+        )
+        enable_hint = f"systemctl --user daemon-reload && systemctl --user enable --now {service_name}.service"
+        disable_hint = f"systemctl --user disable --now {service_name}.service"
+
+    manifest_path.write_text(manifest, encoding="utf-8")
+    _stdout_line(f"Gateway service manifest written: {manifest_path}")
+    _stdout_line(f"Gateway service manager: {manager}")
+    _stdout_line(f"Gateway service channels: {channels_value}")
+    _stdout_line(f"Next enable command: {enable_hint}")
+    _stdout_line(f"Stop/disable command: {disable_hint}")
+    if enable:
+        ok, message = _run_gateway_service_enable(
+            manager=manager,
+            manifest_path=manifest_path,
+            service_name=service_name,
+        )
+        if ok:
+            _stdout_line(f"Gateway service enable succeeded: {message}")
+            return 0
+        _stdout_line(f"Gateway service enable failed: {message}")
+        return 1
+    return 0
+
+
+def _cmd_gateway_service_status(*, output_json: bool) -> int:
+    """Show gateway service manifest status for current platform."""
+
+    manager = detect_service_manager()
+    service_name = gateway_service_name("openheron")
+    payload: dict[str, Any] = {
+        "supported": manager != "unsupported",
+        "manager": manager,
+        "serviceName": service_name,
+    }
+    if manager != "unsupported":
+        manifest_path = _gateway_service_manifest_path(manager, service_name)
+        payload["manifestPath"] = str(manifest_path)
+        payload["manifestExists"] = manifest_path.exists()
+
+    if output_json:
+        _stdout_line(json.dumps(payload, ensure_ascii=False))
+    else:
+        if manager == "unsupported":
+            _stdout_line("Gateway service: unsupported platform")
+        else:
+            _stdout_line(
+                f"Gateway service: manager={manager}, name={service_name}, "
+                f"manifest={payload.get('manifestPath')}, exists={payload.get('manifestExists')}"
+            )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="openheron",
@@ -1618,6 +2948,35 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Overwrite existing config with defaults.",
     )
+    install_parser = subparsers.add_parser(
+        "install",
+        help="Run guided installation (onboard + setup + doctor + next-step hints).",
+    )
+    install_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Reset config to defaults before running checks.",
+    )
+    install_parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Skip interactive setup prompts (still prints install summary and next-step commands).",
+    )
+    install_parser.add_argument(
+        "--accept-risk",
+        action="store_true",
+        help="Acknowledge non-interactive install risks (required with --non-interactive).",
+    )
+    install_parser.add_argument(
+        "--install-daemon",
+        action="store_true",
+        help="Install and enable user-level gateway daemon (launchd/systemd user).",
+    )
+    install_parser.add_argument(
+        "--daemon-channels",
+        default=None,
+        help="Comma-separated channels for daemon mode (default: enabled channels in config).",
+    )
     subparsers.add_parser("skills", help="List discovered skills as JSON.")
     subparsers.add_parser("mcps", help="List connected MCP servers and their available APIs.")
     subparsers.add_parser("spawn", help="List recent sub-agent tasks created by spawn_subagent.")
@@ -1632,6 +2991,16 @@ def main(argv: list[str] | None = None) -> None:
         "--verbose",
         action="store_true",
         help="Include detailed diagnostics in text output mode.",
+    )
+    doctor_parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="Apply minimal config fixes from current environment values before checks.",
+    )
+    doctor_parser.add_argument(
+        "--fix-dry-run",
+        action="store_true",
+        help="Show minimal fix plan without writing config.",
     )
 
     run_parser = subparsers.add_parser("run", help="Run `adk run` for this agent.")
@@ -1740,8 +3109,54 @@ def main(argv: list[str] | None = None) -> None:
 
     cron_subparsers.add_parser("status", help="Show cron runtime status.")
 
+    heartbeat_parser = subparsers.add_parser("heartbeat", help="Heartbeat runtime helpers.")
+    heartbeat_subparsers = heartbeat_parser.add_subparsers(dest="heartbeat_command", required=True)
+    heartbeat_status_parser = heartbeat_subparsers.add_parser("status", help="Show heartbeat runtime status.")
+    heartbeat_status_parser.add_argument(
+        "--json",
+        dest="output_json",
+        action="store_true",
+        help="Emit heartbeat status snapshot as one machine-readable JSON object.",
+    )
+    gateway_service_parser = subparsers.add_parser(
+        "gateway-service",
+        help="Manage user-level gateway service manifest (launchd/systemd user).",
+    )
+    gateway_service_subparsers = gateway_service_parser.add_subparsers(
+        dest="gateway_service_command", required=True
+    )
+    gateway_service_install_parser = gateway_service_subparsers.add_parser(
+        "install",
+        help="Write gateway service manifest for current platform.",
+    )
+    gateway_service_install_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing service manifest.",
+    )
+    gateway_service_install_parser.add_argument(
+        "--channels",
+        default="local",
+        help="Comma-separated channels to run in gateway service.",
+    )
+    gateway_service_install_parser.add_argument(
+        "--enable",
+        action="store_true",
+        help="After writing manifest, run launchctl/systemctl to enable and start service.",
+    )
+    gateway_service_status_parser = gateway_service_subparsers.add_parser(
+        "status",
+        help="Show gateway service manifest status.",
+    )
+    gateway_service_status_parser.add_argument(
+        "--json",
+        dest="output_json",
+        action="store_true",
+        help="Emit gateway service status as one machine-readable JSON object.",
+    )
+
     args = parser.parse_args(argv)
-    if args.command != "onboard":
+    if args.command not in {"onboard", "install"}:
         bootstrap_env_from_config()
 
     # Global `-m/--message` is single-turn mode only when no subcommand is used.
@@ -1750,6 +3165,20 @@ def main(argv: list[str] | None = None) -> None:
         code = _cmd_message(args.message, user_id=args.user_id, session_id=sid)
     elif args.command == "cron":
         code = _dispatch_cron_command(args, parser)
+    elif args.command == "heartbeat":
+        if args.heartbeat_command == "status":
+            code = _cmd_heartbeat_status(output_json=args.output_json)
+        else:
+            parser.print_help()
+            code = 2
+    elif args.command == "gateway-service":
+        if args.gateway_service_command == "install":
+            code = _cmd_gateway_service_install(force=args.force, channels=args.channels, enable=args.enable)
+        elif args.gateway_service_command == "status":
+            code = _cmd_gateway_service_status(output_json=args.output_json)
+        else:
+            parser.print_help()
+            code = 2
     elif args.command == "channels":
         code = _dispatch_channels_command(args, parser)
     elif args.command == "provider":
@@ -1757,10 +3186,22 @@ def main(argv: list[str] | None = None) -> None:
     else:
         handlers: dict[str, Callable[[], int]] = {
             "onboard": lambda: _cmd_onboard(force=args.force),
+            "install": lambda: _cmd_install(
+                force=args.force,
+                non_interactive=args.non_interactive,
+                accept_risk=args.accept_risk,
+                install_daemon=args.install_daemon,
+                daemon_channels=args.daemon_channels,
+            ),
             "skills": _cmd_skills,
             "mcps": _cmd_mcps,
             "spawn": _cmd_spawn,
-            "doctor": lambda: _cmd_doctor(output_json=args.output_json, verbose=args.verbose),
+            "doctor": lambda: _cmd_doctor(
+                output_json=args.output_json,
+                verbose=args.verbose,
+                fix=(args.fix or args.fix_dry_run),
+                fix_dry_run=args.fix_dry_run,
+            ),
             "run": lambda: _cmd_run(args.adk_args),
             "gateway-local": lambda: _cmd_gateway_local(sender_id=args.sender_id, chat_id=args.chat_id),
             "gateway": lambda: _cmd_gateway(

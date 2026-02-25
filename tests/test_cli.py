@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import tempfile
 import types as pytypes
 import unittest
 import asyncio
 import sys
+import builtins
 import datetime as dt
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
@@ -37,6 +39,79 @@ class CLITests(unittest.TestCase):
                 mocked_onboard.assert_called_once_with(force=False)
                 mocked_bootstrap.assert_not_called()
 
+    def test_install_mode_dispatch(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "bootstrap_env_from_config") as mocked_bootstrap:
+            with patch.object(cli, "_cmd_install", return_value=0) as mocked_install:
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main(["install", "--force", "--non-interactive"])
+                self.assertEqual(ctx.exception.code, 0)
+                mocked_install.assert_called_once_with(
+                    force=True,
+                    non_interactive=True,
+                    accept_risk=False,
+                    install_daemon=False,
+                    daemon_channels=None,
+                )
+                mocked_bootstrap.assert_not_called()
+
+    def test_install_mode_dispatch_with_daemon_flags(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "bootstrap_env_from_config") as mocked_bootstrap:
+            with patch.object(cli, "_cmd_install", return_value=0) as mocked_install:
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main(["install", "--install-daemon", "--daemon-channels", "local,feishu"])
+                self.assertEqual(ctx.exception.code, 0)
+                mocked_install.assert_called_once_with(
+                    force=False,
+                    non_interactive=False,
+                    accept_risk=False,
+                    install_daemon=True,
+                    daemon_channels="local,feishu",
+                )
+                mocked_bootstrap.assert_not_called()
+
+    def test_install_mode_dispatch_with_accept_risk(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "bootstrap_env_from_config") as mocked_bootstrap:
+            with patch.object(cli, "_cmd_install", return_value=0) as mocked_install:
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main(["install", "--non-interactive", "--accept-risk"])
+                self.assertEqual(ctx.exception.code, 0)
+                mocked_install.assert_called_once_with(
+                    force=False,
+                    non_interactive=True,
+                    accept_risk=True,
+                    install_daemon=False,
+                    daemon_channels=None,
+                )
+                mocked_bootstrap.assert_not_called()
+
+    def test_gateway_service_install_mode_dispatch(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "bootstrap_env_from_config") as mocked_bootstrap:
+            with patch.object(cli, "_cmd_gateway_service_install", return_value=0) as mocked_install:
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main(["gateway-service", "install", "--force", "--channels", "local,feishu", "--enable"])
+                self.assertEqual(ctx.exception.code, 0)
+                mocked_install.assert_called_once_with(force=True, channels="local,feishu", enable=True)
+                mocked_bootstrap.assert_called_once()
+
+    def test_gateway_service_status_mode_dispatch(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "bootstrap_env_from_config") as mocked_bootstrap:
+            with patch.object(cli, "_cmd_gateway_service_status", return_value=0) as mocked_status:
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main(["gateway-service", "status", "--json"])
+                self.assertEqual(ctx.exception.code, 0)
+                mocked_status.assert_called_once_with(output_json=True)
+                mocked_bootstrap.assert_called_once()
+
     def test_doctor_mode_bootstraps_config(self) -> None:
         from openheron import cli
 
@@ -55,7 +130,27 @@ class CLITests(unittest.TestCase):
                 with self.assertRaises(SystemExit) as ctx:
                     cli.main(["doctor", "--json", "--verbose"])
                 self.assertEqual(ctx.exception.code, 0)
-                mocked_doctor.assert_called_once_with(output_json=True, verbose=True)
+                mocked_doctor.assert_called_once_with(output_json=True, verbose=True, fix=False, fix_dry_run=False)
+
+    def test_doctor_mode_passes_fix_flag(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "bootstrap_env_from_config"):
+            with patch.object(cli, "_cmd_doctor", return_value=0) as mocked_doctor:
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main(["doctor", "--fix"])
+                self.assertEqual(ctx.exception.code, 0)
+                mocked_doctor.assert_called_once_with(output_json=False, verbose=False, fix=True, fix_dry_run=False)
+
+    def test_doctor_mode_passes_fix_dry_run_flag(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "bootstrap_env_from_config"):
+            with patch.object(cli, "_cmd_doctor", return_value=0) as mocked_doctor:
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main(["doctor", "--fix-dry-run"])
+                self.assertEqual(ctx.exception.code, 0)
+                mocked_doctor.assert_called_once_with(output_json=False, verbose=False, fix=True, fix_dry_run=True)
 
     def test_mcps_mode_dispatch(self) -> None:
         from openheron import cli
@@ -324,6 +419,832 @@ class CLITests(unittest.TestCase):
         self.assertIn("Issues:", info_text)
         self.assertIn("MCP server 'filesystem' health check failed", info_text)
 
+    def test_cmd_install_runs_onboard_and_doctor(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "_cmd_onboard", return_value=0) as mocked_onboard:
+            with patch.object(cli, "_cmd_doctor", return_value=0) as mocked_doctor:
+                with patch.object(cli, "_cmd_gateway_service_install", return_value=0) as mocked_daemon:
+                    with patch.object(cli, "bootstrap_env_from_config") as mocked_bootstrap:
+                        with patch("builtins.print"):
+                            code = cli._cmd_install(force=False, non_interactive=False)
+
+        self.assertEqual(code, 0)
+        mocked_onboard.assert_called_once_with(force=False)
+        mocked_doctor.assert_called_once_with(output_json=False, verbose=False)
+        mocked_daemon.assert_not_called()
+        mocked_bootstrap.assert_called_once()
+
+    def test_cmd_install_with_daemon_calls_gateway_service_install(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "_cmd_onboard", return_value=0):
+            with patch.object(cli, "_cmd_doctor", return_value=0):
+                with patch.object(cli, "_cmd_gateway_service_install", return_value=0) as mocked_daemon:
+                    with patch.object(cli, "bootstrap_env_from_config"):
+                        with patch("builtins.print"):
+                            code = cli._cmd_install(
+                                force=False,
+                                non_interactive=False,
+                                accept_risk=False,
+                                install_daemon=True,
+                                daemon_channels="local,feishu",
+                            )
+
+        self.assertEqual(code, 0)
+        mocked_daemon.assert_called_once_with(force=False, channels="local,feishu", enable=True)
+
+    def test_cmd_install_with_daemon_failure_does_not_block_install(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "_cmd_onboard", return_value=0):
+            with patch.object(cli, "_cmd_doctor", return_value=0):
+                with patch.object(cli, "_cmd_gateway_service_install", return_value=1):
+                    with patch.object(cli, "bootstrap_env_from_config"):
+                        with patch("builtins.print") as mocked_print:
+                            code = cli._cmd_install(
+                                force=False,
+                                non_interactive=False,
+                                accept_risk=False,
+                                install_daemon=True,
+                                daemon_channels="local",
+                            )
+
+        self.assertEqual(code, 0)
+        lines = [call.args[0] for call in mocked_print.call_args_list if call.args]
+        self.assertTrue(any("Install daemon setup failed." in line for line in lines))
+        self.assertTrue(any("Install daemon retry:" in line for line in lines))
+
+    def test_cmd_install_updates_provider_from_interactive_setup(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cli.save_config(cli.default_config(), config_path=config_path)
+            with patch.object(cli, "_cmd_onboard", return_value=0):
+                with patch.object(cli, "_cmd_doctor", return_value=0):
+                    with patch.object(cli, "get_config_path", return_value=config_path):
+                        with patch.object(cli, "bootstrap_env_from_config"):
+                            with patch("sys.stdin.isatty", return_value=True):
+                                with patch("builtins.input", side_effect=["openai", "test-api-key", ""]):
+                                    with patch("builtins.print"):
+                                        code = cli._cmd_install(force=False, non_interactive=False)
+
+            updated = cli.load_config(config_path=config_path)
+
+        self.assertEqual(code, 0)
+        self.assertTrue(updated["providers"]["openai"]["enabled"])
+        self.assertFalse(updated["providers"]["google"]["enabled"])
+        self.assertEqual(updated["providers"]["openai"]["apiKey"], "test-api-key")
+
+    def test_install_interactive_setup_retries_unknown_provider(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cli.save_config(cli.default_config(), config_path=config_path)
+            answers = iter(["unknown-provider", "openai", "", ""])
+            with patch("builtins.print"):
+                cli._run_install_interactive_setup(
+                    config_path=config_path,
+                    input_fn=lambda _prompt: next(answers),
+                )
+            updated = cli.load_config(config_path=config_path)
+
+        self.assertTrue(updated["providers"]["openai"]["enabled"])
+        self.assertFalse(updated["providers"]["google"]["enabled"])
+
+    def test_install_interactive_setup_updates_enabled_channels(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["channels"]["local"]["enabled"] = True
+            cfg["channels"]["feishu"]["enabled"] = False
+            cfg["channels"]["telegram"]["enabled"] = False
+            cli.save_config(cfg, config_path=config_path)
+            answers = iter(["skip", "", "local,feishu", "", ""])
+            with patch("builtins.print"):
+                cli._run_install_interactive_setup(
+                    config_path=config_path,
+                    input_fn=lambda _prompt: next(answers),
+                )
+            updated = cli.load_config(config_path=config_path)
+
+        self.assertTrue(updated["channels"]["local"]["enabled"])
+        self.assertTrue(updated["channels"]["feishu"]["enabled"])
+        self.assertFalse(updated["channels"]["telegram"]["enabled"])
+
+    def test_install_interactive_setup_collects_channel_credentials(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["channels"]["local"]["enabled"] = True
+            cfg["channels"]["feishu"]["enabled"] = False
+            cli.save_config(cfg, config_path=config_path)
+            answers = iter(["skip", "", "feishu", "feishu-app-id", "feishu-app-secret"])
+            with patch("builtins.print"):
+                cli._run_install_interactive_setup(
+                    config_path=config_path,
+                    input_fn=lambda _prompt: next(answers),
+                )
+            updated = cli.load_config(config_path=config_path)
+
+        self.assertTrue(updated["channels"]["feishu"]["enabled"])
+        self.assertEqual(updated["channels"]["feishu"]["appId"], "feishu-app-id")
+        self.assertEqual(updated["channels"]["feishu"]["appSecret"], "feishu-app-secret")
+
+    def test_install_interactive_setup_collects_dingtalk_and_slack_credentials(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["channels"]["local"]["enabled"] = True
+            cfg["channels"]["dingtalk"]["enabled"] = False
+            cfg["channels"]["slack"]["enabled"] = False
+            cli.save_config(cfg, config_path=config_path)
+            answers = iter(["skip", "", "dingtalk,slack", "dingtalk-id", "dingtalk-secret", "slack-token"])
+            with patch("builtins.print"):
+                cli._run_install_interactive_setup(
+                    config_path=config_path,
+                    input_fn=lambda _prompt: next(answers),
+                )
+            updated = cli.load_config(config_path=config_path)
+
+        self.assertTrue(updated["channels"]["dingtalk"]["enabled"])
+        self.assertEqual(updated["channels"]["dingtalk"]["clientId"], "dingtalk-id")
+        self.assertEqual(updated["channels"]["dingtalk"]["clientSecret"], "dingtalk-secret")
+        self.assertTrue(updated["channels"]["slack"]["enabled"])
+        self.assertEqual(updated["channels"]["slack"]["botToken"], "slack-token")
+
+    def test_install_interactive_setup_collects_whatsapp_mochat_and_email_credentials(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["channels"]["local"]["enabled"] = True
+            cfg["channels"]["whatsapp"]["enabled"] = False
+            cfg["channels"]["mochat"]["enabled"] = False
+            cfg["channels"]["email"]["enabled"] = False
+            cfg["channels"]["whatsapp"]["bridgeUrl"] = ""
+            cfg["channels"]["mochat"]["baseUrl"] = ""
+            cfg["channels"]["mochat"]["clawToken"] = ""
+            cfg["channels"]["email"]["consentGranted"] = False
+            cfg["channels"]["email"]["smtpHost"] = ""
+            cfg["channels"]["email"]["smtpUsername"] = ""
+            cfg["channels"]["email"]["smtpPassword"] = ""
+            cli.save_config(cfg, config_path=config_path)
+            answers = iter(
+                [
+                    "skip",
+                    "",
+                    "whatsapp,mochat,email",
+                    "ws://bridge.local",
+                    "https://mochat.local",
+                    "mochat-token",
+                    "yes",
+                    "smtp.local",
+                    "mailer",
+                    "smtp-secret",
+                ]
+            )
+            with patch("builtins.print"):
+                cli._run_install_interactive_setup(
+                    config_path=config_path,
+                    input_fn=lambda _prompt: next(answers),
+                )
+            updated = cli.load_config(config_path=config_path)
+
+        self.assertTrue(updated["channels"]["whatsapp"]["enabled"])
+        self.assertEqual(updated["channels"]["whatsapp"]["bridgeUrl"], "ws://bridge.local")
+        self.assertTrue(updated["channels"]["mochat"]["enabled"])
+        self.assertEqual(updated["channels"]["mochat"]["baseUrl"], "https://mochat.local")
+        self.assertEqual(updated["channels"]["mochat"]["clawToken"], "mochat-token")
+        self.assertTrue(updated["channels"]["email"]["enabled"])
+        self.assertTrue(updated["channels"]["email"]["consentGranted"])
+        self.assertEqual(updated["channels"]["email"]["smtpHost"], "smtp.local")
+        self.assertEqual(updated["channels"]["email"]["smtpUsername"], "mailer")
+        self.assertEqual(updated["channels"]["email"]["smtpPassword"], "smtp-secret")
+
+    def test_install_interactive_setup_required_channel_prompts_are_explicit(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["channels"]["local"]["enabled"] = True
+            cfg["channels"]["telegram"]["enabled"] = False
+            cfg["channels"]["telegram"]["token"] = ""
+            cli.save_config(cfg, config_path=config_path)
+            prompts: list[str] = []
+            answers = iter(["skip", "", "telegram", ""])
+
+            def _input(prompt: str) -> str:
+                prompts.append(prompt)
+                return next(answers)
+
+            with patch("builtins.print"):
+                cli._run_install_interactive_setup(
+                    config_path=config_path,
+                    input_fn=_input,
+                )
+
+        self.assertTrue(
+            any(
+                "Telegram bot token (required for enabled channel, press Enter to skip for now)> " in prompt
+                for prompt in prompts
+            )
+        )
+
+    def test_install_interactive_setup_collects_qq_credentials(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["channels"]["local"]["enabled"] = True
+            cfg["channels"]["qq"]["enabled"] = False
+            cfg["channels"]["qq"]["appId"] = ""
+            cfg["channels"]["qq"]["secret"] = ""
+            cli.save_config(cfg, config_path=config_path)
+            answers = iter(["skip", "", "qq", "qq-app-id", "qq-secret"])
+            with patch("builtins.print"):
+                cli._run_install_interactive_setup(
+                    config_path=config_path,
+                    input_fn=lambda _prompt: next(answers),
+                )
+            updated = cli.load_config(config_path=config_path)
+
+        self.assertTrue(updated["channels"]["qq"]["enabled"])
+        self.assertEqual(updated["channels"]["qq"]["appId"], "qq-app-id")
+        self.assertEqual(updated["channels"]["qq"]["secret"], "qq-secret")
+
+    def test_install_interactive_setup_uses_provider_adapter_when_available(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["providers"]["google"]["enabled"] = True
+            cfg["providers"]["google"]["apiKey"] = ""
+            cli.save_config(cfg, config_path=config_path)
+
+            adapter = pytypes.SimpleNamespace(provider_name="google")
+            adapter.collect_credentials = Mock(
+                side_effect=lambda **kwargs: kwargs["provider_cfg"].update({"apiKey": "from-adapter"})
+            )
+            answers = iter(["skip", "", ""])
+            with patch.object(cli, "resolve_provider_onboarding_adapter", return_value=adapter):
+                with patch("builtins.print"):
+                    cli._run_install_interactive_setup(
+                        config_path=config_path,
+                        input_fn=lambda _prompt: next(answers),
+                    )
+            updated = cli.load_config(config_path=config_path)
+
+        adapter.collect_credentials.assert_called_once()
+        self.assertEqual(updated["providers"]["google"]["apiKey"], "from-adapter")
+
+    def test_install_interactive_setup_uses_channel_adapter_when_available(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["channels"]["local"]["enabled"] = False
+            cfg["channels"]["telegram"]["enabled"] = True
+            cfg["channels"]["telegram"]["token"] = ""
+            cli.save_config(cfg, config_path=config_path)
+
+            adapter = pytypes.SimpleNamespace(channel_name="telegram")
+            adapter.collect_credentials = Mock(
+                side_effect=lambda **kwargs: kwargs["channel_cfg"].update({"token": "adapter-token"})
+            )
+            answers = iter(["skip", "", ""])
+            with patch.object(
+                cli,
+                "resolve_channel_onboarding_adapter",
+                side_effect=lambda name: adapter if name == "telegram" else None,
+            ):
+                with patch("builtins.print"):
+                    cli._run_install_interactive_setup(
+                        config_path=config_path,
+                        input_fn=lambda _prompt: next(answers),
+                    )
+            updated = cli.load_config(config_path=config_path)
+
+        adapter.collect_credentials.assert_called_once()
+        self.assertEqual(updated["channels"]["telegram"]["token"], "adapter-token")
+
+    def test_cmd_install_skips_interactive_setup_in_non_tty(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "_cmd_onboard", return_value=0):
+            with patch.object(cli, "_cmd_doctor", return_value=0):
+                with patch.object(cli, "bootstrap_env_from_config"):
+                    with patch("sys.stdin.isatty", return_value=False):
+                        with patch("builtins.print") as mocked_print:
+                            code = cli._cmd_install(force=False, non_interactive=False)
+
+        self.assertEqual(code, 0)
+        lines = [call.args[0] for call in mocked_print.call_args_list if call.args]
+        self.assertTrue(any("Install setup skipped: non-interactive terminal." in line for line in lines))
+
+    def test_cmd_install_non_interactive_skips_setup_prompt(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "_cmd_onboard", return_value=0):
+            with patch.object(cli, "_cmd_doctor", return_value=0):
+                with patch.object(cli, "bootstrap_env_from_config"):
+                    with patch("builtins.input") as mocked_input:
+                        with patch("builtins.print"):
+                            code = cli._cmd_install(force=False, non_interactive=True, accept_risk=True)
+
+        self.assertEqual(code, 0)
+        mocked_input.assert_not_called()
+
+    def test_cmd_install_non_interactive_requires_accept_risk(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "_cmd_onboard", return_value=0) as mocked_onboard:
+            with patch.object(cli, "_cmd_doctor", return_value=0) as mocked_doctor:
+                with patch.object(cli, "bootstrap_env_from_config") as mocked_bootstrap:
+                    with patch("builtins.print") as mocked_print:
+                        code = cli._cmd_install(force=False, non_interactive=True, accept_risk=False)
+
+        self.assertEqual(code, 1)
+        mocked_onboard.assert_not_called()
+        mocked_doctor.assert_not_called()
+        mocked_bootstrap.assert_not_called()
+        lines = [call.args[0] for call in mocked_print.call_args_list if call.args]
+        self.assertTrue(any("Non-interactive install requires explicit risk acknowledgement." in line for line in lines))
+        self.assertTrue(any("--accept-risk" in line for line in lines))
+
+    def test_install_summary_lines_reports_missing_required_fields(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["providers"]["google"]["enabled"] = True
+            cfg["providers"]["google"]["apiKey"] = ""
+            cfg["channels"]["feishu"]["enabled"] = True
+            cfg["channels"]["feishu"]["appId"] = ""
+            cfg["channels"]["feishu"]["appSecret"] = ""
+            cli.save_config(cfg, config_path=config_path)
+
+            lines = cli._install_summary_lines(config_path)
+
+        self.assertIn("provider=google", lines[0])
+        self.assertIn("channels.feishu.appId", lines[1])
+        self.assertIn("channels.feishu.appSecret", lines[1])
+        self.assertIn("Feishu credentials", lines[2])
+        self.assertIn("next[1]=openheron doctor", lines[3])
+        self.assertIn("next[2]=openheron gateway --channels local,feishu", lines[4])
+
+    def test_install_summary_lines_reports_next_commands_when_ready(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["providers"]["google"]["enabled"] = True
+            cfg["providers"]["google"]["apiKey"] = "k"
+            cfg["channels"]["local"]["enabled"] = True
+            cfg["channels"]["feishu"]["enabled"] = False
+            cfg["channels"]["telegram"]["enabled"] = False
+            cli.save_config(cfg, config_path=config_path)
+
+            lines = cli._install_summary_lines(config_path)
+
+        self.assertIn("no required fields missing", lines[1])
+        self.assertIn("next[1]=openheron doctor", lines[2])
+        self.assertIn("next[2]=openheron gateway --channels local", lines[3])
+
+    def test_install_summary_lines_reports_missing_dingtalk_and_slack_credentials(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["channels"]["local"]["enabled"] = False
+            cfg["channels"]["dingtalk"]["enabled"] = True
+            cfg["channels"]["slack"]["enabled"] = True
+            cli.save_config(cfg, config_path=config_path)
+
+            lines = cli._install_summary_lines(config_path)
+
+        joined = "\n".join(lines)
+        self.assertIn("channels.dingtalk.clientId", joined)
+        self.assertIn("channels.dingtalk.clientSecret", joined)
+        self.assertIn("channels.slack.botToken", joined)
+
+    def test_install_summary_lines_reports_missing_whatsapp_mochat_and_email_credentials(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["channels"]["local"]["enabled"] = False
+            cfg["channels"]["whatsapp"]["enabled"] = True
+            cfg["channels"]["whatsapp"]["bridgeUrl"] = ""
+            cfg["channels"]["mochat"]["enabled"] = True
+            cfg["channels"]["mochat"]["baseUrl"] = ""
+            cfg["channels"]["mochat"]["clawToken"] = ""
+            cfg["channels"]["email"]["enabled"] = True
+            cfg["channels"]["email"]["consentGranted"] = False
+            cfg["channels"]["email"]["smtpHost"] = ""
+            cfg["channels"]["email"]["smtpUsername"] = ""
+            cfg["channels"]["email"]["smtpPassword"] = ""
+            cli.save_config(cfg, config_path=config_path)
+
+            lines = cli._install_summary_lines(config_path)
+
+        joined = "\n".join(lines)
+        self.assertIn("channels.whatsapp.bridgeUrl", joined)
+        self.assertIn("channels.mochat.baseUrl", joined)
+        self.assertIn("channels.mochat.clawToken", joined)
+        self.assertIn("channels.email.consentGranted", joined)
+        self.assertIn("channels.email.smtpHost", joined)
+        self.assertIn("channels.email.smtpUsername", joined)
+        self.assertIn("channels.email.smtpPassword", joined)
+
+    def test_install_summary_lines_reports_missing_qq_credentials(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["channels"]["local"]["enabled"] = False
+            cfg["channels"]["qq"]["enabled"] = True
+            cfg["channels"]["qq"]["appId"] = ""
+            cfg["channels"]["qq"]["secret"] = ""
+            cli.save_config(cfg, config_path=config_path)
+
+            lines = cli._install_summary_lines(config_path)
+
+        joined = "\n".join(lines)
+        self.assertIn("channels.qq.appId", joined)
+        self.assertIn("channels.qq.secret", joined)
+
+    def test_install_summary_schema_includes_email_consent_and_password_semantics(self) -> None:
+        from openheron import cli
+
+        requirements = cli.INSTALL_CHANNEL_SUMMARY_REQUIREMENTS
+        consent_rule = next(
+            (
+                item
+                for item in requirements
+                if item.channel == "email" and item.key == "consentGranted"
+            ),
+            None,
+        )
+        password_rule = next(
+            (
+                item
+                for item in requirements
+                if item.channel == "email" and item.key == "smtpPassword"
+            ),
+            None,
+        )
+        self.assertIsNotNone(consent_rule)
+        self.assertIsNotNone(password_rule)
+        self.assertEqual(consent_rule.presence, "truthy_bool")
+        self.assertEqual(password_rule.presence, "non_empty_raw")
+
+    def test_install_summary_provider_schema_contains_api_key_requirement(self) -> None:
+        from openheron import cli
+
+        api_key_rule = next(
+            (
+                item
+                for item in cli.INSTALL_PROVIDER_SUMMARY_REQUIREMENTS
+                if item.key == "apiKey"
+            ),
+            None,
+        )
+        self.assertIsNotNone(api_key_rule)
+        self.assertTrue(api_key_rule.skip_for_oauth)
+        self.assertIsNotNone(api_key_rule.env_name_resolver)
+        self.assertEqual(api_key_rule.doctor_env_backfill_code, "provider.env.api_key_backfilled")
+
+    def test_doctor_channel_backfill_schema_matches_channel_env_mappings(self) -> None:
+        from openheron import cli
+
+        self.assertEqual(
+            len(cli.DOCTOR_CHANNEL_ENV_BACKFILL_RULES),
+            len(cli.CHANNEL_ENV_BACKFILL_MAPPINGS),
+        )
+        telegram_rule = next(
+            (
+                item
+                for item in cli.DOCTOR_CHANNEL_ENV_BACKFILL_RULES
+                if item.channel == "telegram" and item.key == "token"
+            ),
+            None,
+        )
+        self.assertIsNotNone(telegram_rule)
+        self.assertEqual(telegram_rule.env_name, "TELEGRAM_BOT_TOKEN")
+        self.assertEqual(telegram_rule.code_applied, "channel.env.backfilled")
+        self.assertEqual(telegram_rule.rule, "channel_env_backfill")
+
+    def test_doctor_channel_bool_backfill_schema_contains_email_consent_rule(self) -> None:
+        from openheron import cli
+
+        consent_rule = next(
+            (
+                item
+                for item in cli.DOCTOR_CHANNEL_BOOL_ENV_BACKFILL_RULES
+                if item.channel == "email" and item.key == "consentGranted"
+            ),
+            None,
+        )
+        self.assertIsNotNone(consent_rule)
+        self.assertEqual(consent_rule.env_name, "EMAIL_CONSENT_GRANTED")
+        self.assertEqual(consent_rule.code_applied, "email.consent.backfilled")
+        self.assertEqual(consent_rule.rule, "email_consent_backfill")
+
+    def test_install_summary_requirements_cover_doctor_channel_backfill_targets(self) -> None:
+        from openheron import cli
+
+        summary_targets = {
+            f"{item.channel}.{item.key}"
+            for item in cli.INSTALL_CHANNEL_SUMMARY_REQUIREMENTS
+        }
+        doctor_targets = {
+            f"{item.channel}.{item.key}"
+            for item in cli.DOCTOR_CHANNEL_ENV_BACKFILL_RULES
+        }
+        self.assertTrue(doctor_targets.issubset(summary_targets))
+        self.assertIn("email.consentGranted", summary_targets)
+
+    def test_cmd_install_prints_summary_lines(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "_cmd_onboard", return_value=0):
+            with patch.object(cli, "_cmd_doctor", return_value=0):
+                with patch.object(cli, "bootstrap_env_from_config"):
+                    with patch.object(cli, "_install_summary_lines", return_value=["s1", "s2"]):
+                        with patch.object(cli, "_install_prereq_lines", return_value=["p1"]):
+                            with patch("sys.stdin.isatty", return_value=False):
+                                with patch("builtins.print") as mocked_print:
+                                    code = cli._cmd_install(force=False, non_interactive=False)
+
+        self.assertEqual(code, 0)
+        lines = [call.args[0] for call in mocked_print.call_args_list if call.args]
+        self.assertIn("s1", lines)
+        self.assertIn("s2", lines)
+        self.assertIn("p1", lines)
+
+    def test_install_prereq_lines_report_missing_tools(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(cli.Path, "cwd", return_value=Path(tmp)):
+                with patch.object(cli.shutil, "which", return_value=None):
+                    with patch.object(cli.importlib.util, "find_spec", return_value=None):
+                        lines = cli._install_prereq_lines()
+
+        merged = "\n".join(lines)
+        self.assertIn(".venv not found", merged)
+        self.assertIn("adk CLI not found", merged)
+        self.assertIn("questionary missing", merged)
+        self.assertIn("rich missing", merged)
+
+    def test_install_prereq_lines_report_detected_tools(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            venv_python = Path(tmp) / ".venv" / "bin"
+            venv_python.mkdir(parents=True, exist_ok=True)
+            (venv_python / "python").write_text("", encoding="utf-8")
+            with patch.object(cli.Path, "cwd", return_value=Path(tmp)):
+                with patch.object(cli.shutil, "which", return_value="/usr/local/bin/adk"):
+                    with patch.object(cli.importlib.util, "find_spec", return_value=object()):
+                        lines = cli._install_prereq_lines()
+
+        merged = "\n".join(lines)
+        self.assertIn("virtualenv detected", merged)
+        self.assertIn("adk CLI detected", merged)
+        self.assertIn("questionary detected", merged)
+        self.assertIn("rich detected", merged)
+
+    def test_doctor_install_prereq_line_normalizes_prefix_and_status(self) -> None:
+        from openheron import cli
+
+        ok_line = cli._doctor_install_prereq_line("Install prereq: virtualenv detected at /tmp/.venv")
+        warn_line = cli._doctor_install_prereq_line("Install prereq: adk CLI not found")
+
+        self.assertEqual(ok_line, "Install prereq [ok]: virtualenv detected at /tmp/.venv")
+        self.assertEqual(warn_line, "Install prereq [warn]: adk CLI not found")
+
+    def test_cmd_gateway_service_install_writes_launchd_manifest(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            data = Path(tmp) / "data"
+            home.mkdir(parents=True, exist_ok=True)
+            data.mkdir(parents=True, exist_ok=True)
+            with patch.object(cli, "detect_service_manager", return_value="launchd"):
+                with patch.object(cli.Path, "home", return_value=home):
+                    with patch.object(cli, "get_data_dir", return_value=data):
+                        with patch.object(cli, "get_config_path", return_value=data / "config.json"):
+                            with patch.object(cli, "load_config", return_value=cli.default_config()):
+                                with patch.object(cli.shutil, "which", return_value="/usr/local/bin/openheron"):
+                                    with patch("builtins.print") as mocked_print:
+                                        code = cli._cmd_gateway_service_install(
+                                            force=False,
+                                            channels="local",
+                                            enable=False,
+                                        )
+            self.assertEqual(code, 0)
+            manifest_path = home / "Library" / "LaunchAgents" / "openheron-gateway.plist"
+            self.assertTrue(manifest_path.exists())
+            content = manifest_path.read_text(encoding="utf-8")
+            self.assertIn("/usr/local/bin/openheron", content)
+            self.assertIn("<string>gateway</string>", content)
+            lines = [call.args[0] for call in mocked_print.call_args_list if call.args]
+            self.assertTrue(any("Gateway service manifest written:" in line for line in lines))
+
+    def test_cmd_gateway_service_install_refuses_existing_manifest_without_force(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            data = Path(tmp) / "data"
+            manifest = home / "Library" / "LaunchAgents" / "openheron-gateway.plist"
+            manifest.parent.mkdir(parents=True, exist_ok=True)
+            manifest.write_text("existing", encoding="utf-8")
+            with patch.object(cli, "detect_service_manager", return_value="launchd"):
+                with patch.object(cli.Path, "home", return_value=home):
+                    with patch.object(cli, "get_data_dir", return_value=data):
+                        with patch("builtins.print") as mocked_print:
+                            code = cli._cmd_gateway_service_install(
+                                force=False,
+                                channels="local",
+                                enable=False,
+                            )
+
+        self.assertEqual(code, 1)
+        lines = [call.args[0] for call in mocked_print.call_args_list if call.args]
+        self.assertTrue(any("already exists" in line for line in lines))
+
+    def test_cmd_gateway_service_install_enable_runs_launchctl(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            data = Path(tmp) / "data"
+            home.mkdir(parents=True, exist_ok=True)
+            data.mkdir(parents=True, exist_ok=True)
+            with patch.object(cli, "detect_service_manager", return_value="launchd"):
+                with patch.object(cli.Path, "home", return_value=home):
+                    with patch.object(cli, "get_data_dir", return_value=data):
+                        with patch.object(cli, "get_config_path", return_value=data / "config.json"):
+                            with patch.object(cli, "load_config", return_value=cli.default_config()):
+                                with patch.object(cli.shutil, "which", return_value="/usr/local/bin/openheron"):
+                                    with patch.object(cli.subprocess, "run") as mocked_run:
+                                        code = cli._cmd_gateway_service_install(
+                                            force=False,
+                                            channels="local",
+                                            enable=True,
+                                        )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(mocked_run.call_count, 1)
+        self.assertEqual(
+            mocked_run.call_args.args[0][:3],
+            ["launchctl", "load", "-w"],
+        )
+
+    def test_cmd_gateway_service_install_enable_failure_returns_error(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            data = Path(tmp) / "data"
+            home.mkdir(parents=True, exist_ok=True)
+            data.mkdir(parents=True, exist_ok=True)
+            with patch.object(cli, "detect_service_manager", return_value="launchd"):
+                with patch.object(cli.Path, "home", return_value=home):
+                    with patch.object(cli, "get_data_dir", return_value=data):
+                        with patch.object(cli, "get_config_path", return_value=data / "config.json"):
+                            with patch.object(cli, "load_config", return_value=cli.default_config()):
+                                with patch.object(cli.shutil, "which", return_value="/usr/local/bin/openheron"):
+                                    with patch.object(
+                                        cli.subprocess,
+                                        "run",
+                                        side_effect=subprocess.CalledProcessError(returncode=1, cmd=["launchctl"]),
+                                    ):
+                                        code = cli._cmd_gateway_service_install(
+                                            force=False,
+                                            channels="local",
+                                            enable=True,
+                                        )
+
+        self.assertEqual(code, 1)
+
+    def test_cmd_gateway_service_status_json_output(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            manifest = home / ".config" / "systemd" / "user" / "openheron-gateway.service"
+            manifest.parent.mkdir(parents=True, exist_ok=True)
+            manifest.write_text("[Unit]\n", encoding="utf-8")
+            with patch.object(cli, "detect_service_manager", return_value="systemd"):
+                with patch.object(cli.Path, "home", return_value=home):
+                    with patch("builtins.print") as mocked_print:
+                        code = cli._cmd_gateway_service_status(output_json=True)
+
+        self.assertEqual(code, 0)
+        payload = json.loads(mocked_print.call_args.args[0])
+        self.assertTrue(payload["supported"])
+        self.assertEqual(payload["manager"], "systemd")
+        self.assertTrue(payload["manifestExists"])
+
+    def test_cmd_install_non_interactive_still_prints_summary_lines(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "_cmd_onboard", return_value=0):
+            with patch.object(cli, "_cmd_doctor", return_value=0):
+                with patch.object(cli, "bootstrap_env_from_config"):
+                    with patch.object(cli, "_install_summary_lines", return_value=["sx"]):
+                        with patch.object(cli, "_install_prereq_lines", return_value=["px"]):
+                            with patch("sys.stdin.isatty", return_value=False):
+                                with patch("builtins.print") as mocked_print:
+                                    code = cli._cmd_install(force=False, non_interactive=False)
+
+        self.assertEqual(code, 0)
+        lines = [call.args[0] for call in mocked_print.call_args_list if call.args]
+        self.assertIn("sx", lines)
+        self.assertIn("px", lines)
+
+    def test_interactive_install_input_falls_back_to_builtin_input(self) -> None:
+        from openheron import cli
+
+        original_import = builtins.__import__
+
+        def _fake_import(name, *args, **kwargs):
+            if name == "questionary":
+                raise ImportError("no questionary")
+            return original_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=_fake_import):
+            with patch("builtins.input", return_value="value"):
+                answer = cli._interactive_install_input("Prompt> ")
+        self.assertEqual(answer, "value")
+
+    def test_interactive_install_select_falls_back_to_builtin_input(self) -> None:
+        from openheron import cli
+
+        original_import = builtins.__import__
+
+        def _fake_import(name, *args, **kwargs):
+            if name == "questionary":
+                raise ImportError("no questionary")
+            return original_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=_fake_import):
+            with patch("builtins.input", return_value="openai"):
+                answer = cli._interactive_install_select("Choose provider", ["google", "openai"], "google")
+        self.assertEqual(answer, "openai")
+
+    def test_interactive_install_multi_select_falls_back_to_builtin_input(self) -> None:
+        from openheron import cli
+
+        original_import = builtins.__import__
+
+        def _fake_import(name, *args, **kwargs):
+            if name == "questionary":
+                raise ImportError("no questionary")
+            return original_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=_fake_import):
+            with patch("builtins.input", return_value="local,feishu"):
+                answer = cli._interactive_install_multi_select(
+                    "Enable channels",
+                    ["local", "feishu", "telegram"],
+                    ["local"],
+                )
+        self.assertEqual(answer, ["local", "feishu"])
+
+    def test_cmd_install_returns_failure_when_doctor_fails(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "_cmd_onboard", return_value=0):
+            with patch.object(cli, "_cmd_doctor", return_value=1):
+                with patch.object(cli, "bootstrap_env_from_config"):
+                    with patch("builtins.print"):
+                        code = cli._cmd_install(force=False, non_interactive=False)
+        self.assertEqual(code, 1)
+
     def test_cmd_doctor_json_output_for_automation(self) -> None:
         from openheron import cli
 
@@ -361,6 +1282,8 @@ class CLITests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertIn("mcp", payload)
         self.assertIn("issues", payload)
+        self.assertIn("installPrereqs", payload)
+        self.assertIn("heartbeat", payload)
 
     def test_cmd_doctor_json_output_includes_provider_oauth_issue(self) -> None:
         from openheron import cli
@@ -409,6 +1332,682 @@ class CLITests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assertIn("OpenAI Codex OAuth token is not ready", payload["issues"])
         self.assertEqual(payload["provider"]["oauth"], fake_oauth_status)
+
+    def test_cmd_doctor_json_output_includes_heartbeat_snapshot(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            snapshot_path = workspace / ".openheron" / "heartbeat_status.json"
+            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot = {"running": True, "recent_reason_counts": {"exec": 1}}
+            snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+
+            fake_registry = pytypes.SimpleNamespace(workspace=workspace, list_skills=lambda: [])
+            fake_session_cfg = pytypes.SimpleNamespace(db_url="sqlite+aiosqlite:////tmp/sessions.db")
+            fake_security_policy = pytypes.SimpleNamespace(
+                restrict_to_workspace=False,
+                allow_exec=True,
+                allow_network=True,
+                exec_allowlist=(),
+            )
+            with patch.dict(
+                os.environ,
+                {
+                    "OPENHERON_PROVIDER": "google",
+                    "OPENHERON_PROVIDER_ENABLED": "1",
+                    "GOOGLE_API_KEY": "k",
+                },
+                clear=False,
+            ):
+                with patch("openheron.cli.shutil.which", return_value="/usr/bin/adk"):
+                    with patch.object(cli, "validate_provider_runtime", return_value=None):
+                        with patch.object(cli, "get_registry", return_value=fake_registry):
+                            with patch.object(cli, "load_session_config", return_value=fake_session_cfg):
+                                with patch.object(cli, "parse_enabled_channels", return_value=["local"]):
+                                    with patch.object(cli, "validate_channel_setup", return_value=[]):
+                                        with patch.object(cli, "load_security_policy", return_value=fake_security_policy):
+                                            with patch.object(cli, "build_mcp_toolsets_from_env", return_value=[]):
+                                                with patch.object(cli.logger, "debug"):
+                                                    with patch("builtins.print") as mocked_print:
+                                                        code = cli._cmd_doctor(output_json=True, verbose=False)
+
+        self.assertEqual(code, 0)
+        payload = json.loads(mocked_print.call_args.args[0])
+        self.assertTrue(payload["heartbeat"]["snapshot_available"])
+        self.assertEqual(payload["heartbeat"]["status"], snapshot)
+
+    def test_cmd_doctor_json_output_includes_install_prereqs(self) -> None:
+        from openheron import cli
+
+        fake_registry = pytypes.SimpleNamespace(workspace=Path("/tmp"), list_skills=lambda: [])
+        fake_session_cfg = pytypes.SimpleNamespace(db_url="sqlite+aiosqlite:////tmp/sessions.db")
+        fake_security_policy = pytypes.SimpleNamespace(
+            restrict_to_workspace=False,
+            allow_exec=True,
+            allow_network=True,
+            exec_allowlist=(),
+        )
+        with patch.dict(
+            os.environ,
+            {
+                "OPENHERON_PROVIDER": "google",
+                "OPENHERON_PROVIDER_ENABLED": "1",
+                "GOOGLE_API_KEY": "k",
+            },
+            clear=False,
+        ):
+            with patch("openheron.cli.shutil.which", return_value="/usr/bin/adk"):
+                with patch.object(cli, "validate_provider_runtime", return_value=None):
+                    with patch.object(cli, "get_registry", return_value=fake_registry):
+                        with patch.object(cli, "load_session_config", return_value=fake_session_cfg):
+                            with patch.object(cli, "parse_enabled_channels", return_value=["local"]):
+                                with patch.object(cli, "validate_channel_setup", return_value=[]):
+                                    with patch.object(cli, "load_security_policy", return_value=fake_security_policy):
+                                        with patch.object(cli, "build_mcp_toolsets_from_env", return_value=[]):
+                                            with patch.object(cli, "_install_prereq_lines", return_value=["p1", "p2"]):
+                                                with patch.object(cli.logger, "debug"):
+                                                    with patch("builtins.print") as mocked_print:
+                                                        code = cli._cmd_doctor(output_json=True, verbose=False)
+
+        self.assertEqual(code, 0)
+        payload = json.loads(mocked_print.call_args.args[0])
+        self.assertEqual(payload["installPrereqs"], ["p1", "p2"])
+        self.assertIn("summary", payload["fix"])
+
+    def test_doctor_apply_minimal_fixes_updates_config_from_env(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["providers"]["google"]["enabled"] = True
+            cfg["providers"]["google"]["apiKey"] = ""
+            cfg["channels"]["telegram"]["enabled"] = True
+            cfg["channels"]["telegram"]["token"] = ""
+            cli.save_config(cfg, config_path=config_path)
+
+            with patch.dict(
+                os.environ,
+                {
+                    "GOOGLE_API_KEY": "env-google-key",
+                    "TELEGRAM_BOT_TOKEN": "env-telegram-token",
+                },
+                clear=False,
+            ):
+                changes, skipped, failed = cli._doctor_apply_minimal_fixes(config_path)
+
+            updated = cli.load_config(config_path=config_path)
+
+        self.assertIn("providers.google.apiKey <- GOOGLE_API_KEY", changes)
+        self.assertIn("channels.telegram.token <- TELEGRAM_BOT_TOKEN", changes)
+        self.assertIsInstance(skipped, list)
+        self.assertEqual(failed, [])
+        self.assertEqual(updated["providers"]["google"]["apiKey"], "env-google-key")
+        self.assertEqual(updated["channels"]["telegram"]["token"], "env-telegram-token")
+
+    def test_doctor_apply_minimal_fixes_can_emit_structured_events(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["providers"]["google"]["enabled"] = True
+            cfg["providers"]["google"]["apiKey"] = ""
+            cli.save_config(cfg, config_path=config_path)
+
+            events: list[dict[str, str]] = []
+            with patch.dict(os.environ, {"GOOGLE_API_KEY": "env-google-key"}, clear=False):
+                changes, _skipped, failed = cli._doctor_apply_minimal_fixes(config_path, event_sink=events)
+
+        self.assertIn("providers.google.apiKey <- GOOGLE_API_KEY", changes)
+        self.assertEqual(failed, [])
+        self.assertTrue(events)
+        self.assertIn("outcome", events[0])
+        self.assertIn("code", events[0])
+        self.assertIn("rule", events[0])
+        self.assertIn("message", events[0])
+        self.assertTrue(
+            any(
+                event["outcome"] == "applied"
+                and event["code"] == "provider.env.api_key_backfilled"
+                and event["message"] == "providers.google.apiKey <- GOOGLE_API_KEY"
+                for event in events
+            )
+        )
+
+    def test_doctor_apply_minimal_fixes_e2e_apply_with_mixed_outcomes(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["providers"]["google"]["enabled"] = True
+            cfg["providers"]["google"]["apiKey"] = ""
+            cfg["channels"]["telegram"]["enabled"] = True
+            cfg["channels"]["telegram"]["token"] = ""
+            cfg["channels"]["email"]["enabled"] = True
+            cfg["channels"]["email"]["consentGranted"] = False
+            cli.save_config(cfg, config_path=config_path)
+
+            events: list[dict[str, str]] = []
+            with patch.dict(
+                os.environ,
+                {
+                    "GOOGLE_API_KEY": "env-google-key",
+                    "EMAIL_CONSENT_GRANTED": "true",
+                },
+                clear=False,
+            ):
+                changes, skipped, failed = cli._doctor_apply_minimal_fixes(config_path, event_sink=events)
+
+            updated = cli.load_config(config_path=config_path)
+
+        self.assertIn("providers.google.apiKey <- GOOGLE_API_KEY", changes)
+        self.assertIn("channels.email.consentGranted <- EMAIL_CONSENT_GRANTED", changes)
+        self.assertIn("TELEGRAM_BOT_TOKEN missing", skipped)
+        self.assertEqual(failed, [])
+        self.assertEqual(updated["providers"]["google"]["apiKey"], "env-google-key")
+        self.assertTrue(updated["channels"]["email"]["consentGranted"])
+        self.assertTrue(any(event["outcome"] == "applied" for event in events))
+        self.assertTrue(any(event["outcome"] == "skipped" for event in events))
+        self.assertTrue(any(event["code"] == "provider.env.api_key_backfilled" for event in events))
+        self.assertTrue(any(event["code"] == "email.consent.backfilled" for event in events))
+        self.assertTrue(any(event["code"] == "channel.env.source_missing" for event in events))
+
+    def test_doctor_apply_minimal_fixes_e2e_save_failure_emits_failed_event(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["providers"]["google"]["enabled"] = True
+            cfg["providers"]["google"]["apiKey"] = ""
+            cli.save_config(cfg, config_path=config_path)
+
+            events: list[dict[str, str]] = []
+            with patch.dict(os.environ, {"GOOGLE_API_KEY": "env-google-key"}, clear=False):
+                with patch.object(cli, "save_config", side_effect=RuntimeError("boom")):
+                    changes, _skipped, failed = cli._doctor_apply_minimal_fixes(config_path, event_sink=events)
+
+        self.assertIn("providers.google.apiKey <- GOOGLE_API_KEY", changes)
+        self.assertEqual(len(failed), 1)
+        self.assertIn("save_config failed: boom", failed[0])
+        self.assertTrue(
+            any(
+                event["outcome"] == "failed"
+                and event["code"] == "config.save.failed"
+                and "save_config failed: boom" in event["message"]
+                for event in events
+            )
+        )
+
+    def test_doctor_apply_minimal_fixes_enables_default_provider_and_local_channel(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            for name, item in cfg["providers"].items():
+                if isinstance(item, dict):
+                    item["enabled"] = False
+            for name, item in cfg["channels"].items():
+                if isinstance(item, dict) and "enabled" in item:
+                    item["enabled"] = False
+            cli.save_config(cfg, config_path=config_path)
+
+            changes, _skipped, _failed = cli._doctor_apply_minimal_fixes(config_path)
+            updated = cli.load_config(config_path=config_path)
+
+        self.assertIn(f"providers.{cli.DEFAULT_PROVIDER}.enabled <- true (doctor default)", changes)
+        self.assertIn("channels.local.enabled <- true (doctor default)", changes)
+        self.assertTrue(updated["providers"][cli.DEFAULT_PROVIDER]["enabled"])
+        self.assertTrue(updated["channels"]["local"]["enabled"])
+
+    def test_doctor_apply_minimal_fixes_migrates_legacy_provider_alias_key(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            raw = {
+                "providers": {
+                    "openai-codex": {
+                        "enabled": True,
+                        "apiKey": "legacy-key",
+                        "model": "openai-codex/gpt-5.1-codex",
+                    }
+                },
+                "channels": {"local": {"enabled": True}},
+            }
+            config_path.write_text(json.dumps(raw), encoding="utf-8")
+
+            changes, _skipped, _failed = cli._doctor_apply_minimal_fixes(config_path)
+            updated = cli.load_config(config_path=config_path)
+
+        joined = "\n".join(changes)
+        self.assertIn("providers.openai_codex.enabled <- providers.openai-codex.enabled", joined)
+        self.assertIn("providers.openai_codex.apiKey <- providers.openai-codex.apiKey", joined)
+        self.assertTrue(updated["providers"]["openai_codex"]["enabled"])
+        self.assertEqual(updated["providers"]["openai_codex"]["apiKey"], "legacy-key")
+
+    def test_doctor_apply_minimal_fixes_reports_provider_enabled_skip_for_alias_source(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            raw = {
+                "providers": {
+                    "openai-codex": {"enabled": True},
+                    "openai_codex": {"enabled": True},
+                },
+                "channels": {"local": {"enabled": True}},
+            }
+            config_path.write_text(json.dumps(raw), encoding="utf-8")
+
+            _changes, skipped, _failed = cli._doctor_apply_minimal_fixes(config_path)
+
+        joined_skipped = "\n".join(skipped)
+        self.assertIn(
+            "providers.openai_codex.enabled kept existing value (source providers.openai-codex.enabled)",
+            joined_skipped,
+        )
+
+    def test_doctor_apply_minimal_fixes_migrates_legacy_provider_api_key_fields(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            raw = {
+                "providers": {
+                    "google": {
+                        "enabled": True,
+                        "api_key": "legacy-google-key",
+                        "api_base": "https://example.invalid",
+                    }
+                },
+                "channels": {"local": {"enabled": True}},
+            }
+            config_path.write_text(json.dumps(raw), encoding="utf-8")
+
+            changes, _skipped, _failed = cli._doctor_apply_minimal_fixes(config_path)
+            updated = cli.load_config(config_path=config_path)
+
+        joined = "\n".join(changes)
+        self.assertIn("providers.google.apiKey <- providers.google.api_key", joined)
+        self.assertIn("providers.google.apiBase <- providers.google.api_base", joined)
+        self.assertEqual(updated["providers"]["google"]["apiKey"], "legacy-google-key")
+        self.assertEqual(updated["providers"]["google"]["apiBase"], "https://example.invalid")
+
+    def test_doctor_apply_minimal_fixes_migrates_legacy_channel_fields(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            raw = {
+                "providers": {"google": {"enabled": True}},
+                "channels": {
+                    "local": {"enabled": True},
+                    "telegram": {"enabled": True, "bot_token": "legacy-telegram-token"},
+                    "dingtalk": {"enabled": True, "client_id": "legacy-client-id"},
+                },
+            }
+            config_path.write_text(json.dumps(raw), encoding="utf-8")
+
+            changes, _skipped, _failed = cli._doctor_apply_minimal_fixes(config_path)
+            updated = cli.load_config(config_path=config_path)
+
+        joined = "\n".join(changes)
+        self.assertIn("channels.telegram.token <- channels.telegram.bot_token", joined)
+        self.assertIn("channels.dingtalk.clientId <- channels.dingtalk.client_id", joined)
+        self.assertEqual(updated["channels"]["telegram"]["token"], "legacy-telegram-token")
+        self.assertEqual(updated["channels"]["dingtalk"]["clientId"], "legacy-client-id")
+
+    def test_doctor_fix_mapping_tables_include_core_legacy_cases(self) -> None:
+        from openheron import cli
+
+        self.assertIn(("api_key", "apiKey"), cli.LEGACY_PROVIDER_FIELD_MIGRATIONS)
+        self.assertIn(("api_base", "apiBase"), cli.LEGACY_PROVIDER_FIELD_MIGRATIONS)
+        self.assertIn(("telegram", "bot_token", "token"), cli.LEGACY_CHANNEL_FIELD_MIGRATIONS)
+        self.assertIn(("dingtalk", "client_id", "clientId"), cli.LEGACY_CHANNEL_FIELD_MIGRATIONS)
+        self.assertIn(("telegram", "token", "TELEGRAM_BOT_TOKEN"), cli.CHANNEL_ENV_BACKFILL_MAPPINGS)
+
+    def test_doctor_ensure_active_provider_enables_default(self) -> None:
+        from openheron import cli
+
+        providers_cfg = cli.default_config()["providers"]
+        for item in providers_cfg.values():
+            if isinstance(item, dict):
+                item["enabled"] = False
+        changes: list[str] = []
+
+        active = cli._doctor_ensure_active_provider(providers_cfg=providers_cfg, changes=changes)
+
+        self.assertEqual(active, cli.DEFAULT_PROVIDER)
+        self.assertTrue(providers_cfg[cli.DEFAULT_PROVIDER]["enabled"])
+        self.assertIn(f"providers.{cli.DEFAULT_PROVIDER}.enabled <- true (doctor default)", changes)
+
+    def test_doctor_ensure_at_least_one_enabled_channel_enables_local(self) -> None:
+        from openheron import cli
+
+        channels_cfg = cli.default_config()["channels"]
+        for item in channels_cfg.values():
+            if isinstance(item, dict) and "enabled" in item:
+                item["enabled"] = False
+        changes: list[str] = []
+
+        cli._doctor_ensure_at_least_one_enabled_channel(channels_cfg=channels_cfg, changes=changes)
+
+        self.assertTrue(channels_cfg["local"]["enabled"])
+        self.assertIn("channels.local.enabled <- true (doctor default)", changes)
+
+    def test_doctor_backfill_provider_api_key_from_env_sets_value(self) -> None:
+        from openheron import cli
+
+        providers_cfg = cli.default_config()["providers"]
+        providers_cfg["google"]["enabled"] = True
+        providers_cfg["google"]["apiKey"] = ""
+        changes: list[str] = []
+
+        with patch.dict(os.environ, {"GOOGLE_API_KEY": "env-google-key"}, clear=False):
+            cli._doctor_backfill_provider_api_key_from_env(
+                providers_cfg=providers_cfg,
+                active_provider="google",
+                changes=changes,
+            )
+
+        self.assertEqual(providers_cfg["google"]["apiKey"], "env-google-key")
+        self.assertIn("providers.google.apiKey <- GOOGLE_API_KEY", changes)
+
+    def test_doctor_backfill_provider_api_key_from_env_skips_without_active_provider(self) -> None:
+        from openheron import cli
+
+        providers_cfg = cli.default_config()["providers"]
+        changes: list[str] = []
+
+        with patch.dict(os.environ, {"GOOGLE_API_KEY": "env-google-key"}, clear=False):
+            cli._doctor_backfill_provider_api_key_from_env(
+                providers_cfg=providers_cfg,
+                active_provider=None,
+                changes=changes,
+            )
+
+        self.assertEqual(changes, [])
+
+    def test_doctor_apply_minimal_fixes_dry_run_does_not_persist(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            raw = {
+                "providers": {"google": {"enabled": True, "apiKey": ""}},
+                "channels": {"local": {"enabled": True}, "telegram": {"enabled": True, "token": ""}},
+            }
+            config_path.write_text(json.dumps(raw), encoding="utf-8")
+            before = json.loads(config_path.read_text(encoding="utf-8"))
+
+            with patch.dict(
+                os.environ,
+                {
+                    "GOOGLE_API_KEY": "env-google-key",
+                    "TELEGRAM_BOT_TOKEN": "env-telegram-token",
+                },
+                clear=False,
+            ):
+                changes, _skipped, failed = cli._doctor_apply_minimal_fixes(config_path, dry_run=True)
+
+            after = json.loads(config_path.read_text(encoding="utf-8"))
+
+        self.assertTrue(changes)
+        self.assertEqual(failed, [])
+        self.assertEqual(before, after)
+
+    def test_doctor_apply_minimal_fixes_reports_channel_skip_reason_when_disabled(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["providers"]["google"]["enabled"] = True
+            cfg["channels"]["telegram"]["enabled"] = False
+            cfg["channels"]["telegram"]["token"] = ""
+            cli.save_config(cfg, config_path=config_path)
+
+            _changes, skipped, failed = cli._doctor_apply_minimal_fixes(config_path)
+
+        self.assertIn("channels.telegram.token skipped (channel disabled)", skipped)
+        self.assertEqual(failed, [])
+
+    def test_doctor_apply_minimal_fixes_backfills_email_consent_from_env(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["providers"]["google"]["enabled"] = True
+            cfg["channels"]["email"]["enabled"] = True
+            cfg["channels"]["email"]["consentGranted"] = False
+            cli.save_config(cfg, config_path=config_path)
+
+            with patch.dict(os.environ, {"EMAIL_CONSENT_GRANTED": "true"}, clear=False):
+                changes, skipped, failed = cli._doctor_apply_minimal_fixes(config_path)
+
+            updated = cli.load_config(config_path=config_path)
+
+        self.assertIn("channels.email.consentGranted <- EMAIL_CONSENT_GRANTED", changes)
+        self.assertTrue(updated["channels"]["email"]["consentGranted"])
+        self.assertEqual(failed, [])
+        self.assertNotIn("EMAIL_CONSENT_GRANTED missing", skipped)
+
+    def test_doctor_apply_minimal_fixes_reports_non_truthy_email_consent_env(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            cfg = cli.default_config()
+            cfg["providers"]["google"]["enabled"] = True
+            cfg["channels"]["email"]["enabled"] = True
+            cfg["channels"]["email"]["consentGranted"] = False
+            cli.save_config(cfg, config_path=config_path)
+
+            with patch.dict(os.environ, {"EMAIL_CONSENT_GRANTED": "nope"}, clear=False):
+                _changes, skipped, failed = cli._doctor_apply_minimal_fixes(config_path)
+
+        self.assertIn("EMAIL_CONSENT_GRANTED present but not truthy", skipped)
+        self.assertEqual(failed, [])
+
+    def test_doctor_fix_summary_groups_changes(self) -> None:
+        from openheron import cli
+
+        summary = cli._doctor_fix_summary(
+            [
+                "providers.google.enabled <- true (doctor default)",
+                "providers.google.apiKey <- GOOGLE_API_KEY",
+                "providers.openai_codex.apiKey <- providers.openai-codex.apiKey",
+                "custom <- value",
+            ],
+            ["channels.telegram.token already set"],
+            ["save_config failed: boom"],
+        )
+
+        self.assertEqual(summary["applied"], 4)
+        self.assertEqual(summary["skipped"], 1)
+        self.assertEqual(summary["failed"], 1)
+        self.assertEqual(summary["counts"]["defaults"], 1)
+        self.assertEqual(summary["counts"]["env_backfill"], 1)
+        self.assertEqual(summary["counts"]["legacy_migration"], 1)
+        self.assertEqual(summary["counts"]["other"], 1)
+        self.assertEqual(summary["skippedItems"], ["channels.telegram.token already set"])
+        self.assertEqual(summary["failedItems"], ["save_config failed: boom"])
+        self.assertEqual(summary["reasonCodes"], {})
+        self.assertEqual(summary["byRule"], {})
+
+    def test_doctor_fix_summary_includes_reason_codes_and_by_rule(self) -> None:
+        from openheron import cli
+
+        summary = cli._doctor_fix_summary(
+            ["providers.google.apiKey <- GOOGLE_API_KEY"],
+            ["TELEGRAM_BOT_TOKEN missing"],
+            [],
+            events=[
+                {
+                    "outcome": "applied",
+                    "code": "provider.env.api_key_backfilled",
+                    "rule": "provider_env_backfill",
+                    "message": "providers.google.apiKey <- GOOGLE_API_KEY",
+                },
+                {
+                    "outcome": "skipped",
+                    "code": "channel.env.source_missing",
+                    "rule": "channel_env_backfill",
+                    "message": "TELEGRAM_BOT_TOKEN missing",
+                },
+            ],
+        )
+
+        self.assertEqual(summary["reasonCodes"]["provider.env.api_key_backfilled"], 1)
+        self.assertEqual(summary["reasonCodes"]["channel.env.source_missing"], 1)
+        self.assertEqual(summary["byRule"]["provider_env_backfill"]["applied"], 1)
+        self.assertEqual(summary["byRule"]["provider_env_backfill"]["total"], 1)
+        self.assertEqual(summary["byRule"]["channel_env_backfill"]["skipped"], 1)
+        self.assertEqual(summary["byRule"]["channel_env_backfill"]["total"], 1)
+
+    def test_cmd_doctor_json_fix_contains_reason_codes_and_by_rule(self) -> None:
+        from openheron import cli
+
+        fake_registry = pytypes.SimpleNamespace(workspace=Path("/tmp"), list_skills=lambda: [])
+        fake_session_cfg = pytypes.SimpleNamespace(db_url="sqlite+aiosqlite:////tmp/sessions.db")
+        fake_security_policy = pytypes.SimpleNamespace(
+            restrict_to_workspace=False,
+            allow_exec=True,
+            allow_network=True,
+            exec_allowlist=(),
+        )
+        with patch.dict(
+            os.environ,
+            {
+                "OPENHERON_PROVIDER": "google",
+                "OPENHERON_PROVIDER_ENABLED": "1",
+                "GOOGLE_API_KEY": "k",
+            },
+            clear=False,
+        ):
+            with patch("openheron.cli.shutil.which", return_value="/usr/bin/adk"):
+                with patch.object(cli, "validate_provider_runtime", return_value=None):
+                    with patch.object(cli, "get_registry", return_value=fake_registry):
+                        with patch.object(cli, "load_session_config", return_value=fake_session_cfg):
+                            with patch.object(cli, "parse_enabled_channels", return_value=["local"]):
+                                with patch.object(cli, "validate_channel_setup", return_value=[]):
+                                    with patch.object(cli, "load_security_policy", return_value=fake_security_policy):
+                                        with patch.object(cli, "build_mcp_toolsets_from_env", return_value=[]):
+                                            with patch.object(
+                                                cli,
+                                                "_doctor_apply_minimal_fixes",
+                                                return_value=(
+                                                    ["providers.google.apiKey <- GOOGLE_API_KEY"],
+                                                    ["TELEGRAM_BOT_TOKEN missing"],
+                                                    [],
+                                                ),
+                                            ):
+                                                with patch("builtins.print") as mocked_print:
+                                                    code = cli._cmd_doctor(
+                                                        output_json=True,
+                                                        verbose=False,
+                                                        fix=True,
+                                                        fix_dry_run=False,
+                                                    )
+        self.assertEqual(code, 0)
+        payload = json.loads(mocked_print.call_args.args[0])
+        self.assertIn("reasonCodes", payload["fix"])
+        self.assertIn("byRule", payload["fix"])
+        self.assertIsInstance(payload["fix"]["reasonCodes"], dict)
+        self.assertIsInstance(payload["fix"]["byRule"], dict)
+
+    def test_cmd_doctor_text_output_includes_heartbeat_summary(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            snapshot_path = workspace / ".openheron" / "heartbeat_status.json"
+            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot_path.write_text(
+                json.dumps({"last_status": "ran", "last_reason": "exec:foreground", "recent_reason_counts": {"exec": 2}}),
+                encoding="utf-8",
+            )
+            fake_registry = pytypes.SimpleNamespace(workspace=workspace, list_skills=lambda: [])
+            fake_session_cfg = pytypes.SimpleNamespace(db_url="sqlite+aiosqlite:////tmp/sessions.db")
+            fake_security_policy = pytypes.SimpleNamespace(
+                restrict_to_workspace=False,
+                allow_exec=True,
+                allow_network=True,
+                exec_allowlist=(),
+            )
+            with patch.dict(
+                os.environ,
+                {
+                    "OPENHERON_PROVIDER": "google",
+                    "OPENHERON_PROVIDER_ENABLED": "1",
+                    "GOOGLE_API_KEY": "k",
+                },
+                clear=False,
+            ):
+                with patch("openheron.cli.shutil.which", return_value="/usr/bin/adk"):
+                    with patch.object(cli, "validate_provider_runtime", return_value=None):
+                        with patch.object(cli, "get_registry", return_value=fake_registry):
+                            with patch.object(cli, "load_session_config", return_value=fake_session_cfg):
+                                with patch.object(cli, "parse_enabled_channels", return_value=["local"]):
+                                    with patch.object(cli, "validate_channel_setup", return_value=[]):
+                                        with patch.object(cli, "load_security_policy", return_value=fake_security_policy):
+                                            with patch.object(cli, "build_mcp_toolsets_from_env", return_value=[]):
+                                                with patch.object(cli.logger, "debug"):
+                                                    with patch("builtins.print") as mocked_print:
+                                                        code = cli._cmd_doctor(output_json=False, verbose=False)
+
+        self.assertEqual(code, 0)
+        lines = [call.args[0] for call in mocked_print.call_args_list if call.args]
+        self.assertTrue(any("Heartbeat: last_status=ran, last_reason=exec:foreground" in line for line in lines))
+        self.assertTrue(any("Environment looks good." in line for line in lines))
+
+    def test_cmd_doctor_text_output_includes_install_prereqs(self) -> None:
+        from openheron import cli
+
+        fake_registry = pytypes.SimpleNamespace(workspace=Path("/tmp"), list_skills=lambda: [])
+        fake_session_cfg = pytypes.SimpleNamespace(db_url="sqlite+aiosqlite:////tmp/sessions.db")
+        fake_security_policy = pytypes.SimpleNamespace(
+            restrict_to_workspace=False,
+            allow_exec=True,
+            allow_network=True,
+            exec_allowlist=(),
+        )
+        with patch.dict(
+            os.environ,
+            {
+                "OPENHERON_PROVIDER": "google",
+                "OPENHERON_PROVIDER_ENABLED": "1",
+                "GOOGLE_API_KEY": "k",
+            },
+            clear=False,
+        ):
+            with patch("openheron.cli.shutil.which", return_value="/usr/bin/adk"):
+                with patch.object(cli, "validate_provider_runtime", return_value=None):
+                    with patch.object(cli, "get_registry", return_value=fake_registry):
+                        with patch.object(cli, "load_session_config", return_value=fake_session_cfg):
+                            with patch.object(cli, "parse_enabled_channels", return_value=["local"]):
+                                with patch.object(cli, "validate_channel_setup", return_value=[]):
+                                    with patch.object(cli, "load_security_policy", return_value=fake_security_policy):
+                                        with patch.object(cli, "build_mcp_toolsets_from_env", return_value=[]):
+                                            with patch.object(
+                                                cli,
+                                                "_install_prereq_lines",
+                                                return_value=["x1", "optional package rich missing"],
+                                            ):
+                                                with patch.object(cli.logger, "debug"):
+                                                    with patch("builtins.print") as mocked_print:
+                                                        code = cli._cmd_doctor(output_json=False, verbose=False)
+
+        self.assertEqual(code, 0)
+        lines = [call.args[0] for call in mocked_print.call_args_list if call.args]
+        self.assertTrue(any("Install prereq [ok]: x1" == line for line in lines))
+        self.assertTrue(any("Install prereq [warn]: optional package rich missing" == line for line in lines))
 
     def test_cmd_provider_status_json_output_includes_oauth_issue(self) -> None:
         from openheron import cli
@@ -819,6 +2418,17 @@ class CLITests(unittest.TestCase):
                 mocked_list.assert_called_once_with(include_disabled=False)
                 mocked_bootstrap.assert_called_once()
 
+    def test_heartbeat_status_mode_dispatch(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "bootstrap_env_from_config") as mocked_bootstrap:
+            with patch.object(cli, "_cmd_heartbeat_status", return_value=0) as mocked_status:
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main(["heartbeat", "status", "--json"])
+                self.assertEqual(ctx.exception.code, 0)
+                mocked_status.assert_called_once_with(output_json=True)
+                mocked_bootstrap.assert_called_once()
+
     def test_cron_add_dispatch_does_not_trigger_single_turn_message(self) -> None:
         from openheron import cli
 
@@ -957,6 +2567,33 @@ class CLITests(unittest.TestCase):
         self.assertEqual(mocked_print.call_count, 2)
         mocked_print.assert_any_call("Scheduled jobs:")
         mocked_print.assert_any_call("- demo (id: j1, every:30s, enabled, next=-)")
+
+    def test_cmd_heartbeat_status_prints_runtime_fields(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            snapshot = {
+                "running": True,
+                "enabled": True,
+                "last_status": "ran",
+                "last_reason": "cron:job1",
+                "target_mode": "last",
+                "last_delivery": {"kind": "alert"},
+                "recent_reason_counts": {"cron": 2, "exec": 1},
+            }
+            store = Path(tmp) / ".openheron" / "heartbeat_status.json"
+            store.parent.mkdir(parents=True, exist_ok=True)
+            store.write_text(json.dumps(snapshot), encoding="utf-8")
+            policy = pytypes.SimpleNamespace(workspace_root=Path(tmp))
+            with patch.object(cli, "load_security_policy", return_value=policy):
+                with patch("builtins.print") as mocked_info:
+                    code = cli._cmd_heartbeat_status(output_json=False)
+
+        self.assertEqual(code, 0)
+        lines = [call.args[0] for call in mocked_info.call_args_list if call.args]
+        self.assertTrue(any("running=True" in line for line in lines))
+        self.assertTrue(any("last_reason=cron:job1" in line for line in lines))
+        self.assertTrue(any('"cron": 2' in line for line in lines))
 
     def test_cmd_doctor_reports_whatsapp_bridge_precheck_issue(self) -> None:
         from openheron import cli
