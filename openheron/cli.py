@@ -1925,6 +1925,20 @@ class InstallChannelPromptRule:
     strip_for_presence: bool = True
 
 
+@dataclass(frozen=True)
+class InstallChannelSummaryRequirement:
+    """Schema rule for install summary missing checks and fix hints."""
+
+    channel: str
+    key: str
+    presence: Literal["truthy_bool", "non_empty_strip", "non_empty_raw"] = "non_empty_strip"
+    fix_hint_template: str = "set {item} in {config_path}"
+
+    @property
+    def item(self) -> str:
+        return f"channels.{self.channel}.{self.key}"
+
+
 INSTALL_CHANNEL_PROMPT_RULES: dict[str, tuple[InstallChannelPromptRule, ...]] = {
     "feishu": (
         InstallChannelPromptRule("appId", "Feishu appId (required for enabled channel, press Enter to skip for now)> "),
@@ -2016,6 +2030,84 @@ INSTALL_CHANNEL_PROMPT_RULES: dict[str, tuple[InstallChannelPromptRule, ...]] = 
         ),
     ),
 }
+
+
+INSTALL_CHANNEL_SUMMARY_REQUIREMENTS: tuple[InstallChannelSummaryRequirement, ...] = (
+    InstallChannelSummaryRequirement(
+        channel="feishu",
+        key="appId",
+        fix_hint_template="set {item} in {config_path} (Feishu credentials)",
+    ),
+    InstallChannelSummaryRequirement(
+        channel="feishu",
+        key="appSecret",
+        fix_hint_template="set {item} in {config_path} (Feishu credentials)",
+    ),
+    InstallChannelSummaryRequirement(channel="telegram", key="token"),
+    InstallChannelSummaryRequirement(channel="discord", key="token"),
+    InstallChannelSummaryRequirement(channel="dingtalk", key="clientId"),
+    InstallChannelSummaryRequirement(channel="dingtalk", key="clientSecret"),
+    InstallChannelSummaryRequirement(channel="slack", key="botToken"),
+    InstallChannelSummaryRequirement(channel="whatsapp", key="bridgeUrl"),
+    InstallChannelSummaryRequirement(channel="mochat", key="baseUrl"),
+    InstallChannelSummaryRequirement(channel="mochat", key="clawToken"),
+    InstallChannelSummaryRequirement(
+        channel="email",
+        key="consentGranted",
+        presence="truthy_bool",
+        fix_hint_template="set channels.email.consentGranted=true in {config_path}",
+    ),
+    InstallChannelSummaryRequirement(channel="email", key="smtpHost"),
+    InstallChannelSummaryRequirement(channel="email", key="smtpUsername"),
+    InstallChannelSummaryRequirement(channel="email", key="smtpPassword", presence="non_empty_raw"),
+    InstallChannelSummaryRequirement(channel="qq", key="appId"),
+    InstallChannelSummaryRequirement(channel="qq", key="secret"),
+)
+
+
+def _install_channel_value_missing(
+    *,
+    cfg: dict[str, Any],
+    key: str,
+    presence: Literal["truthy_bool", "non_empty_strip", "non_empty_raw"],
+) -> bool:
+    """Return whether a channel field is considered missing by install summary rules."""
+
+    value = cfg.get(key)
+    if presence == "truthy_bool":
+        return not bool(value)
+    if presence == "non_empty_raw":
+        return not str(value or "")
+    return not str(value or "").strip()
+
+
+def _install_summary_channel_missing(channels_cfg: dict[str, Any]) -> list[str]:
+    """Collect missing channel fields for install summary in stable rule order."""
+
+    missing: list[str] = []
+    for requirement in INSTALL_CHANNEL_SUMMARY_REQUIREMENTS:
+        channel_cfg = channels_cfg.get(requirement.channel, {})
+        if not isinstance(channel_cfg, dict) or not bool(channel_cfg.get("enabled")):
+            continue
+        if _install_channel_value_missing(
+            cfg=channel_cfg,
+            key=requirement.key,
+            presence=requirement.presence,
+        ):
+            missing.append(requirement.item)
+    return missing
+
+
+def _install_summary_channel_fix_hints(config_path: Path) -> dict[str, str]:
+    """Build install summary fix hint map for channel missing fields."""
+
+    hints: dict[str, str] = {}
+    for requirement in INSTALL_CHANNEL_SUMMARY_REQUIREMENTS:
+        hints[requirement.item] = requirement.fix_hint_template.format(
+            item=requirement.item,
+            config_path=config_path,
+        )
+    return hints
 
 
 def _apply_install_channel_prompt_rules(
@@ -2257,107 +2349,21 @@ def _install_summary_lines(config_path: Path) -> list[str]:
             missing.append(f"{selected_provider}.apiKey")
 
     if isinstance(channels_cfg, dict):
-        feishu_cfg = channels_cfg.get("feishu", {})
-        if isinstance(feishu_cfg, dict) and bool(feishu_cfg.get("enabled")):
-            if not str(feishu_cfg.get("appId", "")).strip():
-                missing.append("channels.feishu.appId")
-            if not str(feishu_cfg.get("appSecret", "")).strip():
-                missing.append("channels.feishu.appSecret")
-        telegram_cfg = channels_cfg.get("telegram", {})
-        if isinstance(telegram_cfg, dict) and bool(telegram_cfg.get("enabled")):
-            if not str(telegram_cfg.get("token", "")).strip():
-                missing.append("channels.telegram.token")
-        discord_cfg = channels_cfg.get("discord", {})
-        if isinstance(discord_cfg, dict) and bool(discord_cfg.get("enabled")):
-            if not str(discord_cfg.get("token", "")).strip():
-                missing.append("channels.discord.token")
-        dingtalk_cfg = channels_cfg.get("dingtalk", {})
-        if isinstance(dingtalk_cfg, dict) and bool(dingtalk_cfg.get("enabled")):
-            if not str(dingtalk_cfg.get("clientId", "")).strip():
-                missing.append("channels.dingtalk.clientId")
-            if not str(dingtalk_cfg.get("clientSecret", "")).strip():
-                missing.append("channels.dingtalk.clientSecret")
-        slack_cfg = channels_cfg.get("slack", {})
-        if isinstance(slack_cfg, dict) and bool(slack_cfg.get("enabled")):
-            if not str(slack_cfg.get("botToken", "")).strip():
-                missing.append("channels.slack.botToken")
-        whatsapp_cfg = channels_cfg.get("whatsapp", {})
-        if isinstance(whatsapp_cfg, dict) and bool(whatsapp_cfg.get("enabled")):
-            if not str(whatsapp_cfg.get("bridgeUrl", "")).strip():
-                missing.append("channels.whatsapp.bridgeUrl")
-        mochat_cfg = channels_cfg.get("mochat", {})
-        if isinstance(mochat_cfg, dict) and bool(mochat_cfg.get("enabled")):
-            if not str(mochat_cfg.get("baseUrl", "")).strip():
-                missing.append("channels.mochat.baseUrl")
-            if not str(mochat_cfg.get("clawToken", "")).strip():
-                missing.append("channels.mochat.clawToken")
-        email_cfg = channels_cfg.get("email", {})
-        if isinstance(email_cfg, dict) and bool(email_cfg.get("enabled")):
-            if not bool(email_cfg.get("consentGranted")):
-                missing.append("channels.email.consentGranted")
-            if not str(email_cfg.get("smtpHost", "")).strip():
-                missing.append("channels.email.smtpHost")
-            if not str(email_cfg.get("smtpUsername", "")).strip():
-                missing.append("channels.email.smtpUsername")
-            if not str(email_cfg.get("smtpPassword", "")):
-                missing.append("channels.email.smtpPassword")
-        qq_cfg = channels_cfg.get("qq", {})
-        if isinstance(qq_cfg, dict) and bool(qq_cfg.get("enabled")):
-            if not str(qq_cfg.get("appId", "")).strip():
-                missing.append("channels.qq.appId")
-            if not str(qq_cfg.get("secret", "")).strip():
-                missing.append("channels.qq.secret")
+        missing.extend(_install_summary_channel_missing(channels_cfg))
 
     lines = [f"Install summary: provider={selected_provider}, channels={enabled_channels or ['(none)']}"]
     if missing:
         lines.append(f"Install summary: missing={missing}")
         fix_hints: list[str] = []
+        channel_fix_hints = _install_summary_channel_fix_hints(config_path)
         for item in missing:
             if item.endswith(".apiKey"):
                 provider_name = item.split(".", 1)[0]
                 fix_hints.append(
                     f"set providers.{provider_name}.apiKey in {config_path}"
                 )
-            elif item.startswith("channels.feishu."):
-                fix_hints.append(
-                    f"set {item} in {config_path} (Feishu credentials)"
-                )
-            elif item == "channels.telegram.token":
-                fix_hints.append(
-                    f"set channels.telegram.token in {config_path}"
-                )
-            elif item == "channels.discord.token":
-                fix_hints.append(
-                    f"set channels.discord.token in {config_path}"
-                )
-            elif item.startswith("channels.dingtalk."):
-                fix_hints.append(
-                    f"set {item} in {config_path}"
-                )
-            elif item == "channels.slack.botToken":
-                fix_hints.append(
-                    f"set channels.slack.botToken in {config_path}"
-                )
-            elif item == "channels.whatsapp.bridgeUrl":
-                fix_hints.append(
-                    f"set channels.whatsapp.bridgeUrl in {config_path}"
-                )
-            elif item.startswith("channels.mochat."):
-                fix_hints.append(
-                    f"set {item} in {config_path}"
-                )
-            elif item == "channels.email.consentGranted":
-                fix_hints.append(
-                    f"set channels.email.consentGranted=true in {config_path}"
-                )
-            elif item.startswith("channels.email."):
-                fix_hints.append(
-                    f"set {item} in {config_path}"
-                )
-            elif item.startswith("channels.qq."):
-                fix_hints.append(
-                    f"set {item} in {config_path}"
-                )
+            elif item in channel_fix_hints:
+                fix_hints.append(channel_fix_hints[item])
             else:
                 fix_hints.append(f"set {item} in {config_path}")
         lines.append(f"Install summary: fixes={fix_hints}")
