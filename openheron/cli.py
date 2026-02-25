@@ -2116,20 +2116,21 @@ def _build_install_channel_summary_requirements() -> tuple[InstallChannelSummary
     """Build install summary requirements from shared doctor channel backfill rules."""
 
     requirements: list[InstallChannelSummaryRequirement] = []
-    email_consent_added = False
+    bool_requirements: dict[tuple[str, str], InstallChannelSummaryRequirement] = {}
+    for bool_rule in DOCTOR_CHANNEL_BOOL_ENV_BACKFILL_RULES:
+        bool_requirements[(bool_rule.channel, bool_rule.key)] = InstallChannelSummaryRequirement(
+            channel=bool_rule.channel,
+            key=bool_rule.key,
+            presence="truthy_bool",
+            fix_hint_template=f"set channels.{bool_rule.channel}.{bool_rule.key}=true in {{config_path}}",
+        )
+
     for backfill_rule in DOCTOR_CHANNEL_ENV_BACKFILL_RULES:
         channel = backfill_rule.channel
         key = backfill_rule.key
-        if channel == "email" and not email_consent_added:
-            requirements.append(
-                InstallChannelSummaryRequirement(
-                    channel="email",
-                    key="consentGranted",
-                    presence="truthy_bool",
-                    fix_hint_template="set channels.email.consentGranted=true in {config_path}",
-                )
-            )
-            email_consent_added = True
+        bool_requirement = bool_requirements.get((channel, key))
+        if bool_requirement is not None:
+            requirements.append(bool_requirement)
         fix_hint_template = (
             "set {item} in {config_path} (Feishu credentials)"
             if channel == "feishu"
@@ -2146,6 +2147,9 @@ def _build_install_channel_summary_requirements() -> tuple[InstallChannelSummary
                 fix_hint_template=fix_hint_template,
             )
         )
+    for summary_requirement in bool_requirements.values():
+        if summary_requirement not in requirements:
+            requirements.append(summary_requirement)
     return tuple(requirements)
 
 
