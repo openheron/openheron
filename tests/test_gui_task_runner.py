@@ -1,0 +1,234 @@
+"""Tests for multi-step GUI task runner."""
+
+from __future__ import annotations
+
+import unittest
+
+from openheron.gui_executor import CapturedScreen
+from openheron.gui_task_runner import GuiTaskRunner
+
+
+class _FakeRuntime:
+    def __init__(self) -> None:
+        self._index = 0
+
+    def capture(self) -> CapturedScreen:
+        idx = self._index
+        self._index += 1
+        return CapturedScreen(
+            base64_png=f"screen-{idx}",
+            width=1920,
+            height=1080,
+            path=f"/tmp/task-screen-{idx}.png",
+        )
+
+
+class _FakeCompletions:
+    def __init__(self, payloads: list[str]) -> None:
+        self._payloads = payloads[:]
+        self._index = 0
+
+    def create(self, **_: object) -> object:
+        content = self._payloads[min(self._index, len(self._payloads) - 1)]
+        self._index += 1
+        message = type("Message", (), {"content": content})()
+        choice = type("Choice", (), {"message": message})()
+        return type("Completion", (), {"choices": [choice]})()
+
+
+class _FakePlannerClient:
+    def __init__(self, payloads: list[str]) -> None:
+        self.chat = type("Chat", (), {"completions": _FakeCompletions(payloads)})()
+
+
+class GuiTaskRunnerTests(unittest.TestCase):
+    def test_task_runner_execute_then_reply(self) -> None:
+        planned = [
+            '{"thinking":"step1","action":{"type":"execute","params":{"action":"click login button"}}}',
+            '{"thinking":"done","action":{"type":"reply","params":{"message":"login completed"}}}',
+        ]
+        actions: list[str] = []
+
+        def _fake_action_executor(*, action: str, dry_run: bool = False) -> dict:
+            actions.append(action)
+            return {"ok": True, "screen_changed": True, "retries_used": 0}
+
+        runner = GuiTaskRunner(
+            planner_model="test-planner",
+            planner_api_key="test-key",
+            planner_client=_FakePlannerClient(planned),
+            action_executor=_fake_action_executor,
+            runtime=_FakeRuntime(),
+        )
+        result = runner.run("log in to website", max_steps=4)
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["finished"])
+        self.assertEqual(result["status_code"], "completed")
+        self.assertEqual(result["last_error_type"], "none")
+        self.assertEqual(result["saved_info_snapshot"], {})
+        self.assertEqual(result["message"], "login completed")
+        self.assertIn("plan=", result["final_summary"])
+        self.assertIn("steps=1", result["final_summary"])
+        self.assertEqual(len(result["steps"]), 1)
+        self.assertEqual(result["steps"][0]["type"], "execute")
+        self.assertEqual(result["steps"][0]["action"], "click login button")
+        self.assertEqual(actions, ["click login button"])
+
+    def test_task_runner_supports_save_info_and_modify_plan(self) -> None:
+        planned = [
+            '{"thinking":"remember user","action":{"type":"save_info","params":{"key":"username","value":"alice"}}}',
+            '{"thinking":"refine plan","action":{"type":"modify_plan","params":{"new_plan":"1) open app 2) submit form"}}}',
+            '{"thinking":"do it","action":{"type":"execute","params":{"action":"click submit"}}}',
+            '{"thinking":"done","action":{"type":"reply","params":{"message":"submitted"}}}',
+        ]
+        actions: list[str] = []
+
+        def _fake_action_executor(*, action: str, dry_run: bool = False) -> dict:
+            actions.append(action)
+            return {"ok": True, "screen_changed": True, "retries_used": 0}
+
+        runner = GuiTaskRunner(
+            planner_model="test-planner",
+            planner_api_key="test-key",
+            planner_client=_FakePlannerClient(planned),
+            action_executor=_fake_action_executor,
+            runtime=_FakeRuntime(),
+        )
+        result = runner.run("submit the form", max_steps=6)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status_code"], "completed")
+        self.assertEqual(result["saved_info"]["username"], "alice")
+        self.assertEqual(result["saved_info_snapshot"]["username"], "alice")
+        self.assertEqual(result["current_plan"], "1) open app 2) submit form")
+        self.assertIn("saved_info=username=alice", result["final_summary"])
+        self.assertIn("steps=3", result["final_summary"])
+        self.assertEqual([step["type"] for step in result["steps"]], ["save_info", "modify_plan", "execute"])
+        self.assertEqual(actions, ["click submit"])
+
+    def test_task_runner_save_info_requires_key(self) -> None:
+        planned = [
+            '{"thinking":"bad save_info","action":{"type":"save_info","params":{"value":"alice"}}}',
+        ]
+        runner = GuiTaskRunner(
+            planner_model="test-planner",
+            planner_api_key="test-key",
+            planner_client=_FakePlannerClient(planned),
+            action_executor=lambda **_: {"ok": True},
+            runtime=_FakeRuntime(),
+        )
+        result = runner.run("submit the form", max_steps=2)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["status_code"], "failed")
+        self.assertEqual(result["last_error_type"], "missing_save_info_key")
+        self.assertIn("missing params.key", result["error"])
+        self.assertIn("steps=0", result["final_summary"])
+
+    def test_task_runner_stops_on_no_progress(self) -> None:
+        planned = [
+            '{"thinking":"s1","action":{"type":"execute","params":{"action":"press Enter in address bar"}}}',
+            '{"thinking":"s2","action":{"type":"execute","params":{"action":"press Enter in address bar"}}}',
+        ]
+        runner = GuiTaskRunner(
+            planner_model="test-planner",
+            planner_api_key="test-key",
+            planner_client=_FakePlannerClient(planned),
+            action_executor=lambda **_: {"ok": True, "screen_changed": False, "retries_used": 0},
+            runtime=_FakeRuntime(),
+            max_no_progress_steps=2,
+        )
+
+        result = runner.run("search openheron", max_steps=5)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["status_code"], "no_progress")
+        self.assertEqual(result["last_error_type"], "no_progress_stall")
+        self.assertIn("no progress", result["error"])
+
+    def test_task_runner_stops_on_repeated_action(self) -> None:
+        planned = [
+            '{"thinking":"s1","action":{"type":"execute","params":{"action":"click reload button"}}}',
+            '{"thinking":"s2","action":{"type":"execute","params":{"action":"click reload button"}}}',
+            '{"thinking":"s3","action":{"type":"execute","params":{"action":"click reload button"}}}',
+        ]
+        runner = GuiTaskRunner(
+            planner_model="test-planner",
+            planner_api_key="test-key",
+            planner_client=_FakePlannerClient(planned),
+            action_executor=lambda **_: {"ok": True, "screen_changed": True, "retries_used": 0},
+            runtime=_FakeRuntime(),
+            max_repeat_actions=3,
+        )
+
+        result = runner.run("refresh page", max_steps=6)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["status_code"], "no_progress")
+        self.assertEqual(result["last_error_type"], "repeated_action_stall")
+        self.assertIn("same action repeated", result["error"])
+
+    def test_messages_include_concrete_action_constraints(self) -> None:
+        runner = GuiTaskRunner(
+            planner_model="test-planner",
+            planner_api_key="test-key",
+            planner_client=_FakePlannerClient(
+                ['{"thinking":"done","action":{"type":"reply","params":{"message":"ok"}}}']
+            ),
+            action_executor=lambda **_: {"ok": True},
+            runtime=_FakeRuntime(),
+        )
+        messages = runner._messages(  # type: ignore[attr-defined]
+            task="打开浏览器并搜索 openheron",
+            current_plan="打开浏览器并搜索 openheron",
+            saved_info={},
+            history=[],
+            screen=CapturedScreen(
+                base64_png="screen",
+                width=1920,
+                height=1080,
+                path="/tmp/x.png",
+            ),
+        )
+        system_text = str(messages[0]["content"])
+        self.assertIn("Execute params.action must be specific and observable", system_text)
+        self.assertIn("Avoid vague actions like", system_text)
+
+    def test_messages_include_correction_hint_when_unchanged(self) -> None:
+        runner = GuiTaskRunner(
+            planner_model="test-planner",
+            planner_api_key="test-key",
+            planner_client=_FakePlannerClient(
+                ['{"thinking":"done","action":{"type":"reply","params":{"message":"ok"}}}']
+            ),
+            action_executor=lambda **_: {"ok": True},
+            runtime=_FakeRuntime(),
+        )
+        history = [
+            {
+                "step": 1,
+                "type": "execute",
+                "action": "search",
+                "ok": True,
+                "screen_changed": False,
+                "retries_used": 0,
+                "error": None,
+            }
+        ]
+        messages = runner._messages(  # type: ignore[attr-defined]
+            task="打开浏览器并搜索 openheron",
+            current_plan="打开浏览器并搜索 openheron",
+            saved_info={},
+            history=history,
+            screen=CapturedScreen(
+                base64_png="screen",
+                width=1920,
+                height=1080,
+                path="/tmp/x.png",
+            ),
+        )
+        user_text = str(messages[1]["content"][0]["text"])
+        self.assertIn("Correction hint", user_text)
+        self.assertIn("did not change the screen", user_text)
+
+
+if __name__ == "__main__":
+    unittest.main()

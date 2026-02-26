@@ -183,6 +183,37 @@ For full subcommand options, use the `--help` entries in "Command discovery" abo
 - Context compaction: ADK `EventsCompactionConfig`
 - Slash commands: `/help` and `/new`
 - Channel bridge: local + mainstream chat connectors
+- Desktop GUI automation tools: `computer_use` (single-step) / `computer_task` (multi-step)
+
+## GUI Automation Quick Start
+
+`openheron` now includes two desktop GUI tools:
+
+- `computer_use(action=...)`: one-step GUI grounding and execution
+- `computer_task(task=..., max_steps=...)`: planner + multi-step GUI loop
+
+Recommended minimal environment:
+
+```bash
+export OPENHERON_GUI_MODEL=gpt-4.1-mini
+export OPENHERON_GUI_PLANNER_MODEL=gpt-4.1-mini
+export OPENAI_API_KEY=your_api_key
+```
+
+Smoke script examples:
+
+```bash
+# single-step (real execution)
+./.venv/bin/python scripts/gui_smoke.py --mode single --action "等待 1 秒"
+
+# multi-step (dry-run)
+./.venv/bin/python scripts/gui_smoke.py --mode task --task "打开浏览器并搜索 openheron" --max-steps 8 --dry-run
+```
+
+macOS permission reminder (required for GUI automation):
+
+- `Privacy & Security -> Screen Recording` (Terminal / Python host process)
+- `Privacy & Security -> Accessibility` (for keyboard/mouse control)
 
 ## Project Layout
 

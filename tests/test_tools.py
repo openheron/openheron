@@ -20,6 +20,8 @@ from openheron.runtime.tool_context import route_context
 from openheron.tools import (
     SubagentSpawnRequest,
     browser,
+    computer_task,
+    computer_use,
     configure_browser_runtime,
     configure_heartbeat_waker,
     configure_subagent_dispatcher,
@@ -118,6 +120,20 @@ class ToolsTests(unittest.TestCase):
     def test_exec_tool(self) -> None:
         result = exec_command("echo hello")
         self.assertIn("hello", result)
+
+    def test_computer_use_tool_calls_executor(self) -> None:
+        payload = {"ok": True, "arguments": {"action": "wait", "time": 1}}
+        with patch("openheron.tools.execute_gui_action", return_value=payload) as mocked:
+            result = computer_use("wait 1 second", dry_run=True, model="m", api_key="k")
+        self.assertIn('"ok": true', result)
+        mocked.assert_called_once()
+
+    def test_computer_task_tool_calls_runner(self) -> None:
+        payload = {"ok": True, "finished": True, "message": "done", "steps": []}
+        with patch("openheron.tools.execute_gui_task", return_value=payload) as mocked:
+            result = computer_task("finish login flow", max_steps=5, dry_run=True, planner_model="m", planner_api_key="k")
+        self.assertIn('"ok": true', result)
+        mocked.assert_called_once()
 
     def test_exec_tool_requests_heartbeat_wake(self) -> None:
         reasons: list[str] = []

@@ -17,6 +17,8 @@ from .runtime.workspace_bootstrap import before_model_workspace_bootstrap_callba
 from .skills import get_registry, list_skills, read_skill
 from .tools import (
     browser,
+    computer_task,
+    computer_use,
     cron,
     edit_file,
     exec_command,
@@ -70,6 +72,12 @@ Rules:
 - Use `message_file(path=..., caption=...)` when a local file should be delivered to the current channel.
 - Use `spawn_subagent(prompt=...)` for background sub-tasks that should finish later.
 - Prefer these built-in tools for actions: `read_file`, `write_file`, `edit_file`, `list_dir`, `exec`, `process`, `browser`, `web_search`, `web_fetch`, `message`, `message_image`, `message_file`, `cron`, `spawn_subagent`.
+- For desktop GUI actions, use `computer_use(action=...)` for one-step screenshot-grounded execution.
+- For multi-step desktop GUI tasks, use `computer_task(task=..., max_steps=...)`.
+- Tool selection guidance:
+  - Prefer `browser(...)` for web tasks that are feasible with browser runtime.
+  - Use `computer_task(...)` for end-to-end desktop GUI workflows across apps/windows.
+  - Use `computer_use(...)` only for single-step GUI actions or debugging one step.
 - Browser routing supports `target=host|node|sandbox`; use `target=node` with `node=<id>` when a specific node proxy is required.
 - For long-running shell tasks, use `exec(background=true|yield_ms=...)` and follow-up with `process(...)`.
 - Current time is injected into each request payload (e.g. `Current request time`).
@@ -93,6 +101,8 @@ def _build_tools() -> list[Any]:
         exec_command,
         process_session,
         browser,
+        computer_task,
+        computer_use,
         web_search,
         web_fetch,
         message,

@@ -30,6 +30,8 @@ from .bus.events import OutboundMessage
 from .env_utils import env_enabled
 from .exec_policy import command_segments as _policy_command_segments
 from .exec_policy import validate_exec_security as _policy_validate_exec_security
+from .gui_executor import execute_gui_action
+from .gui_task_runner import execute_gui_task
 from .logging_utils import debug_logging_enabled, emit_debug
 from .runtime.cron_helpers import cron_store_path, format_schedule
 from .runtime.cron_schedule_parser import parse_schedule_input
@@ -1835,6 +1837,99 @@ def web_fetch(url: str, max_chars: int = 50000) -> str:
         return _ret("tool.web_fetch.output", _json({"error": f"Network error: {exc.reason}", "url": url}))
     except Exception as exc:
         return _ret("tool.web_fetch.output", _json({"error": str(exc), "url": url}))
+
+
+def computer_use(
+    action: str,
+    dry_run: bool = False,
+    model: str | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> str:
+    """Execute one desktop GUI action grounded from a screenshot.
+
+    Args:
+        action: Natural language GUI action request, e.g. "click search box".
+        dry_run: If True, model grounding runs but no real GUI action is executed.
+        model: Optional grounding model override.
+        api_key: Optional API key override.
+        base_url: Optional API base URL override.
+
+    Returns:
+        JSON result string with execution status and screenshot paths.
+    """
+    _debug(
+        "tool.computer_use.input",
+        {
+            "action": action,
+            "dry_run": dry_run,
+            "has_model_override": bool((model or "").strip()),
+            "has_api_key_override": bool((api_key or "").strip()),
+            "has_base_url_override": bool((base_url or "").strip()),
+        },
+    )
+    if not (action or "").strip():
+        return _ret("tool.computer_use.output", _json({"ok": False, "error": "action is required"}))
+
+    try:
+        result = execute_gui_action(
+            action=action.strip(),
+            dry_run=bool(dry_run),
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+        )
+        return _ret("tool.computer_use.output", _json(result))
+    except Exception as exc:
+        return _ret("tool.computer_use.output", _json({"ok": False, "error": str(exc)}))
+
+
+def computer_task(
+    task: str,
+    max_steps: int | None = None,
+    dry_run: bool = False,
+    planner_model: str | None = None,
+    planner_api_key: str | None = None,
+    planner_base_url: str | None = None,
+) -> str:
+    """Run a multi-step GUI task with planner + computer_use loop.
+
+    Args:
+        task: High-level GUI task request.
+        max_steps: Optional max planning/execution steps.
+        dry_run: If True, no real GUI actions are executed.
+        planner_model: Optional planner model override.
+        planner_api_key: Optional planner key override.
+        planner_base_url: Optional planner API base URL override.
+
+    Returns:
+        JSON result string including step records and final message/error.
+    """
+    _debug(
+        "tool.computer_task.input",
+        {
+            "task": task,
+            "max_steps": max_steps,
+            "dry_run": dry_run,
+            "has_planner_model_override": bool((planner_model or "").strip()),
+            "has_planner_api_key_override": bool((planner_api_key or "").strip()),
+            "has_planner_base_url_override": bool((planner_base_url or "").strip()),
+        },
+    )
+    if not (task or "").strip():
+        return _ret("tool.computer_task.output", _json({"ok": False, "error": "task is required"}))
+    try:
+        result = execute_gui_task(
+            task=task.strip(),
+            max_steps=max_steps,
+            dry_run=bool(dry_run),
+            planner_model=planner_model,
+            planner_api_key=planner_api_key,
+            planner_base_url=planner_base_url,
+        )
+        return _ret("tool.computer_task.output", _json(result))
+    except Exception as exc:
+        return _ret("tool.computer_task.output", _json({"ok": False, "error": str(exc)}))
 
 
 def configure_outbound_publisher(

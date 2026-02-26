@@ -90,6 +90,26 @@ Provider 选择由 `enabled` 控制，建议保持“仅一个 provider 为 true
 - `OPENHERON_MCP_DOCTOR_TIMEOUT_SECONDS`
 - `OPENHERON_MCP_GATEWAY_TIMEOUT_SECONDS`
 
+### GUI Automation
+
+- `OPENHERON_GUI_MODEL`
+- `OPENHERON_GUI_API_KEY`
+- `OPENHERON_GUI_BASE_URL`
+- `OPENHERON_GUI_PLANNER_MODEL`
+- `OPENHERON_GUI_PLANNER_API_KEY`
+- `OPENHERON_GUI_PLANNER_BASE_URL`
+- `OPENHERON_GUI_MAX_PARSE_RETRIES`
+- `OPENHERON_GUI_MAX_ACTION_RETRIES`
+- `OPENHERON_GUI_VERIFY_SCREEN_CHANGE`
+- `OPENHERON_GUI_MAX_WAIT_SECONDS`
+- `OPENHERON_GUI_ALLOW_DANGEROUS_KEYS`
+- `OPENHERON_GUI_ALLOWED_ACTIONS`
+- `OPENHERON_GUI_BLOCKED_ACTIONS`
+- `OPENHERON_GUI_TASK_MAX_STEPS`
+- `OPENHERON_GUI_TASK_PARSE_RETRIES`
+- `OPENHERON_GUI_TASK_MAX_NO_PROGRESS_STEPS`
+- `OPENHERON_GUI_TASK_MAX_REPEAT_ACTIONS`
+
 ## 不太常见变量速查（含意义）
 
 布尔型变量统一支持：`1/0`、`true/false`、`on/off`、`yes/no`。
@@ -131,6 +151,44 @@ Provider 选择由 `enabled` 控制，建议保持“仅一个 provider 为 true
 | `OPENHERON_WHATSAPP_BRIDGE_SOURCE` | 空 | 指定 bridge 源码目录（含 `package.json`） | bridge 资源不在默认位置时 |
 | `OPENHERON_SUBAGENT_MAX_CONCURRENCY` | `2`（范围 1..16） | 并发子代理任务上限 | 子任务吞吐或资源占用需要调优时 |
 | `OPENHERON_DEBUG_MAX_CHARS` | `2000`（范围 200..20000） | debug 日志中单段文本最大长度 | 排查长 prompt 截断时可调大 |
+
+### GUI Automation（动作与任务编排）
+
+| 变量 | 默认值 | 作用 | 何时需要设置 |
+|---|---|---|---|
+| `OPENHERON_GUI_MODEL` | 空 | `computer_use` 的 grounding 模型 | 启用 GUI 单步工具时必填 |
+| `OPENHERON_GUI_API_KEY` | 空（回退 `OPENAI_API_KEY`） | grounding 模型 API Key | 与 `OPENHERON_GUI_MODEL` 配套 |
+| `OPENHERON_GUI_BASE_URL` | 空 | grounding 模型 API Base URL | 使用兼容网关或私有部署时 |
+| `OPENHERON_GUI_PLANNER_MODEL` | 空（回退 `OPENHERON_GUI_MODEL`） | `computer_task` 多步 planner 模型 | 启用 GUI 多步工具时建议显式设置 |
+| `OPENHERON_GUI_PLANNER_API_KEY` | 空（回退 GUI key / `OPENAI_API_KEY`） | planner API Key | planner 与 executor 分离配置时 |
+| `OPENHERON_GUI_PLANNER_BASE_URL` | 空（回退 GUI base_url） | planner API Base URL | planner 与 executor 走不同网关时 |
+| `OPENHERON_GUI_MAX_PARSE_RETRIES` | `1` | `computer_use` 解析模型输出失败时的重试次数 | 模型输出不稳定时增加 |
+| `OPENHERON_GUI_MAX_ACTION_RETRIES` | `1` | `computer_use` 在无屏幕变化时动作重试次数 | GUI 响应偶发慢时增加 |
+| `OPENHERON_GUI_VERIFY_SCREEN_CHANGE` | `true` | 是否启用前后截图变化校验 | 调试阶段可临时设为 `false` |
+| `OPENHERON_GUI_MAX_WAIT_SECONDS` | `5.0` | `wait` 动作最大等待时长上限 | 任务需要更长等待时调大 |
+| `OPENHERON_GUI_ALLOW_DANGEROUS_KEYS` | `false` | 是否允许危险快捷键组合 | 默认应保持 `false` |
+| `OPENHERON_GUI_ALLOWED_ACTIONS` | 空 | 允许动作白名单（逗号分隔） | 限制执行面时 |
+| `OPENHERON_GUI_BLOCKED_ACTIONS` | 空 | 禁止动作黑名单（逗号分隔） | 禁止特定动作时 |
+| `OPENHERON_GUI_TASK_MAX_STEPS` | `8` | `computer_task` 最大步骤数 | 任务复杂度较高时增加 |
+| `OPENHERON_GUI_TASK_PARSE_RETRIES` | `1` | planner JSON 解析重试次数 | planner 输出不稳定时增加 |
+| `OPENHERON_GUI_TASK_MAX_NO_PROGRESS_STEPS` | `3` | 连续无进展步骤阈值，触发 `status_code=no_progress` | 防止任务空转时 |
+| `OPENHERON_GUI_TASK_MAX_REPEAT_ACTIONS` | `3` | 连续重复同动作阈值，触发 `status_code=no_progress` | 防止重复动作死循环时 |
+
+推荐最小配置（GUI）：
+
+```bash
+export OPENHERON_GUI_MODEL=gpt-4.1-mini
+export OPENHERON_GUI_PLANNER_MODEL=gpt-4.1-mini
+export OPENAI_API_KEY=your_api_key
+```
+
+可选策略配置示例（限制动作范围）：
+
+```bash
+export OPENHERON_GUI_ALLOWED_ACTIONS=wait,left_click,double_click,type,key,scroll
+export OPENHERON_GUI_BLOCKED_ACTIONS=right_click,left_click_drag
+export OPENHERON_GUI_ALLOW_DANGEROUS_KEYS=false
+```
 
 ## 配置样例
 
