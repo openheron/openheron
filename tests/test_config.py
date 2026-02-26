@@ -41,6 +41,9 @@ class ConfigTests(unittest.TestCase):
         self.assertIn("slack", cfg["channels"])
         self.assertIn("qq", cfg["channels"])
         self.assertTrue(cfg["providers"]["google"]["enabled"])
+        self.assertEqual(cfg["multimodalProviders"], {})
+        self.assertEqual(cfg["gui"]["groundingProvider"], "")
+        self.assertEqual(cfg["gui"]["plannerProvider"], "")
         self.assertTrue(cfg["web"]["search"]["enabled"])
         self.assertEqual(cfg["session"]["dbUrl"], "")
         self.assertEqual(cfg["agent"]["heartbeat"]["every"], "30m")
@@ -564,6 +567,70 @@ class ConfigTests(unittest.TestCase):
             os.environ["OPENHERON_PROVIDER_EXTRA_HEADERS_JSON"],
             '{"X-Trace-Id":"trace-001"}',
         )
+
+    def test_gui_multimodal_providers_are_mapped_to_gui_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            cfg = default_config()
+            cfg["multimodalProviders"] = {
+                "grounding_mm": {
+                    "enabled": True,
+                    "apiKey": "grounding-key",
+                    "model": "gpt-4.1-mini",
+                    "apiBase": "https://grounding.example/v1",
+                    "extraHeaders": {},
+                },
+                "planner_mm": {
+                    "enabled": True,
+                    "apiKey": "planner-key",
+                    "model": "gpt-4.1",
+                    "apiBase": "https://planner.example/v1",
+                    "extraHeaders": {},
+                },
+            }
+            cfg["gui"]["groundingProvider"] = "grounding_mm"
+            cfg["gui"]["plannerProvider"] = "planner_mm"
+            save_config(cfg, path)
+
+            os.environ.pop("OPENHERON_GUI_MODEL", None)
+            os.environ.pop("OPENHERON_GUI_API_KEY", None)
+            os.environ.pop("OPENHERON_GUI_BASE_URL", None)
+            os.environ.pop("OPENHERON_GUI_PLANNER_MODEL", None)
+            os.environ.pop("OPENHERON_GUI_PLANNER_API_KEY", None)
+            os.environ.pop("OPENHERON_GUI_PLANNER_BASE_URL", None)
+            bootstrap_env_from_config(path)
+
+        self.assertEqual(os.environ["OPENHERON_GUI_MODEL"], "gpt-4.1-mini")
+        self.assertEqual(os.environ["OPENHERON_GUI_API_KEY"], "grounding-key")
+        self.assertEqual(os.environ["OPENHERON_GUI_BASE_URL"], "https://grounding.example/v1")
+        self.assertEqual(os.environ["OPENHERON_GUI_PLANNER_MODEL"], "gpt-4.1")
+        self.assertEqual(os.environ["OPENHERON_GUI_PLANNER_API_KEY"], "planner-key")
+        self.assertEqual(os.environ["OPENHERON_GUI_PLANNER_BASE_URL"], "https://planner.example/v1")
+
+    def test_gui_multimodal_provider_disabled_does_not_export_gui_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            cfg = default_config()
+            cfg["multimodalProviders"] = {
+                "grounding_mm": {
+                    "enabled": False,
+                    "apiKey": "grounding-key",
+                    "model": "gpt-4.1-mini",
+                    "apiBase": "https://grounding.example/v1",
+                    "extraHeaders": {},
+                }
+            }
+            cfg["gui"]["groundingProvider"] = "grounding_mm"
+            save_config(cfg, path)
+
+            os.environ["OPENHERON_GUI_MODEL"] = "stale-model"
+            os.environ["OPENHERON_GUI_API_KEY"] = "stale-key"
+            os.environ["OPENHERON_GUI_BASE_URL"] = "https://stale.example/v1"
+            bootstrap_env_from_config(path)
+
+        self.assertNotIn("OPENHERON_GUI_MODEL", os.environ)
+        self.assertNotIn("OPENHERON_GUI_API_KEY", os.environ)
+        self.assertNotIn("OPENHERON_GUI_BASE_URL", os.environ)
 
     def test_provider_active_key_is_ignored_when_enabled_points_elsewhere(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

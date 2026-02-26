@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import unittest
+import unittest.mock
 
 from openheron.gui.executor import CapturedScreen
-from openheron.gui.task_runner import GuiTaskRunner
+from openheron.gui.task_runner import GuiTaskRunner, execute_gui_task
 
 
 class _FakeRuntime:
@@ -23,24 +24,6 @@ class _FakeRuntime:
         )
 
 
-class _FakeCompletions:
-    def __init__(self, payloads: list[str]) -> None:
-        self._payloads = payloads[:]
-        self._index = 0
-
-    def create(self, **_: object) -> object:
-        content = self._payloads[min(self._index, len(self._payloads) - 1)]
-        self._index += 1
-        message = type("Message", (), {"content": content})()
-        choice = type("Choice", (), {"message": message})()
-        return type("Completion", (), {"choices": [choice]})()
-
-
-class _FakePlannerClient:
-    def __init__(self, payloads: list[str]) -> None:
-        self.chat = type("Chat", (), {"completions": _FakeCompletions(payloads)})()
-
-
 class GuiTaskRunnerTests(unittest.TestCase):
     def test_task_runner_execute_then_reply(self) -> None:
         planned = [
@@ -56,11 +39,16 @@ class GuiTaskRunnerTests(unittest.TestCase):
         runner = GuiTaskRunner(
             planner_model="test-planner",
             planner_api_key="test-key",
-            planner_client=_FakePlannerClient(planned),
+            planner_runner=object(),
             action_executor=_fake_action_executor,
             runtime=_FakeRuntime(),
         )
-        result = runner.run("log in to website", max_steps=4)
+        with unittest.mock.patch.object(
+            runner,
+            "_plan_next_adk_async",
+            new=unittest.mock.AsyncMock(side_effect=planned),
+        ):
+            result = runner.run("log in to website", max_steps=4)
 
         self.assertTrue(result["ok"])
         self.assertTrue(result["finished"])
@@ -91,11 +79,16 @@ class GuiTaskRunnerTests(unittest.TestCase):
         runner = GuiTaskRunner(
             planner_model="test-planner",
             planner_api_key="test-key",
-            planner_client=_FakePlannerClient(planned),
+            planner_runner=object(),
             action_executor=_fake_action_executor,
             runtime=_FakeRuntime(),
         )
-        result = runner.run("submit the form", max_steps=6)
+        with unittest.mock.patch.object(
+            runner,
+            "_plan_next_adk_async",
+            new=unittest.mock.AsyncMock(side_effect=planned),
+        ):
+            result = runner.run("submit the form", max_steps=6)
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["status_code"], "completed")
@@ -108,17 +101,20 @@ class GuiTaskRunnerTests(unittest.TestCase):
         self.assertEqual(actions, ["click submit"])
 
     def test_task_runner_save_info_requires_key(self) -> None:
-        planned = [
-            '{"thinking":"bad save_info","action":{"type":"save_info","params":{"value":"alice"}}}',
-        ]
+        planned = ['{"thinking":"bad save_info","action":{"type":"save_info","params":{"value":"alice"}}}']
         runner = GuiTaskRunner(
             planner_model="test-planner",
             planner_api_key="test-key",
-            planner_client=_FakePlannerClient(planned),
+            planner_runner=object(),
             action_executor=lambda **_: {"ok": True},
             runtime=_FakeRuntime(),
         )
-        result = runner.run("submit the form", max_steps=2)
+        with unittest.mock.patch.object(
+            runner,
+            "_plan_next_adk_async",
+            new=unittest.mock.AsyncMock(side_effect=planned),
+        ):
+            result = runner.run("submit the form", max_steps=2)
         self.assertFalse(result["ok"])
         self.assertEqual(result["status_code"], "failed")
         self.assertEqual(result["last_error_type"], "missing_save_info_key")
@@ -133,13 +129,18 @@ class GuiTaskRunnerTests(unittest.TestCase):
         runner = GuiTaskRunner(
             planner_model="test-planner",
             planner_api_key="test-key",
-            planner_client=_FakePlannerClient(planned),
+            planner_runner=object(),
             action_executor=lambda **_: {"ok": True, "screen_changed": False, "retries_used": 0},
             runtime=_FakeRuntime(),
             max_no_progress_steps=2,
         )
 
-        result = runner.run("search openheron", max_steps=5)
+        with unittest.mock.patch.object(
+            runner,
+            "_plan_next_adk_async",
+            new=unittest.mock.AsyncMock(side_effect=planned),
+        ):
+            result = runner.run("search openheron", max_steps=5)
         self.assertFalse(result["ok"])
         self.assertEqual(result["status_code"], "no_progress")
         self.assertEqual(result["last_error_type"], "no_progress_stall")
@@ -154,13 +155,18 @@ class GuiTaskRunnerTests(unittest.TestCase):
         runner = GuiTaskRunner(
             planner_model="test-planner",
             planner_api_key="test-key",
-            planner_client=_FakePlannerClient(planned),
+            planner_runner=object(),
             action_executor=lambda **_: {"ok": True, "screen_changed": True, "retries_used": 0},
             runtime=_FakeRuntime(),
             max_repeat_actions=3,
         )
 
-        result = runner.run("refresh page", max_steps=6)
+        with unittest.mock.patch.object(
+            runner,
+            "_plan_next_adk_async",
+            new=unittest.mock.AsyncMock(side_effect=planned),
+        ):
+            result = runner.run("refresh page", max_steps=6)
         self.assertFalse(result["ok"])
         self.assertEqual(result["status_code"], "no_progress")
         self.assertEqual(result["last_error_type"], "repeated_action_stall")
@@ -170,9 +176,7 @@ class GuiTaskRunnerTests(unittest.TestCase):
         runner = GuiTaskRunner(
             planner_model="test-planner",
             planner_api_key="test-key",
-            planner_client=_FakePlannerClient(
-                ['{"thinking":"done","action":{"type":"reply","params":{"message":"ok"}}}']
-            ),
+            planner_runner=object(),
             action_executor=lambda **_: {"ok": True},
             runtime=_FakeRuntime(),
         )
@@ -196,9 +200,7 @@ class GuiTaskRunnerTests(unittest.TestCase):
         runner = GuiTaskRunner(
             planner_model="test-planner",
             planner_api_key="test-key",
-            planner_client=_FakePlannerClient(
-                ['{"thinking":"done","action":{"type":"reply","params":{"message":"ok"}}}']
-            ),
+            planner_runner=object(),
             action_executor=lambda **_: {"ok": True},
             runtime=_FakeRuntime(),
         )
@@ -228,6 +230,30 @@ class GuiTaskRunnerTests(unittest.TestCase):
         user_text = str(messages[1]["content"][0]["text"])
         self.assertIn("Correction hint", user_text)
         self.assertIn("did not change the screen", user_text)
+
+    def test_execute_gui_task_uses_adk_only_runner(self) -> None:
+        captured: dict[str, object] = {}
+
+        class _FakeRunner:
+            def __init__(self, **kwargs: object) -> None:
+                captured.update(kwargs)
+
+            def run(self, task: str, *, max_steps: int = 8, dry_run: bool = False) -> dict[str, object]:
+                return {"ok": True, "task": task, "max_steps": max_steps, "dry_run": dry_run}
+
+        with unittest.mock.patch("openheron.gui.task_runner.GuiTaskRunner", _FakeRunner):
+            with unittest.mock.patch.dict(
+                "os.environ",
+                {
+                    "OPENHERON_GUI_MODEL": "test-model",
+                    "OPENHERON_GUI_API_KEY": "test-key",
+                },
+                clear=False,
+            ):
+                result = execute_gui_task(task="open browser", max_steps=3, dry_run=True)
+
+        self.assertTrue(result["ok"])
+        self.assertNotIn("use_adk_planner", captured)
 
 
 if __name__ == "__main__":

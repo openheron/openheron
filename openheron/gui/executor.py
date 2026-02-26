@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from openai import OpenAI
-
+from ..core.logging_utils import debug_logging_enabled, emit_debug
+from ..runtime.adk_utils import extract_text, merge_text_stream
+from .prompts import load_executor_system_prompt
 
 DEFAULT_GUI_MODEL_ENV = "OPENHERON_GUI_MODEL"
 DEFAULT_GUI_API_KEY_ENV = "OPENHERON_GUI_API_KEY"
@@ -63,6 +66,45 @@ class GuiRuntime(Protocol):
 
     def perform(self, arguments: dict[str, Any]) -> None:
         """Perform one parsed GUI action."""
+
+
+def _run_coro_sync(coro: Any) -> Any:
+    """Execute a coroutine from sync code, even if caller already has an event loop."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result: dict[str, Any] = {}
+
+    def _runner() -> None:
+        try:
+            result["value"] = asyncio.run(coro)
+        except Exception as exc:  # pragma: no cover - threading path
+            result["error"] = exc
+
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+    thread.join()
+
+    if "error" in result:
+        raise result["error"]
+    return result.get("value")
+
+
+def _debug(tag: str, payload: object, *, depth: int = 1) -> None:
+    """Emit GUI executor debug log when debug mode is enabled."""
+    if not debug_logging_enabled():
+        return
+    emit_debug(tag, payload, depth=depth + 1)
+
+
+def _preview_text(text: str, *, max_chars: int = 800) -> str:
+    """Return compact one-line preview for debug logging."""
+    normalized = " ".join((text or "").split())
+    if len(normalized) <= max_chars:
+        return normalized
+    return f"{normalized[:max_chars]}..."
 
 
 def _load_pyautogui() -> Any:
@@ -261,44 +303,92 @@ class GroundingExecutor:
         api_key: str,
         base_url: str | None = None,
         runtime: GuiRuntime | None = None,
-        client: Any | None = None,
+        grounding_runner: Any | None = None,
         max_parse_retries: int = 1,
         verify_screen_change: bool = True,
         max_action_retries: int = 1,
     ) -> None:
         self._model = model
         self._runtime = runtime or PyAutoGuiRuntime()
-        self._client = client or OpenAI(api_key=api_key, base_url=base_url or None)
+        self._grounding_runner: Any = grounding_runner or self._build_adk_grounding_runner(
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+        )
+        self._grounding_user_id = "gui_grounding"
+        self._grounding_session_id = "gui_grounding:main"
         self._max_parse_retries = max(0, int(max_parse_retries))
         self._verify_screen_change = bool(verify_screen_change)
         self._max_action_retries = max(0, int(max_action_retries))
 
+    @staticmethod
+    def _build_adk_grounding_runner(*, model: str, api_key: str, base_url: str | None) -> Any:
+        """Create one ADK runner dedicated to single-step GUI grounding."""
+        from google.adk.agents import LlmAgent
+        from ..runtime.runner_factory import create_runner
+
+        adk_model: Any = model
+        if api_key or base_url:
+            from google.adk.models.lite_llm import LiteLlm
+
+            kwargs: dict[str, Any] = {"drop_params": True}
+            if api_key:
+                kwargs["api_key"] = api_key
+            if base_url:
+                kwargs["api_base"] = base_url
+            adk_model = LiteLlm(model=model, **kwargs)
+
+        agent = LlmAgent(
+            name="openheron_gui_grounding",
+            model=adk_model,
+            instruction=load_executor_system_prompt(),
+        )
+        runner, _ = create_runner(agent=agent, app_name="openheron_gui_grounding")
+        return runner
+
+    async def _ground_with_adk(self, before: CapturedScreen, action: str) -> str:
+        """Run one grounding request through ADK runner and return final text."""
+        from google.genai import types
+
+        parts: list[Any] = [types.Part.from_text(text=action)]
+        try:
+            image_bytes = Path(before.path).read_bytes()
+            parts.insert(0, types.Part.from_bytes(data=image_bytes, mime_type="image/png"))
+        except Exception:
+            _debug(
+                "gui.executor.adk.image_read_fallback",
+                {"before_path": before.path},
+            )
+            pass
+        request = types.UserContent(parts=parts)
+
+        final = ""
+        assert self._grounding_runner is not None
+        async for event in self._grounding_runner.run_async(
+            user_id=self._grounding_user_id,
+            session_id=self._grounding_session_id,
+            new_message=request,
+        ):
+            text = extract_text(getattr(event, "content", None))
+            final = merge_text_stream(final, text)
+        return final
+
     def run(self, action: str, *, dry_run: bool = False) -> dict[str, Any]:
         """Execute one GUI action request end-to-end."""
+        _debug(
+            "gui.executor.run.start",
+            {
+                "action": action,
+                "dry_run": dry_run,
+                "model": self._model,
+                "mode": "adk",
+                "max_parse_retries": self._max_parse_retries,
+                "max_action_retries": self._max_action_retries,
+            },
+        )
         action_retry_count = 0
         while True:
             before = self._runtime.capture()
-            messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a desktop action grounding model. Return exactly one JSON tool call. "
-                        "Schema: {\"name\":\"computer_use\",\"arguments\":{\"action\":\"...\",\"coordinate\":[x,y],"
-                        "\"keys\":[],\"text\":\"...\",\"pixels\":-500,\"time\":1}}. "
-                        "Allowed actions: key,type,mouse_move,left_click,double_click,right_click,left_click_drag,scroll,wait."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/png;base64,{before.base64_png}"},
-                        },
-                        {"type": "text", "text": action},
-                    ],
-                },
-            ]
             parse_attempt = 0
             last_error = ""
             raw_output = ""
@@ -306,14 +396,35 @@ class GroundingExecutor:
             arguments: dict[str, Any] | None = None
 
             while parse_attempt <= self._max_parse_retries:
-                completion = self._client.chat.completions.create(model=self._model, messages=messages)
-                raw_output = str(completion.choices[0].message.content or "")
+                raw_output = str(_run_coro_sync(self._ground_with_adk(before, action)) or "")
+                _debug(
+                    "gui.executor.parse_attempt",
+                    {
+                        "attempt": parse_attempt + 1,
+                        "raw_preview": _preview_text(raw_output),
+                    },
+                )
                 try:
                     tool_payload = _tool_call_payload(raw_output)
                     arguments = _normalize_tool_arguments(tool_payload)
+                    _debug(
+                        "gui.executor.parse_success",
+                        {
+                            "attempt": parse_attempt + 1,
+                            "action": str(arguments.get("action", "")).strip().lower(),
+                        },
+                    )
                     break
                 except Exception as exc:
                     last_error = str(exc)
+                    _debug(
+                        "gui.executor.parse_failed",
+                        {
+                            "attempt": parse_attempt + 1,
+                            "error": last_error,
+                            "raw_preview": _preview_text(raw_output),
+                        },
+                    )
                     parse_attempt += 1
                     if parse_attempt > self._max_parse_retries:
                         raise ValueError(
@@ -337,9 +448,17 @@ class GroundingExecutor:
             )
             if should_retry:
                 action_retry_count += 1
+                _debug(
+                    "gui.executor.action_retry",
+                    {
+                        "retry_count": action_retry_count,
+                        "action_name": action_name,
+                        "screen_changed": screen_changed,
+                    },
+                )
                 continue
 
-            return {
+            result = {
                 "ok": True,
                 "action": action,
                 "tool_call": tool_payload,
@@ -355,6 +474,16 @@ class GroundingExecutor:
                 },
                 "raw_model_output": raw_output,
             }
+            _debug(
+                "gui.executor.run.result",
+                {
+                    "ok": result["ok"],
+                    "action": result["arguments"].get("action"),
+                    "screen_changed": result["screen_changed"],
+                    "retries_used": result["retries_used"],
+                },
+            )
+            return result
 
 
 def execute_gui_action(

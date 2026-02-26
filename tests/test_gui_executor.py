@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 import unittest.mock
 
-from openheron.gui.executor import CapturedScreen, GroundingExecutor, PyAutoGuiRuntime
+from openheron.gui.executor import CapturedScreen, GroundingExecutor, PyAutoGuiRuntime, execute_gui_action
 
 
 class _FakeRuntime:
@@ -17,11 +17,7 @@ class _FakeRuntime:
     def capture(self) -> CapturedScreen:
         index = self._capture_index
         self._capture_index += 1
-        base64_png = (
-            self._captures[index]
-            if index < len(self._captures)
-            else f"ZmFrZS0{index}"
-        )
+        base64_png = self._captures[index] if index < len(self._captures) else f"ZmFrZS0{index}"
         return CapturedScreen(
             base64_png=base64_png,
             width=1920,
@@ -33,45 +29,23 @@ class _FakeRuntime:
         self.calls.append(arguments)
 
 
-class _FakeCompletions:
-    def __init__(self, content: str | list[str]) -> None:
-        if isinstance(content, list):
-            self._contents = content[:]
-        else:
-            self._contents = [content]
-        self._index = 0
-
-    def create(self, **_: object) -> object:
-        content = self._contents[min(self._index, len(self._contents) - 1)]
-        self._index += 1
-        message = type("Message", (), {"content": content})()
-        choice = type("Choice", (), {"message": message})()
-        return type("Completion", (), {"choices": [choice]})()
-
-
-class _FakeClient:
-    def __init__(self, content: str) -> None:
-        self.chat = type(
-            "Chat",
-            (),
-            {"completions": _FakeCompletions(content)},
-        )()
-
-
 class GuiExecutorTests(unittest.TestCase):
     def test_executor_runs_with_tool_call_block(self) -> None:
         runtime = _FakeRuntime()
-        client = _FakeClient(
-            '<tool_call>{"name":"computer_use","arguments":{"action":"left_click","coordinate":[500,500]}}</tool_call>'
-        )
-
         executor = GroundingExecutor(
             model="test-model",
             api_key="test-key",
             runtime=runtime,
-            client=client,
+            grounding_runner=object(),
         )
-        result = executor.run("click center")
+        with unittest.mock.patch.object(
+            executor,
+            "_ground_with_adk",
+            new=unittest.mock.AsyncMock(
+                return_value='<tool_call>{"name":"computer_use","arguments":{"action":"left_click","coordinate":[500,500]}}</tool_call>'
+            ),
+        ):
+            result = executor.run("click center")
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["arguments"]["action"], "left_click")
@@ -80,15 +54,19 @@ class GuiExecutorTests(unittest.TestCase):
 
     def test_executor_respects_dry_run(self) -> None:
         runtime = _FakeRuntime()
-        client = _FakeClient('{"action":"wait","time":1}')
         executor = GroundingExecutor(
             model="test-model",
             api_key="test-key",
             runtime=runtime,
-            client=client,
+            grounding_runner=object(),
         )
 
-        result = executor.run("wait", dry_run=True)
+        with unittest.mock.patch.object(
+            executor,
+            "_ground_with_adk",
+            new=unittest.mock.AsyncMock(return_value='{"action":"wait","time":1}'),
+        ):
+            result = executor.run("wait", dry_run=True)
 
         self.assertTrue(result["ok"])
         self.assertTrue(result["dry_run"])
@@ -169,21 +147,22 @@ class GuiExecutorTests(unittest.TestCase):
 
     def test_executor_retries_parse_then_succeeds(self) -> None:
         runtime = _FakeRuntime()
-        client = _FakeClient(
-            [
-                "not-json",
-                '{"name":"computer_use","arguments":{"action":"wait","time":1}}',
-            ]
-        )
         executor = GroundingExecutor(
             model="test-model",
             api_key="test-key",
             runtime=runtime,
-            client=client,
+            grounding_runner=object(),
             max_parse_retries=1,
         )
 
-        result = executor.run("wait")
+        with unittest.mock.patch.object(
+            executor,
+            "_ground_with_adk",
+            new=unittest.mock.AsyncMock(
+                side_effect=["not-json", '{"name":"computer_use","arguments":{"action":"wait","time":1}}']
+            ),
+        ):
+            result = executor.run("wait")
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["arguments"]["action"], "wait")
@@ -192,41 +171,73 @@ class GuiExecutorTests(unittest.TestCase):
 
     def test_executor_parse_retry_exhausted(self) -> None:
         runtime = _FakeRuntime()
-        client = _FakeClient(["bad-output", "still-bad"])
         executor = GroundingExecutor(
             model="test-model",
             api_key="test-key",
             runtime=runtime,
-            client=client,
+            grounding_runner=object(),
             max_parse_retries=1,
         )
 
-        with self.assertRaises(ValueError):
-            executor.run("click")
+        with unittest.mock.patch.object(
+            executor,
+            "_ground_with_adk",
+            new=unittest.mock.AsyncMock(side_effect=["bad-output", "still-bad"]),
+        ):
+            with self.assertRaises(ValueError):
+                executor.run("click")
 
     def test_executor_retries_when_screen_unchanged(self) -> None:
         runtime = _FakeRuntime(captures=["same", "same", "before-2", "after-2"])
-        client = _FakeClient(
-            [
-                '{"name":"computer_use","arguments":{"action":"left_click","coordinate":[500,500]}}',
-                '{"name":"computer_use","arguments":{"action":"left_click","coordinate":[500,500]}}',
-            ]
-        )
         executor = GroundingExecutor(
             model="test-model",
             api_key="test-key",
             runtime=runtime,
-            client=client,
+            grounding_runner=object(),
             max_action_retries=1,
             verify_screen_change=True,
         )
 
-        result = executor.run("click once")
+        with unittest.mock.patch.object(
+            executor,
+            "_ground_with_adk",
+            new=unittest.mock.AsyncMock(
+                side_effect=[
+                    '{"name":"computer_use","arguments":{"action":"left_click","coordinate":[500,500]}}',
+                    '{"name":"computer_use","arguments":{"action":"left_click","coordinate":[500,500]}}',
+                ]
+            ),
+        ):
+            result = executor.run("click once")
 
         self.assertTrue(result["ok"])
         self.assertTrue(result["screen_changed"])
         self.assertEqual(result["retries_used"], 1)
         self.assertEqual(len(runtime.calls), 2)
+
+    def test_execute_gui_action_keeps_adk_only_executor(self) -> None:
+        captured: dict[str, object] = {}
+
+        class _FakeExecutor:
+            def __init__(self, **kwargs: object) -> None:
+                captured.update(kwargs)
+
+            def run(self, action: str, *, dry_run: bool = False) -> dict[str, object]:
+                return {"ok": True, "action": action, "dry_run": dry_run}
+
+        with unittest.mock.patch("openheron.gui.executor.GroundingExecutor", _FakeExecutor):
+            with unittest.mock.patch.dict(
+                "os.environ",
+                {
+                    "OPENHERON_GUI_MODEL": "test-model",
+                    "OPENHERON_GUI_API_KEY": "test-key",
+                },
+                clear=False,
+            ):
+                result = execute_gui_action(action="click button", dry_run=True)
+
+        self.assertTrue(result["ok"])
+        self.assertNotIn("use_adk_grounding", captured)
 
 
 if __name__ == "__main__":

@@ -19,6 +19,8 @@
 
 - `agent.workspace` / `agent.builtinSkillsDir`
 - `providers.<provider>.enabled / apiKey / model / apiBase / extraHeaders`
+- `multimodalProviders.<name>.enabled / apiKey / model / apiBase / extraHeaders`
+- `gui.groundingProvider / gui.plannerProvider`（绑定到 `multimodalProviders` 名称）
 - `session.dbUrl`
 - `channels.<name>.*`
 - `web.enabled` / `web.search.*`
@@ -92,6 +94,7 @@ Provider 选择由 `enabled` 控制，建议保持“仅一个 provider 为 true
 
 ### GUI Automation
 
+- GUI 执行链路已固定为 ADK-only：不再使用 `OPENHERON_GUI_USE_ADK_GROUNDING`、`OPENHERON_GUI_TASK_USE_ADK_PLANNER` 开关。
 - `OPENHERON_GUI_MODEL`
 - `OPENHERON_GUI_API_KEY`
 - `OPENHERON_GUI_BASE_URL`
@@ -109,6 +112,40 @@ Provider 选择由 `enabled` 控制，建议保持“仅一个 provider 为 true
 - `OPENHERON_GUI_TASK_PARSE_RETRIES`
 - `OPENHERON_GUI_TASK_MAX_NO_PROGRESS_STEPS`
 - `OPENHERON_GUI_TASK_MAX_REPEAT_ACTIONS`
+
+### GUI 多模态 Provider（config.json）
+
+当你希望 GUI 的 grounding/planner 使用 `config.json` 中的多模态模型配置，并允许两者使用不同模型时，配置：
+
+```json
+{
+  "multimodalProviders": {
+    "grounding_mm": {
+      "enabled": true,
+      "apiKey": "your_grounding_key",
+      "model": "gpt-4.1-mini",
+      "apiBase": "",
+      "extraHeaders": {}
+    },
+    "planner_mm": {
+      "enabled": true,
+      "apiKey": "your_planner_key",
+      "model": "gpt-4.1",
+      "apiBase": "",
+      "extraHeaders": {}
+    }
+  },
+  "gui": {
+    "groundingProvider": "grounding_mm",
+    "plannerProvider": "planner_mm"
+  }
+}
+```
+
+说明：
+- `gui.groundingProvider` 对应 `OPENHERON_GUI_MODEL/API_KEY/BASE_URL`
+- `gui.plannerProvider` 对应 `OPENHERON_GUI_PLANNER_MODEL/API_KEY/BASE_URL`
+- provider 未配置或 `enabled=false` 时，不会从 `config.json` 注入对应 GUI 环境变量
 
 ## 不太常见变量速查（含意义）
 

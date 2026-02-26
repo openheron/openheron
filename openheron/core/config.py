@@ -201,6 +201,11 @@ def default_config() -> dict[str, Any]:
             }
             for name in provider_names()
         },
+        "multimodalProviders": {},
+        "gui": {
+            "groundingProvider": "",
+            "plannerProvider": "",
+        },
         "session": {
             "dbUrl": "",
         },
@@ -561,6 +566,52 @@ def _resolve_mcp_servers_json(cfg: dict[str, Any]) -> str:
     return json.dumps(raw, ensure_ascii=False, separators=(",", ":"))
 
 
+def _resolve_gui_provider_env(cfg: dict[str, Any], *, provider_name: str) -> tuple[str, str, str]:
+    """Resolve one multimodal provider into (model, api_key, api_base)."""
+    name = str(provider_name).strip()
+    if not name:
+        return "", "", ""
+
+    providers = cfg.get("multimodalProviders")
+    if not isinstance(providers, dict):
+        return "", "", ""
+    raw = providers.get(name, {})
+    if not isinstance(raw, dict):
+        return "", "", ""
+    if not is_enabled(raw.get("enabled"), default=False):
+        return "", "", ""
+
+    model = str(raw.get("model", "")).strip()
+    api_key = str(raw.get("apiKey", "")).strip()
+    api_base = str(raw.get("apiBase", "")).strip()
+    return model, api_key, api_base
+
+
+def _resolve_gui_multimodal_env(cfg: dict[str, Any]) -> dict[str, str]:
+    """Resolve GUI grounding/planner env values from multimodalProviders config."""
+    gui = cfg.get("gui")
+    if not isinstance(gui, dict):
+        gui = {}
+
+    grounding_model, grounding_api_key, grounding_api_base = _resolve_gui_provider_env(
+        cfg,
+        provider_name=str(gui.get("groundingProvider", "")),
+    )
+    planner_model, planner_api_key, planner_api_base = _resolve_gui_provider_env(
+        cfg,
+        provider_name=str(gui.get("plannerProvider", "")),
+    )
+
+    return {
+        "OPENHERON_GUI_MODEL": grounding_model,
+        "OPENHERON_GUI_API_KEY": grounding_api_key,
+        "OPENHERON_GUI_BASE_URL": grounding_api_base,
+        "OPENHERON_GUI_PLANNER_MODEL": planner_model,
+        "OPENHERON_GUI_PLANNER_API_KEY": planner_api_key,
+        "OPENHERON_GUI_PLANNER_BASE_URL": planner_api_base,
+    }
+
+
 def _as_dict(value: Any) -> dict[str, Any]:
     """Return mapping value as dict, otherwise an empty dict."""
     return value if isinstance(value, dict) else {}
@@ -670,6 +721,7 @@ def config_to_env(
     )
     restrict_workspace, allow_exec, allow_network, exec_allowlist = _resolve_security(cfg)
     mcp_servers_json = _resolve_mcp_servers_json(cfg)
+    gui_multimodal_env = _resolve_gui_multimodal_env(cfg)
     debug = cfg.get("debug", False)
 
     provider_key_env = provider_api_key_env(provider_name) if provider_enabled else None
@@ -711,6 +763,7 @@ def config_to_env(
         "OPENHERON_MCP_SERVERS_JSON": mcp_servers_json,
         "OPENHERON_DEBUG": "1" if bool(debug) else "0",
     }
+    env.update(gui_multimodal_env)
     env.update(channel_env)
     if provider_key_env:
         env[provider_key_env] = provider_api_key

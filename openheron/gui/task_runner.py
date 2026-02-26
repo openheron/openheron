@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import threading
+from pathlib import Path
 from typing import Any, Callable
 
-from openai import OpenAI
-
+from ..core.logging_utils import debug_logging_enabled, emit_debug
+from ..runtime.adk_utils import extract_text, merge_text_stream
 from .executor import (
     DEFAULT_GUI_API_KEY_ENV,
     DEFAULT_GUI_BASE_URL_ENV,
@@ -16,6 +19,7 @@ from .executor import (
     PyAutoGuiRuntime,
     execute_gui_action,
 )
+from .prompts import load_planner_system_prompt
 
 
 DEFAULT_GUI_PLANNER_MODEL_ENV = "OPENHERON_GUI_PLANNER_MODEL"
@@ -48,6 +52,45 @@ def _needs_correction_hint(history: list[dict[str, Any]]) -> bool:
     )
 
 
+def _run_coro_sync(coro: Any) -> Any:
+    """Execute a coroutine from sync code, even if caller already has an event loop."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result: dict[str, Any] = {}
+
+    def _runner() -> None:
+        try:
+            result["value"] = asyncio.run(coro)
+        except Exception as exc:  # pragma: no cover - threading path
+            result["error"] = exc
+
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+    thread.join()
+
+    if "error" in result:
+        raise result["error"]
+    return result.get("value")
+
+
+def _debug(tag: str, payload: object, *, depth: int = 1) -> None:
+    """Emit GUI task-runner debug log when debug mode is enabled."""
+    if not debug_logging_enabled():
+        return
+    emit_debug(tag, payload, depth=depth + 1)
+
+
+def _preview_text(text: str, *, max_chars: int = 800) -> str:
+    """Return compact one-line preview for debug logging."""
+    normalized = " ".join((text or "").split())
+    if len(normalized) <= max_chars:
+        return normalized
+    return f"{normalized[:max_chars]}..."
+
+
 class GuiTaskRunner:
     """Run a multi-step GUI task by iterating planner + computer_use execution."""
 
@@ -59,21 +102,106 @@ class GuiTaskRunner:
         planner_base_url: str | None = None,
         action_executor: Callable[..., dict[str, Any]] | None = None,
         runtime: Any | None = None,
-        planner_client: Any | None = None,
+        planner_runner: Any | None = None,
         max_parse_retries: int = 1,
         max_no_progress_steps: int = 3,
         max_repeat_actions: int = 3,
     ) -> None:
         self._planner_model = planner_model
-        self._planner_client = planner_client or OpenAI(
-            api_key=planner_api_key,
-            base_url=planner_base_url or None,
+        self._planner_runner: Any = planner_runner or self._build_adk_planner_runner(
+            planner_model=planner_model,
+            planner_api_key=planner_api_key,
+            planner_base_url=planner_base_url,
         )
+        self._planner_user_id = "gui_planner"
+        self._planner_session_id = "gui_planner:main"
         self._action_executor = action_executor or execute_gui_action
         self._runtime = runtime or PyAutoGuiRuntime()
         self._max_parse_retries = max(0, int(max_parse_retries))
         self._max_no_progress_steps = max(1, int(max_no_progress_steps))
         self._max_repeat_actions = max(1, int(max_repeat_actions))
+
+    @staticmethod
+    def _build_adk_planner_runner(
+        *,
+        planner_model: str,
+        planner_api_key: str,
+        planner_base_url: str | None,
+    ) -> Any:
+        """Create one ADK runner dedicated to GUI planning."""
+        from google.adk.agents import LlmAgent
+        from ..runtime.runner_factory import create_runner
+
+        model: Any = planner_model
+        if planner_api_key or planner_base_url:
+            from google.adk.models.lite_llm import LiteLlm
+
+            kwargs: dict[str, Any] = {"drop_params": True}
+            if planner_api_key:
+                kwargs["api_key"] = planner_api_key
+            if planner_base_url:
+                kwargs["api_base"] = planner_base_url
+            model = LiteLlm(model=planner_model, **kwargs)
+
+        planner_agent = LlmAgent(
+            name="openheron_gui_planner",
+            model=model,
+            instruction=load_planner_system_prompt(),
+        )
+        runner, _ = create_runner(agent=planner_agent, app_name="openheron_gui_planner")
+        return runner
+
+    @staticmethod
+    def _render_history_text(history: list[dict[str, Any]]) -> str:
+        """Render recent task history for planner prompt context."""
+        if not history:
+            return "No previous GUI steps."
+        lines: list[str] = []
+        for idx, item in enumerate(history[-8:], 1):
+            lines.append(
+                f"{idx}. type={item.get('type')} action={item.get('action')} changed={item.get('screen_changed')} "
+                f"retries={item.get('retries_used')} ok={item.get('ok')}"
+            )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _render_saved_info_text(saved_info: dict[str, str]) -> str:
+        """Render saved key-value context for planner prompt."""
+        if not saved_info:
+            return "No saved info."
+        return "\n".join([f"- {k}: {v}" for k, v in saved_info.items()])
+
+    @staticmethod
+    def _render_correction_hint(history: list[dict[str, Any]]) -> str:
+        """Return correction hint when latest execute step had no visible progress."""
+        if not _needs_correction_hint(history):
+            return ""
+        return (
+            "Correction hint:\n"
+            "- The previous execute step did not change the screen.\n"
+            "- First diagnose focus/state, then issue a more concrete action.\n"
+            "- Do not repeat the same vague command.\n\n"
+        )
+
+    def _build_planner_user_text(
+        self,
+        task: str,
+        current_plan: str,
+        saved_info: dict[str, str],
+        history: list[dict[str, Any]],
+    ) -> str:
+        """Build planner user prompt text shared by OpenAI/ADK paths."""
+        history_text = self._render_history_text(history)
+        saved_info_text = self._render_saved_info_text(saved_info)
+        correction_hint = self._render_correction_hint(history)
+        return (
+            f"Task:\n{task}\n\n"
+            f"Current plan:\n{current_plan}\n\n"
+            f"Saved info:\n{saved_info_text}\n\n"
+            f"Recent history:\n{history_text}\n\n"
+            f"{correction_hint}"
+            "Decide next action."
+        )
 
     def _messages(
         self,
@@ -83,60 +211,18 @@ class GuiTaskRunner:
         history: list[dict[str, Any]],
         screen: CapturedScreen,
     ) -> list[dict[str, Any]]:
-        if not history:
-            history_text = "No previous GUI steps."
-        else:
-            lines: list[str] = []
-            for idx, item in enumerate(history[-8:], 1):
-                lines.append(
-                    f"{idx}. type={item.get('type')} action={item.get('action')} changed={item.get('screen_changed')} "
-                    f"retries={item.get('retries_used')} ok={item.get('ok')}"
-                )
-            history_text = "\n".join(lines)
-        if not saved_info:
-            saved_info_text = "No saved info."
-        else:
-            saved_info_text = "\n".join([f"- {k}: {v}" for k, v in saved_info.items()])
-        correction_hint = ""
-        if _needs_correction_hint(history):
-            correction_hint = (
-                "Correction hint:\n"
-                "- The previous execute step did not change the screen.\n"
-                "- First diagnose focus/state, then issue a more concrete action.\n"
-                "- Do not repeat the same vague command.\n\n"
-            )
-
+        user_text = self._build_planner_user_text(task, current_plan, saved_info, history)
         return [
             {
                 "role": "system",
-                "content": (
-                    "You are a GUI task planner. Decide only one next step.\n"
-                    "Return strict JSON with schema:\n"
-                    '{"thinking":"...","action":{"type":"execute|save_info|modify_plan|reply","params":{"action":"...","key":"...","value":"...","new_plan":"...","message":"..."}}}\n'
-                    "Rules:\n"
-                    "- Use execute for one concrete GUI action.\n"
-                    "- Use save_info when a detail must be remembered for later steps.\n"
-                    "- Use modify_plan when plan should be updated.\n"
-                    "- Use reply only when task is complete.\n"
-                    "- Keep actions atomic.\n"
-                    "- Execute params.action must be specific and observable.\n"
-                    "- Avoid vague actions like: open application, search, type text, continue, next.\n"
-                    "- Good action examples: click browser icon in dock, click address bar, type 'openheron', press Enter."
-                ),
+                "content": load_planner_system_prompt(),
             },
             {
                 "role": "user",
                 "content": [
                     {
                         "type": "text",
-                        "text": (
-                            f"Task:\n{task}\n\n"
-                            f"Current plan:\n{current_plan}\n\n"
-                            f"Saved info:\n{saved_info_text}\n\n"
-                            f"Recent history:\n{history_text}\n\n"
-                            f"{correction_hint}"
-                            "Decide next action."
-                        ),
+                        "text": user_text,
                     },
                     {
                         "type": "image_url",
@@ -145,6 +231,39 @@ class GuiTaskRunner:
                 ],
             },
         ]
+
+    async def _plan_next_adk_async(
+        self,
+        task: str,
+        current_plan: str,
+        saved_info: dict[str, str],
+        history: list[dict[str, Any]],
+        screen: CapturedScreen,
+    ) -> str:
+        """Run one planner request through ADK runner and return final text."""
+        from google.genai import types
+
+        prompt_text = self._build_planner_user_text(task, current_plan, saved_info, history)
+        parts: list[Any] = [types.Part.from_text(text=prompt_text)]
+        try:
+            image_bytes = Path(screen.path).read_bytes()
+            parts.append(types.Part.from_bytes(data=image_bytes, mime_type="image/png"))
+        except Exception:
+            _debug(
+                "gui.task_runner.adk.image_read_fallback",
+                {"screen_path": screen.path},
+            )
+        request = types.UserContent(parts=parts)
+
+        final = ""
+        async for event in self._planner_runner.run_async(
+            user_id=self._planner_user_id,
+            session_id=self._planner_session_id,
+            new_message=request,
+        ):
+            text = extract_text(getattr(event, "content", None))
+            final = merge_text_stream(final, text)
+        return final
 
     def _plan_next(
         self,
@@ -157,20 +276,43 @@ class GuiTaskRunner:
         last_error = ""
         while parse_attempt <= self._max_parse_retries:
             screen = self._runtime.capture()
-            messages = self._messages(task, current_plan, saved_info, history, screen)
-            completion = self._planner_client.chat.completions.create(
-                model=self._planner_model,
-                messages=messages,
+            raw = str(
+                _run_coro_sync(
+                    self._plan_next_adk_async(task, current_plan, saved_info, history, screen)
+                )
+                or ""
             )
-            raw = str(completion.choices[0].message.content or "")
+            _debug(
+                "gui.task_runner.parse_attempt",
+                {
+                    "attempt": parse_attempt + 1,
+                    "mode": "adk",
+                    "raw_preview": _preview_text(raw),
+                },
+            )
             try:
                 parsed = _parse_action_json(raw)
                 action = parsed.get("action")
                 if not isinstance(action, dict):
                     raise ValueError("missing action object")
+                _debug(
+                    "gui.task_runner.parse_success",
+                    {
+                        "attempt": parse_attempt + 1,
+                        "action_type": str(action.get("type", "")).strip().lower(),
+                    },
+                )
                 return parsed
             except Exception as exc:
                 last_error = str(exc)
+                _debug(
+                    "gui.task_runner.parse_failed",
+                    {
+                        "attempt": parse_attempt + 1,
+                        "error": last_error,
+                        "raw_preview": _preview_text(raw),
+                    },
+                )
                 parse_attempt += 1
                 if parse_attempt > self._max_parse_retries:
                     raise ValueError(
@@ -180,6 +322,18 @@ class GuiTaskRunner:
 
     def run(self, task: str, *, max_steps: int = 8, dry_run: bool = False) -> dict[str, Any]:
         """Run task loop until reply or max steps."""
+        _debug(
+            "gui.task_runner.run.start",
+            {
+                "task": task,
+                "max_steps": max_steps,
+                "dry_run": dry_run,
+                "mode": "adk",
+                "max_parse_retries": self._max_parse_retries,
+                "max_no_progress_steps": self._max_no_progress_steps,
+                "max_repeat_actions": self._max_repeat_actions,
+            },
+        )
         history: list[dict[str, Any]] = []
         current_plan = task
         saved_info: dict[str, str] = {}
@@ -224,6 +378,14 @@ class GuiTaskRunner:
             action = planned.get("action", {})
             action_type = str(action.get("type", "")).strip().lower()
             params = action.get("params", {}) if isinstance(action.get("params"), dict) else {}
+            _debug(
+                "gui.task_runner.step",
+                {
+                    "step": step,
+                    "action_type": action_type,
+                    "thinking_preview": _preview_text(str(planned.get("thinking", "")), max_chars=200),
+                },
+            )
 
             if action_type == "reply":
                 message = str(params.get("message", "Task finished")).strip() or "Task finished"
@@ -316,6 +478,16 @@ class GuiTaskRunner:
                 "error": result.get("error"),
             }
             history.append(step_record)
+            _debug(
+                "gui.task_runner.execute_result",
+                {
+                    "step": step,
+                    "action": action_text,
+                    "ok": step_record["ok"],
+                    "screen_changed": step_record["screen_changed"],
+                    "retries_used": step_record["retries_used"],
+                },
+            )
             if not step_record["ok"]:
                 return _result(
                     ok=False,
@@ -428,10 +600,6 @@ def execute_gui_task(
     if not resolved_planner_model:
         raise ValueError(
             f"Missing GUI planner model. Set {DEFAULT_GUI_PLANNER_MODEL_ENV} or {DEFAULT_GUI_MODEL_ENV}."
-        )
-    if not resolved_planner_api_key:
-        raise ValueError(
-            f"Missing GUI planner api key. Set {DEFAULT_GUI_PLANNER_API_KEY_ENV}, {DEFAULT_GUI_API_KEY_ENV}, or OPENAI_API_KEY."
         )
 
     runner = GuiTaskRunner(
