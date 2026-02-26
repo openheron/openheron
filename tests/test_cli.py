@@ -2339,7 +2339,9 @@ class CLITests(unittest.TestCase):
 
             self.assertEqual(code, 0)
             config_path = Path(tmp) / ".openheron" / "config.json"
+            runtime_config_path = Path(tmp) / ".openheron" / "runtime.json"
             self.assertTrue(config_path.exists())
+            self.assertTrue(runtime_config_path.exists())
             data = json.loads(config_path.read_text(encoding="utf-8"))
             workspace = Path(data["agent"]["workspace"]).expanduser()
             self.assertTrue(workspace.exists())

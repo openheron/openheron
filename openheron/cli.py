@@ -27,10 +27,14 @@ from .channels.factory import build_channel_manager, parse_enabled_channels, val
 from .config import (
     bootstrap_env_from_config,
     default_config,
+    default_runtime_config,
     get_data_dir,
     get_config_path,
+    get_runtime_config_path,
     load_config,
+    load_runtime_config,
     save_config,
+    save_runtime_config,
 )
 from .env_utils import env_enabled
 from . import doctor_rules, install_rules
@@ -1915,7 +1919,9 @@ def _cmd_run(passthrough_args: list[str]) -> int:
 
 def _cmd_onboard(force: bool) -> int:
     config_path = get_config_path()
+    runtime_config_path = get_runtime_config_path()
     existed = config_path.exists()
+    runtime_existed = runtime_config_path.exists()
 
     if force or not existed:
         config = default_config()
@@ -1927,18 +1933,29 @@ def _cmd_onboard(force: bool) -> int:
         saved_to = save_config(config, config_path=config_path)
         state = "refreshed"
 
+    if force or not runtime_existed:
+        runtime_config = default_runtime_config()
+        runtime_saved_to = save_runtime_config(runtime_config, runtime_config_path=runtime_config_path)
+        runtime_state = "reset to defaults" if force and runtime_existed else "created"
+    else:
+        runtime_config = load_runtime_config(runtime_config_path=runtime_config_path)
+        runtime_saved_to = save_runtime_config(runtime_config, runtime_config_path=runtime_config_path)
+        runtime_state = "refreshed"
+
     workspace = Path(str(config.get("agent", {}).get("workspace", ""))).expanduser()
     workspace.mkdir(parents=True, exist_ok=True)
     (workspace / "skills").mkdir(parents=True, exist_ok=True)
 
     print(f"Config {state}: {saved_to}")
+    print(f"Runtime config {runtime_state}: {runtime_saved_to}")
     print(f"Workspace ready: {workspace}")
     print("Next steps:")
     print(f"1. Edit config: {saved_to}")
-    print("2. Configure providers/channels/web sections and their `enabled` flags")
-    print("3. Fill providers.<provider>.apiKey for the enabled provider (and channel credentials if needed)")
-    print("4. Start gateway: openheron gateway")
-    print("5. Dry run: openheron doctor")
+    print(f"2. Optional advanced tuning: {runtime_saved_to}")
+    print("3. Configure providers/channels/web sections and their `enabled` flags")
+    print("4. Fill providers.<provider>.apiKey for the enabled provider (and channel credentials if needed)")
+    print("5. Start gateway: openheron gateway")
+    print("6. Dry run: openheron doctor")
     return 0
 
 

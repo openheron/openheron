@@ -122,6 +122,7 @@ openheron onboard
 初始化后会生成：
 
 - `~/.openheron/config.json`
+- `~/.openheron/runtime.json`（高级运行时 env 调优配置）
 - `~/.openheron/workspace`
 
 ### install 常见问题

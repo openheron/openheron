@@ -12,8 +12,10 @@ from openheron.config import (
     apply_config_to_env,
     bootstrap_env_from_config,
     default_config,
+    load_runtime_config,
     load_config,
     save_config,
+    save_runtime_config,
 )
 
 
@@ -56,11 +58,16 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(cfg["security"]["allowNetwork"])
         self.assertEqual(cfg["security"]["execAllowlist"], [])
         self.assertEqual(cfg["tools"]["mcpServers"], {})
-        self.assertTrue(cfg["env"]["OPENHERON_MEMORY_ENABLED"])
-        self.assertEqual(cfg["env"]["OPENHERON_MEMORY_BACKEND"], "markdown")
-        self.assertEqual(cfg["env"]["OPENHERON_COMPACTION_INTERVAL"], 8)
-        self.assertEqual(cfg["env"]["OPENHERON_MCP_DOCTOR_TIMEOUT_SECONDS"], 5)
-        self.assertEqual(cfg["env"]["OPENHERON_DEBUG_MAX_CHARS"], 2000)
+        self.assertNotIn("env", cfg)
+
+    def test_load_runtime_missing_returns_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime_cfg = load_runtime_config(Path(tmp) / "runtime.json")
+        self.assertTrue(runtime_cfg["env"]["OPENHERON_MEMORY_ENABLED"])
+        self.assertEqual(runtime_cfg["env"]["OPENHERON_MEMORY_BACKEND"], "markdown")
+        self.assertEqual(runtime_cfg["env"]["OPENHERON_COMPACTION_INTERVAL"], 8)
+        self.assertEqual(runtime_cfg["env"]["OPENHERON_MCP_DOCTOR_TIMEOUT_SECONDS"], 5)
+        self.assertEqual(runtime_cfg["env"]["OPENHERON_DEBUG_MAX_CHARS"], 2000)
 
     def test_save_then_load_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -344,6 +351,56 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(os.environ["OPENHERON_BOOTSTRAP_MAX_TOTAL_CHARS"], "48000")
         self.assertEqual(os.environ["OPENHERON_DEBUG_MAX_CHARS"], "4000")
         self.assertEqual(os.environ["OPENHERON_WHATSAPP_BRIDGE_PRECHECK"], "0")
+
+    def test_save_config_migrates_legacy_env_to_runtime_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            runtime_path = Path(tmp) / "runtime.json"
+            cfg = default_config()
+            cfg["env"] = {
+                "OPENHERON_MEMORY_BACKEND": "in_memory",
+                "OPENHERON_DEBUG_MAX_CHARS": 4096,
+            }
+
+            save_config(cfg, config_path)
+
+            saved_cfg = json.loads(config_path.read_text(encoding="utf-8"))
+            saved_runtime = load_runtime_config(runtime_path)
+
+        self.assertNotIn("env", saved_cfg)
+        self.assertEqual(saved_runtime["env"]["OPENHERON_MEMORY_BACKEND"], "in_memory")
+        self.assertEqual(saved_runtime["env"]["OPENHERON_DEBUG_MAX_CHARS"], 4096)
+
+    def test_bootstrap_env_prefers_runtime_file_over_legacy_config_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            runtime_path = Path(tmp) / "runtime.json"
+
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "providers": {
+                            "google": {
+                                "enabled": True,
+                                "apiKey": "",
+                                "model": "gemini-2.5-flash",
+                                "apiBase": "",
+                                "extraHeaders": {},
+                            }
+                        },
+                        "env": {"OPENHERON_MEMORY_BACKEND": "in_memory"},
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            save_runtime_config({"env": {"OPENHERON_MEMORY_BACKEND": "markdown"}}, runtime_path)
+            os.environ.pop("OPENHERON_MEMORY_BACKEND", None)
+            bootstrap_env_from_config(config_path)
+
+        self.assertEqual(os.environ["OPENHERON_MEMORY_BACKEND"], "markdown")
 
     def test_bootstrap_default_runtime_env_values_are_visible_and_applied(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

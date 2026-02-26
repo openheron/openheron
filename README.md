@@ -82,6 +82,7 @@ openheron onboard
 `openheron onboard` initializes:
 
 - `~/.openheron/config.json`
+- `~/.openheron/runtime.json`
 - `~/.openheron/workspace`
 
 Use `openheron install` for the full guided setup (checks + summary + suggestions),

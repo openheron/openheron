@@ -2,17 +2,18 @@
 
 ## 配置来源与优先级
 
-支持两种配置来源：
+支持三种配置来源：
 
-- 配置文件（推荐）：`~/.openheron/config.json`
+- 基础配置（推荐）：`~/.openheron/config.json`
+- 高级运行配置：`~/.openheron/runtime.json`
 - 环境变量（在未配置时作为回退）
 
 优先级规则：
 
-- `config.json` 中已配置的字段会覆盖同名环境变量
+- `config.json` / `runtime.json` 中已配置的字段会覆盖同名环境变量
 - 当 `config.json` 不存在，或文件内容为空对象 `{}` 时，直接使用环境变量
 
-建议日常只维护 `config.json`，环境变量用于无配置回退或临时排查。
+建议日常只维护 `config.json`，将性能/运行时调优项放在 `runtime.json`，环境变量用于无配置回退或临时排查。
 
 ## `config.json` 关键字段
 
@@ -24,11 +25,14 @@
 - `security.restrictToWorkspace / allowExec / allowNetwork / execAllowlist`
 - `tools.mcpServers`（每个 server 支持 `enabled`，默认 `true`）
 - `debug`
-- `env`（可选）：通用环境变量覆盖映射，支持任意运行时 env 配置项
 
 Provider 选择由 `enabled` 控制，建议保持“仅一个 provider 为 true”。
 
-当你需要配置尚未结构化到 `config.json` 字段中的运行时开关时，可使用 `env`：
+## `runtime.json`（高级）关键字段
+
+- `env`（可选）：通用环境变量覆盖映射，支持任意运行时 env 配置项
+
+当你需要配置尚未结构化到 `config.json` 字段中的运行时开关时，在 `runtime.json` 中使用 `env`：
 
 ```json
 {
@@ -40,7 +44,9 @@ Provider 选择由 `enabled` 控制，建议保持“仅一个 provider 为 true
 }
 ```
 
-默认由 `openheron onboard` 生成的 `config.json` 已包含常见运行时开关的默认值（如 memory/compaction/mcp probe/debug chars 等），可直接在 `env` 段内修改。
+默认由 `openheron onboard` 生成的 `runtime.json` 已包含常见运行时开关的默认值（如 memory/compaction/mcp probe/debug chars 等），可直接在 `env` 段内修改。
+
+兼容说明：历史版本中写在 `config.json.env` 的内容仍可读取；后续保存配置时会迁移到 `runtime.json`。
 
 ## 常用环境变量
 

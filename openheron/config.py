@@ -129,6 +129,11 @@ def get_config_path() -> Path:
     return get_data_dir() / "config.json"
 
 
+def get_runtime_config_path() -> Path:
+    """Return the default runtime config path for advanced env overrides."""
+    return get_data_dir() / "runtime.json"
+
+
 def get_default_workspace_path() -> Path:
     """Return default workspace path used by onboard."""
     return get_data_dir() / "workspace"
@@ -324,6 +329,12 @@ def default_config() -> dict[str, Any]:
             "mcpServers": {},
         },
         "debug": False,
+    }
+
+
+def default_runtime_config() -> dict[str, Any]:
+    """Build advanced runtime config content."""
+    return {
         # Optional explicit runtime env overrides. Any key here will be mapped
         # to process env during bootstrap and takes precedence over shell env.
         "env": _default_runtime_env_overrides(),
@@ -358,6 +369,14 @@ def normalize_config(raw: dict[str, Any] | None) -> dict[str, Any]:
     return cfg
 
 
+def normalize_runtime_config(raw: dict[str, Any] | None) -> dict[str, Any]:
+    """Normalize runtime config by filling missing fields with defaults."""
+    cfg = _deep_merge(default_runtime_config(), raw or {})
+    if not isinstance(cfg, dict):
+        return default_runtime_config()
+    return cfg
+
+
 def load_config(config_path: Path | None = None) -> dict[str, Any]:
     """Load config from disk. Missing/invalid config falls back to defaults."""
     path = config_path or get_config_path()
@@ -376,14 +395,65 @@ def load_config(config_path: Path | None = None) -> dict[str, Any]:
     return normalize_config(data)
 
 
+def load_runtime_config(runtime_config_path: Path | None = None) -> dict[str, Any]:
+    """Load runtime config from disk. Missing/invalid config falls back to defaults."""
+    path = runtime_config_path or get_runtime_config_path()
+    if not path.exists():
+        return default_runtime_config()
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.debug("Warning: failed to load runtime config at {}: {}", path, exc)
+        return default_runtime_config()
+
+    if not isinstance(data, dict):
+        logger.debug("Warning: invalid runtime config root at {}; expected JSON object", path)
+        return default_runtime_config()
+    return normalize_runtime_config(data)
+
+
+def _runtime_config_path_for_config_path(config_path: Path) -> Path:
+    """Resolve sibling runtime config path for one config file path."""
+    return config_path.with_name("runtime.json")
+
+
 def save_config(config: dict[str, Any], config_path: Path | None = None) -> Path:
     """Save config to disk and return the output path."""
     path = config_path or get_config_path()
+    config_to_write = deepcopy(config)
+    legacy_env = config_to_write.pop("env", None)
     path.parent.mkdir(parents=True, exist_ok=True)
-    normalized = normalize_config(config)
+    normalized = normalize_config(config_to_write)
     path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     # Best effort: keep local secrets private on POSIX systems.
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+
+    # Backward compatibility: migrate legacy config.json `env` into runtime.json.
+    if isinstance(legacy_env, dict):
+        runtime_path = _runtime_config_path_for_config_path(path)
+        existing_runtime = load_runtime_config(runtime_config_path=runtime_path)
+        merged_runtime_env = {}
+        raw_existing_env = existing_runtime.get("env")
+        if isinstance(raw_existing_env, dict):
+            merged_runtime_env.update(raw_existing_env)
+        merged_runtime_env.update(legacy_env)
+        save_runtime_config({"env": merged_runtime_env}, runtime_config_path=runtime_path)
+
+    return path
+
+
+def save_runtime_config(config: dict[str, Any], runtime_config_path: Path | None = None) -> Path:
+    """Save runtime config to disk and return the output path."""
+    path = runtime_config_path or get_runtime_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    normalized = normalize_runtime_config(config)
+    path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
     try:
         path.chmod(0o600)
     except OSError:
@@ -547,13 +617,12 @@ def _stringify_env_override(value: Any) -> str:
     return str(value)
 
 
-def _env_overrides(cfg: dict[str, Any]) -> dict[str, str]:
-    """Read optional env override mapping from config.
+def _env_overrides_from_mapping(raw: Any) -> dict[str, str]:
+    """Read optional env override mapping from one mapping payload.
 
-    The `env` section is a catch-all escape hatch so every runtime env-based
-    knob can be configured from `config.json`.
+    Runtime overrides live in `runtime.json` by default.
+    Legacy `config.json.env` is still supported for backward compatibility.
     """
-    raw = cfg.get("env")
     if not isinstance(raw, dict):
         return {}
 
@@ -566,6 +635,11 @@ def _env_overrides(cfg: dict[str, Any]) -> dict[str, str]:
     return overrides
 
 
+def _env_overrides(cfg: dict[str, Any]) -> dict[str, str]:
+    """Read legacy env override mapping from config payload."""
+    return _env_overrides_from_mapping(cfg.get("env"))
+
+
 def _coerce_nonnegative_int(value: Any, default: int) -> int:
     """Convert value into a non-negative integer with fallback."""
     try:
@@ -575,7 +649,11 @@ def _coerce_nonnegative_int(value: Any, default: int) -> int:
     return max(0, parsed)
 
 
-def config_to_env(config: dict[str, Any]) -> dict[str, str]:
+def config_to_env(
+    config: dict[str, Any],
+    *,
+    runtime_env_overrides: dict[str, Any] | None = None,
+) -> dict[str, str]:
     """Map config payload into runtime environment variables."""
     cfg = normalize_config(config)
     agent = _as_dict(cfg.get("agent"))
@@ -636,8 +714,11 @@ def config_to_env(config: dict[str, Any]) -> dict[str, str]:
     env.update(channel_env)
     if provider_key_env:
         env[provider_key_env] = provider_api_key
-    # Keep `env` overrides as the final layer so it can override any mapped key.
-    env.update(_env_overrides(cfg))
+    # Keep runtime env overrides as the final layer so they can override any mapped key.
+    if runtime_env_overrides is None:
+        env.update(_env_overrides(cfg))
+    else:
+        env.update(_env_overrides_from_mapping(runtime_env_overrides))
     return env
 
 
@@ -663,10 +744,11 @@ def apply_config_to_env(
     *,
     overwrite: bool = False,
     clear_missing: bool = False,
+    runtime_env_overrides: dict[str, Any] | None = None,
 ) -> None:
     """Inject config fields into environment variables."""
     cfg = normalize_config(config)
-    mapped = config_to_env(cfg)
+    mapped = config_to_env(cfg, runtime_env_overrides=runtime_env_overrides)
     fallback_api_key_env = _active_provider_fallback_api_key_env(cfg)
     if clear_missing:
         for key in _managed_env_keys():
@@ -701,6 +783,16 @@ def bootstrap_env_from_config(config_path: Path | None = None) -> dict[str, Any]
         return None
 
     cfg = normalize_config(raw)
+    runtime_path = _runtime_config_path_for_config_path(path)
+    runtime_overrides = _env_overrides(load_runtime_config(runtime_config_path=runtime_path))
+    legacy_overrides = _env_overrides_from_mapping(raw.get("env"))
+    default_overrides = _env_overrides(default_runtime_config())
+    merged_runtime_overrides = {**default_overrides, **legacy_overrides, **runtime_overrides}
     # Config file is the source of truth for runtime bootstrap.
-    apply_config_to_env(cfg, overwrite=True, clear_missing=True)
+    apply_config_to_env(
+        cfg,
+        overwrite=True,
+        clear_missing=True,
+        runtime_env_overrides=merged_runtime_overrides,
+    )
     return deepcopy(cfg)
