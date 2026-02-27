@@ -38,6 +38,7 @@
 - `doctor` 新增多智能体校验（默认 agent、重复 id、binding 指向、channel 必填）
 - `doctor` 新增 `multiAgent.summary` 与 `multiAgent.routePreview`
 - `doctor` 新增 `multiAgent.warnings` 与 `multiAgent.scopeSupportedChannels`
+- `doctor` 新增 `multiAgent.scopeCapabilities`（channel 级 capability + reason）
 - `doctor` 文本模式冲突提示与排查指引
 - `routes lint` 独立命令（含 `--json/--limit`、warnings、建议动作、`scopeSupportedChannels`）
 - `guild/team/roles` 配置校验 + `routeScopeCount` 摘要统计 + 运行时匹配过滤
@@ -67,7 +68,7 @@
 ./.venv/bin/python -m pytest -q tests/test_route_capabilities.py tests/test_agent_routing.py tests/test_bus_gateway.py tests/test_whatsapp_channel.py tests/test_telegram_channel.py tests/test_discord_channel.py tests/test_feishu_channel.py tests/test_cli.py
 ```
 
-最近结果：`216 passed`。
+最近结果：`217 passed`。
 
 ## 4. 当前结论
 
