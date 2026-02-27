@@ -36,6 +36,7 @@
 - `doctor` 新增 `multiAgent.summary` 与 `multiAgent.routePreview`
 - `doctor` 文本模式冲突提示与排查指引
 - `routes lint` 独立命令（含 `--json/--limit` 与建议动作输出）
+- `routes stats` 独立命令（路由命中统计与审计，含 `--json/--limit`）
 
 ### 1.6 文档与模板
 
@@ -46,10 +47,9 @@
 
 ## 2. 待推进（建议优先级）
 
-1. 路由命中统计与审计：按 channel/account/agent 聚合最近命中情况。
-2. 更细粒度主体模型扩展：guild/team/roles（当前 v1 未覆盖）。
-3. 通道侧 accountId 标准化约定文档（各 channel 输入契约统一）。
-4. 端到端实机验证脚本（非单元测试），用于上线前快速演练。
+1. 更细粒度主体模型扩展：guild/team/roles（当前 v1 未覆盖）。
+2. 通道侧 accountId 标准化约定文档（各 channel 输入契约统一）。
+3. 端到端实机验证脚本（非单元测试），用于上线前快速演练。
 
 ## 3. 已验证命令（最近回归）
 
@@ -57,10 +57,10 @@
 ./.venv/bin/python -m pytest -q tests/test_agent_routing.py tests/test_bus_gateway.py tests/test_whatsapp_channel.py tests/test_telegram_channel.py tests/test_discord_channel.py tests/test_feishu_channel.py tests/test_cli.py
 ```
 
-最近结果：`202 passed`。
+最近结果：`205 passed`。
 
 ## 4. 当前结论
 
 - v1 核心目标已完成并上线。
 - v1.1 的可观测性、通道元数据一致性、doctor 诊断增强已完成并上线。
-- 下一阶段建议聚焦“冲突预防 + 运行态观测 + 更细粒度主体模型扩展”。
+- 下一阶段建议聚焦“更细粒度主体模型扩展 + 通道输入契约统一 + 实机演练自动化”。

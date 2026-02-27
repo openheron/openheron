@@ -218,6 +218,8 @@ openheron doctor --fix --json
 ```bash
 openheron routes lint
 openheron routes lint --json
+openheron routes stats
+openheron routes stats --json
 openheron doctor --json
 openheron doctor --verbose
 ```
@@ -302,6 +304,23 @@ openheron doctor --verbose
 3. 重新执行 `openheron routes lint --json`，确认 `summary.conflicts` 为空。  
 4. 再执行 `openheron doctor --json` 做全链路确认。  
 
+`routes stats` 使用说明：
+
+- 作用：查看最近网关运行期的路由命中统计（按 agent/channel/matchedBy 聚合）。
+- 数据文件：`<workspace>/.openheron/route_stats.json`。
+- 常用命令：
+
+```bash
+openheron routes stats
+openheron routes stats --json
+openheron routes stats --json --limit 50
+```
+
+- 无快照时（首次运行常见）：
+  1. 先启动并产生网关流量（本地或真实 channel）。
+  2. 再执行 `openheron routes stats`。
+  3. 若仍无数据，检查 workspace 是否正确，以及进程是否有写权限。
+
 ## 运行方式
 
 ### 单轮调用
@@ -334,6 +353,8 @@ openheron run
 openheron skills
 openheron routes lint
 openheron routes lint --json
+openheron routes stats
+openheron routes stats --json
 openheron doctor
 openheron doctor --fix
 openheron doctor --fix-dry-run
