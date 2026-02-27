@@ -43,6 +43,9 @@ class TelegramChannelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(inbound.content, "hello from telegram")
         self.assertEqual(inbound.sender_id, "70001|@alice")
         self.assertEqual(inbound.metadata.get("message_id"), "88")
+        self.assertEqual(inbound.metadata.get("chat_type"), "direct")
+        self.assertEqual(inbound.metadata.get("peer_kind"), "direct")
+        self.assertEqual(inbound.metadata.get("peer_id"), "90001")
 
     async def test_process_update_respects_allow_from(self) -> None:
         bus = MessageBus()

@@ -1144,6 +1144,76 @@ def _gui_execution_path_hint(
     )
 
 
+def _normalize_agent_id_for_doctor(value: Any) -> str:
+    """Normalize agent id with the same constraints as runtime routing."""
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    out: list[str] = []
+    for ch in raw:
+        if ch.isalnum() or ch in {"_", "-"}:
+            out.append(ch)
+        else:
+            out.append("-")
+    return "".join(out).strip("-")
+
+
+def _doctor_validate_multi_agent_config(config: dict[str, Any]) -> list[str]:
+    """Validate multi-agent config structure and return doctor issue strings."""
+    issues: list[str] = []
+    agents = config.get("agents", {})
+    if not isinstance(agents, dict):
+        return issues
+    entries = agents.get("list", [])
+    if not isinstance(entries, list):
+        issues.append("Invalid multi-agent config: agents.list must be an array.")
+        return issues
+    if not entries:
+        issues.append("Invalid multi-agent config: agents.list is empty.")
+        return issues
+
+    known_ids: set[str] = set()
+    default_count = 0
+    for idx, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            issues.append(f"Invalid multi-agent config: agents.list[{idx}] must be an object.")
+            continue
+        agent_id = _normalize_agent_id_for_doctor(entry.get("id"))
+        if not agent_id:
+            issues.append(f"Invalid multi-agent config: agents.list[{idx}].id is missing.")
+            continue
+        if agent_id in known_ids:
+            issues.append(f"Invalid multi-agent config: duplicate agent id '{agent_id}'.")
+        known_ids.add(agent_id)
+        if bool(entry.get("default")):
+            default_count += 1
+
+    if default_count == 0:
+        issues.append("Invalid multi-agent config: exactly one default agent is required (found 0).")
+    elif default_count > 1:
+        issues.append(f"Invalid multi-agent config: exactly one default agent is required (found {default_count}).")
+
+    bindings = config.get("bindings", [])
+    if not isinstance(bindings, list):
+        issues.append("Invalid multi-agent config: bindings must be an array.")
+        return issues
+    for idx, binding in enumerate(bindings):
+        if not isinstance(binding, dict):
+            issues.append(f"Invalid multi-agent config: bindings[{idx}] must be an object.")
+            continue
+        target_agent_id = _normalize_agent_id_for_doctor(binding.get("agentId"))
+        if not target_agent_id:
+            issues.append(f"Invalid multi-agent config: bindings[{idx}].agentId is missing.")
+        elif target_agent_id not in known_ids:
+            issues.append(
+                f"Invalid multi-agent config: bindings[{idx}].agentId '{target_agent_id}' does not exist in agents.list."
+            )
+        match = binding.get("match", {})
+        if not isinstance(match, dict) or not str(match.get("channel", "")).strip():
+            issues.append(f"Invalid multi-agent config: bindings[{idx}].match.channel is required.")
+    return issues
+
+
 def _cmd_doctor(
     *,
     output_json: bool = False,
@@ -1156,6 +1226,7 @@ def _cmd_doctor(
     When `output_json` is true, emits one machine-readable JSON payload.
     """
     config_path = get_config_path()
+    config_payload = load_config(config_path=config_path)
     fix_changes: list[str] = []
     fix_skipped: list[str] = []
     fix_failed: list[str] = []
@@ -1219,6 +1290,8 @@ def _cmd_doctor(
     configured_channels = parse_enabled_channels(None)
     channel_issues = validate_channel_setup(configured_channels)
     issues.extend(channel_issues)
+    multi_agent_issues = _doctor_validate_multi_agent_config(config_payload)
+    issues.extend(multi_agent_issues)
     if "whatsapp" in configured_channels and _whatsapp_bridge_precheck_enabled():
         bridge_issue = _check_whatsapp_bridge_ready()
         if bridge_issue:
@@ -1292,6 +1365,15 @@ def _cmd_doctor(
         "skills": {"count": skills_count},
         "session": {"db_url": session_cfg.db_url},
         "channels": {"configured": configured_channels},
+        "multiAgent": {
+            "issues": multi_agent_issues,
+            "agent_count": len(config_payload.get("agents", {}).get("list", []))
+            if isinstance(config_payload.get("agents", {}).get("list", []), list)
+            else 0,
+            "binding_count": len(config_payload.get("bindings", []))
+            if isinstance(config_payload.get("bindings", []), list)
+            else 0,
+        },
         "installPrereqs": install_prereqs,
         "heartbeat": {
             "snapshot_available": heartbeat_snapshot is not None,

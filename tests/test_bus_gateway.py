@@ -80,6 +80,10 @@ class GatewayTests(unittest.TestCase):
         self.assertIn("Current request time: 2026-02-18T09:30:00+00:00 (UTC)", text)
         self.assertIn("Use this as the reference 'now' for relative time expressions", text)
         self.assertIn("\n\nhello", text)
+        route_meta = outbound.metadata.get("openheron_route", {})
+        self.assertEqual(route_meta.get("agentId"), "main")
+        self.assertEqual(route_meta.get("matchedBy"), "default")
+        self.assertEqual(route_meta.get("sessionId"), "agent:main:local:default:direct:c1")
 
     def test_process_message_merges_stream_snapshots(self) -> None:
         fake_event_1 = pytypes.SimpleNamespace(
@@ -122,6 +126,7 @@ class GatewayTests(unittest.TestCase):
         self.assertIn("/new", outbound.content)
         self.assertIn("/help", outbound.content)
         self.assertEqual(captured_calls, [])
+        self.assertEqual(outbound.metadata.get("openheron_route", {}).get("agentId"), "main")
 
     def test_process_message_new_command_rotates_session_id(self) -> None:
         fake_event = pytypes.SimpleNamespace(

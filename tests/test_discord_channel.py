@@ -67,6 +67,9 @@ class DiscordChannelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(inbound.sender_id, "u2")
         self.assertEqual(inbound.content, "allowed")
         self.assertEqual(inbound.metadata.get("message_id"), "102")
+        self.assertEqual(inbound.metadata.get("chat_type"), "channel")
+        self.assertEqual(inbound.metadata.get("peer_kind"), "channel")
+        self.assertEqual(inbound.metadata.get("peer_id"), "123")
 
 
 if __name__ == "__main__":

@@ -447,6 +447,32 @@ class CLITests(unittest.TestCase):
         self.assertTrue(status["authenticated"])
         self.assertEqual(status["message"], "account_id=user_1")
 
+    def test_doctor_validate_multi_agent_config_accepts_default_config(self) -> None:
+        from openheron import cli
+
+        cfg = cli.default_config()
+        issues = cli._doctor_validate_multi_agent_config(cfg)
+        self.assertEqual(issues, [])
+
+    def test_doctor_validate_multi_agent_config_reports_binding_and_default_errors(self) -> None:
+        from openheron import cli
+
+        cfg = cli.default_config()
+        cfg["agents"]["list"] = [
+            {"id": "main", "default": True},
+            {"id": "main", "default": True},
+        ]
+        cfg["bindings"] = [
+            {"agentId": "missing", "match": {"channel": "whatsapp"}},
+            {"agentId": "main", "match": {}},
+        ]
+        issues = cli._doctor_validate_multi_agent_config(cfg)
+        joined = "\n".join(issues)
+        self.assertIn("duplicate agent id 'main'", joined)
+        self.assertIn("exactly one default agent is required (found 2)", joined)
+        self.assertIn("agentId 'missing' does not exist", joined)
+        self.assertIn("match.channel is required", joined)
+
     def test_check_github_copilot_oauth_non_invasive_missing_cache(self) -> None:
         from openheron import cli
 

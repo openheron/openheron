@@ -157,10 +157,20 @@ class TelegramChannel(BaseChannel):
         if not text:
             return
 
+        raw_chat_type = str(chat.get("type", "")).strip().lower()
+        if raw_chat_type in {"group", "supergroup"}:
+            peer_kind = "group"
+        elif raw_chat_type == "channel":
+            peer_kind = "channel"
+        else:
+            peer_kind = "direct"
         metadata = {
             "message_id": str(message.get("message_id", "")),
-            "chat_type": str(chat.get("type", "")),
+            "chat_type": peer_kind,
             "update_id": str(update.get("update_id", "")),
+            "peer_kind": peer_kind,
+            "peer_id": chat_id,
+            "peer": {"kind": peer_kind, "id": chat_id},
         }
         await self.publish_inbound(
             sender_id=sender_identity,

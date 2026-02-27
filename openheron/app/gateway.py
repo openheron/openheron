@@ -448,7 +448,7 @@ class Gateway:
                 channel=msg.channel,
                 chat_id=msg.chat_id,
                 content=_HELP_TEXT,
-                metadata=msg.metadata,
+                metadata=self._attach_route_metadata(msg.metadata, routed),
             )
         if command == "/new":
             active_session_id = self._session_overrides.get(routed.session_base_key, routed.session_base_key)
@@ -463,7 +463,7 @@ class Gateway:
                 channel=msg.channel,
                 chat_id=msg.chat_id,
                 content="Started a new conversation session.",
-                metadata=msg.metadata,
+                metadata=self._attach_route_metadata(msg.metadata, routed),
             )
 
         active_session_id = self._session_overrides.get(routed.session_base_key, routed.session_base_key)
@@ -483,8 +483,25 @@ class Gateway:
             channel=msg.channel,
             chat_id=msg.chat_id,
             content=final,
-            metadata=msg.metadata,
+            metadata=self._attach_route_metadata(msg.metadata, routed),
         )
+
+    @staticmethod
+    def _attach_route_metadata(
+        metadata: dict[str, Any] | None,
+        routed: RoutedAgentRequest,
+    ) -> dict[str, Any]:
+        """Attach normalized routing details for runtime observability."""
+        base = dict(metadata) if isinstance(metadata, dict) else {}
+        base["openheron_route"] = {
+            "agentId": routed.agent_id,
+            "matchedBy": routed.matched_by,
+            "accountId": routed.account_id,
+            "peerKind": routed.peer_kind,
+            "peerId": routed.peer_id,
+            "sessionId": routed.session_id,
+        }
+        return base
 
     def _dispatch_subagent_request(self, request: SubagentSpawnRequest) -> asyncio.Task[None] | None:
         """Schedule one background sub-agent request onto the current event loop."""

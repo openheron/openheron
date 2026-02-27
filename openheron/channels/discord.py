@@ -175,6 +175,10 @@ class DiscordChannel(BaseChannel):
                     content=content,
                     metadata={
                         "channel_id": channel_id,
+                        "chat_type": "channel",
+                        "peer_kind": "channel",
+                        "peer_id": channel_id,
+                        "peer": {"kind": "channel", "id": channel_id},
                         "message_id": message_id,
                         **metadata,
                     },

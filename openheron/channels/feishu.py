@@ -780,6 +780,11 @@ class FeishuChannel(BaseChannel):
             # Keep the same routing rule as openheron: groups reply to group chat_id,
             # p2p replies to sender open_id.
             target_chat_id = chat_id if chat_type == "group" else sender_id
+            peer_kind = "group" if chat_type == "group" else "direct"
+            metadata["peer_kind"] = peer_kind
+            metadata["peer_id"] = target_chat_id
+            metadata["peer"] = {"kind": peer_kind, "id": target_chat_id}
+            metadata["chat_type"] = peer_kind
             await self.publish_inbound(
                 sender_id=sender_id,
                 chat_id=target_chat_id,
