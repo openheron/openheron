@@ -1526,6 +1526,7 @@ def _cmd_doctor(
     multi_agent_issues = _doctor_validate_multi_agent_config(config_payload)
     multi_agent_summary = _doctor_summarize_multi_agent_config(config_payload)
     multi_agent_preview = _doctor_preview_multi_agent_routes(config_payload)
+    multi_agent_warnings = _routes_lint_scope_warnings(config_payload)
     issues.extend(multi_agent_issues)
     if "whatsapp" in configured_channels and _whatsapp_bridge_precheck_enabled():
         bridge_issue = _check_whatsapp_bridge_ready()
@@ -1602,6 +1603,7 @@ def _cmd_doctor(
         "channels": {"configured": configured_channels},
         "multiAgent": {
             "issues": multi_agent_issues,
+            "warnings": multi_agent_warnings,
             "summary": multi_agent_summary,
             "routePreview": multi_agent_preview,
             "agent_count": len(config_payload.get("agents", {}).get("list", []))
@@ -1712,7 +1714,8 @@ def _cmd_doctor(
             f"agents={multi_agent_summary.get('agentCount', 0)}, "
             f"bindings={multi_agent_summary.get('bindingCount', 0)}, "
             f"channels={len(multi_agent_summary.get('byChannel', {}))}, "
-            f"conflicts={len(multi_agent_summary.get('conflicts', []))}"
+            f"conflicts={len(multi_agent_summary.get('conflicts', []))}, "
+            f"warnings={len(multi_agent_warnings)}"
         )
         for item in multi_agent_preview[:5]:
             _stdout_line(
@@ -1724,6 +1727,8 @@ def _cmd_doctor(
             )
         for item in multi_agent_summary.get("conflicts", [])[:10]:
             _stdout_line(f"Multi-agent conflict: {item}")
+        for item in multi_agent_warnings[:10]:
+            _stdout_line(f"Multi-agent warning: {item}")
         _stdout_line("Doctor details:")
         _stdout_line(json.dumps(report, ensure_ascii=False, indent=2))
 
@@ -1753,6 +1758,12 @@ def _cmd_doctor(
             "Multi-agent routing conflicts detected: "
             f"{conflict_count}. Review doctor --json fields "
             "`multiAgent.summary.conflicts` and `multiAgent.routePreview`."
+        )
+    warning_count = len(multi_agent_warnings)
+    if warning_count > 0:
+        _stdout_line(
+            "Multi-agent routing warnings detected: "
+            f"{warning_count}. Review doctor --json field `multiAgent.warnings`."
         )
 
     if issues:

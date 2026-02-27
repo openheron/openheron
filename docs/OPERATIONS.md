@@ -242,6 +242,8 @@ openheron doctor --verbose
 
 - `multiAgent.issues`
   多智能体配置结构错误（如默认 agent 数量异常、binding 指向不存在 agent、binding 缺 channel）。
+- `multiAgent.warnings`
+  非阻断风险提示（例如 scope 配置在当前 channel 上可能不可达）。
 - `multiAgent.summary`
   路由汇总信息：
   - `agentCount` / `bindingCount`
