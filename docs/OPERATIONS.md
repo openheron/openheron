@@ -216,9 +216,16 @@ openheron doctor --fix --json
 当你在排查多 agent 路由错配时，建议优先看：
 
 ```bash
+openheron routes lint
+openheron routes lint --json
 openheron doctor --json
 openheron doctor --verbose
 ```
+
+说明：
+
+- `routes lint` 是独立的静态路由检查命令（只读，不改配置）。
+- `doctor` 适合看全局健康状态（provider/channel/mcp/security + multiAgent）。
 
 `doctor --json` 中新增 `multiAgent` 关键字段：
 
@@ -274,6 +281,27 @@ openheron doctor --verbose
   现象：`multiAgent.summary.conflicts` 非空。  
   处理：检查冲突 binding（按输出中的 `bindings[idx]`），同一个 `channel/accountId/peer` 签名只保留一个目标 agent。
 
+`routes lint --json` 失败示例（节选）：
+
+```json
+{
+  "ok": false,
+  "issues": [],
+  "summary": {
+    "conflicts": [
+      "bindings[1] duplicates route match ('whatsapp','business','','') but targets 'biz' (first: 'main')."
+    ]
+  }
+}
+```
+
+推荐修复步骤：
+
+1. 定位冲突项里提到的 `bindings[idx]`。  
+2. 对同一签名只保留一个目标 agent（或收敛为更高优先级的 `peer` 规则）。  
+3. 重新执行 `openheron routes lint --json`，确认 `summary.conflicts` 为空。  
+4. 再执行 `openheron doctor --json` 做全链路确认。  
+
 ## 运行方式
 
 ### 单轮调用
@@ -304,6 +332,8 @@ openheron run
 
 ```bash
 openheron skills
+openheron routes lint
+openheron routes lint --json
 openheron doctor
 openheron doctor --fix
 openheron doctor --fix-dry-run

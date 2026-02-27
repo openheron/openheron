@@ -14,16 +14,18 @@
 执行：
 
 ```bash
+openheron routes lint --json
 openheron doctor --json
 openheron doctor --verbose
 ```
 
 检查点：
 
-1. `issues` 为空。
-2. `multiAgent.issues` 为空。
-3. `multiAgent.summary.conflicts` 为空。
-4. `multiAgent.routePreview` 中的 `sessionIdExample` 与预期路由模型一致。
+1. `routes lint --json` 返回 `ok=true`，且 `summary.conflicts` 为空。
+2. `doctor --json` 的 `issues` 为空。
+3. `doctor --json` 的 `multiAgent.issues` 为空。
+4. `doctor --json` 的 `multiAgent.summary.conflicts` 为空。
+5. `doctor --json` 的 `multiAgent.routePreview` 中 `sessionIdExample` 与预期一致。
 
 ## 3. 路由行为检查（本地）
 
