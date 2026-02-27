@@ -271,7 +271,48 @@ def _load_mcp_probe_policy(*, timeout_env_name: str, timeout_default: float) -> 
     )
 
 
-def _cmd_skills() -> int:
+def _cmd_skills(*, agent: str | None = None) -> int:
+    target_agents, error = _resolve_target_agent_names(agent=agent)
+    if error:
+        _stdout_line(error)
+        return 1
+    if target_agents:
+        if agent:
+            code, out, err = _run_agent_cli_command(agent_name=target_agents[0], args=["skills"])
+            if out.strip():
+                _stdout_line(out.strip())
+            if err.strip():
+                _stdout_line(err.strip())
+            return 0 if code == 0 else 1
+
+        merged: list[dict[str, Any]] = []
+        failures: list[str] = []
+        for agent_name in target_agents:
+            code, out, err = _run_agent_cli_command(agent_name=agent_name, args=["skills"])
+            if code != 0:
+                detail = err.strip() or out.strip() or f"exit_code={code}"
+                failures.append(f"{agent_name}: {detail}")
+                continue
+            try:
+                payload = json.loads(out)
+            except Exception:
+                failures.append(f"{agent_name}: invalid JSON output")
+                continue
+            if not isinstance(payload, list):
+                failures.append(f"{agent_name}: invalid JSON payload type")
+                continue
+            for item in payload:
+                if not isinstance(item, dict):
+                    continue
+                row = dict(item)
+                row["agent"] = agent_name
+                merged.append(row)
+        _stdout_line(json.dumps(merged, ensure_ascii=False, indent=2))
+        if failures:
+            _stdout_line(f"[warn] skills failed for agents: {'; '.join(failures)}")
+            return 1
+        return 0
+
     registry = get_registry()
     payload = [
         {
@@ -373,8 +414,19 @@ async def _collect_connected_mcp_apis(
     return {name: rows for name, rows in pairs}
 
 
-def _cmd_mcps() -> int:
+def _cmd_mcps(*, agent: str | None = None) -> int:
     """List connected MCP servers and available APIs for each server."""
+    target_agents, error = _resolve_target_agent_names(agent=agent)
+    if error:
+        _stdout_line(error)
+        return 1
+    if target_agents:
+        results: list[tuple[str, int, str, str]] = []
+        for agent_name in target_agents:
+            code, out, err = _run_agent_cli_command(agent_name=agent_name, args=["mcps"])
+            results.append((agent_name, code, out, err))
+        return _print_agent_output_sections(results)
+
     toolsets = build_mcp_toolsets_from_env(log_registered=False)
     if not toolsets:
         _stdout_line("MCP: no servers configured")
@@ -469,8 +521,19 @@ def _read_subagent_records(*, limit: int = 50) -> list[dict[str, Any]]:
     return records
 
 
-def _cmd_spawn() -> int:
+def _cmd_spawn(*, agent: str | None = None) -> int:
     """List sub-agent tasks created by `spawn_subagent`."""
+    target_agents, error = _resolve_target_agent_names(agent=agent)
+    if error:
+        _stdout_line(error)
+        return 1
+    if target_agents:
+        results: list[tuple[str, int, str, str]] = []
+        for agent_name in target_agents:
+            code, out, err = _run_agent_cli_command(agent_name=agent_name, args=["spawn"])
+            results.append((agent_name, code, out, err))
+        return _print_agent_output_sections(results)
+
     records = _read_subagent_records(limit=50)
     if not records:
         _stdout_line("Subagents: none")
@@ -3283,6 +3346,80 @@ def _agent_config_path(agent_name: str) -> Path:
     return get_data_dir() / agent_name / "config.json"
 
 
+def _resolve_target_agent_names(*, agent: str | None) -> tuple[list[str], str | None]:
+    """Resolve agent selection for multi-agent aware read-style CLI commands."""
+    enabled_agents = _global_enabled_agent_names()
+    if not enabled_agents:
+        if not agent:
+            return [], None
+        normalized = _normalize_agent_name(agent)
+        if not normalized:
+            return [], "Error: --agent is empty."
+        config_path = _agent_config_path(normalized)
+        if not config_path.exists():
+            return [], f"Error: agent '{normalized}' config not found: {config_path}"
+        return [normalized], None
+
+    if agent:
+        normalized = _normalize_agent_name(agent)
+        if not normalized:
+            return [], "Error: --agent is empty."
+        if normalized not in enabled_agents:
+            return [], (
+                f"Error: agent '{normalized}' is not enabled in global_config.json. "
+                f"Enabled agents: {', '.join(enabled_agents)}"
+            )
+        return [normalized], None
+    return enabled_agents, None
+
+
+def _run_agent_cli_command(*, agent_name: str, args: list[str]) -> tuple[int, str, str]:
+    """Run one CLI subcommand against one agent config and capture output."""
+    config_path = _agent_config_path(agent_name)
+    if not config_path.exists():
+        return 1, "", f"agent '{agent_name}' config not found: {config_path}"
+    cmd = [
+        sys.executable,
+        "-m",
+        "openheron.app.cli",
+        "--config-path",
+        str(config_path),
+        *args,
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except Exception as exc:
+        return 1, "", f"failed to run agent '{agent_name}' command ({exc})"
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def _print_agent_output_sections(results: list[tuple[str, int, str, str]]) -> int:
+    """Render per-agent command output in a readable sectioned layout."""
+    exit_code = 0
+    for index, (agent_name, return_code, stdout_text, stderr_text) in enumerate(results):
+        if index > 0:
+            _stdout_line("")
+        _stdout_line(f"[agent={agent_name}]")
+        stdout_clean = stdout_text.strip()
+        stderr_clean = stderr_text.strip()
+        if stdout_clean:
+            for line in stdout_clean.splitlines():
+                _stdout_line(line)
+        else:
+            _stdout_line("(no output)")
+        if stderr_clean:
+            _stdout_line(f"[stderr] {stderr_clean}")
+        if return_code != 0:
+            _stdout_line(f"[exit_code] {return_code}")
+            exit_code = 1
+    return exit_code
+
+
 def _agent_gateway_log_paths(agent_name: str, config_path: Path) -> tuple[Path, Path, Path]:
     """Resolve per-agent gateway stdout/stderr/debug log paths."""
     _ = agent_name
@@ -4038,7 +4175,21 @@ def _format_ts(ms: int | None) -> str:
     return format_timestamp_ms(ms)
 
 
-def _cmd_cron_list(*, include_disabled: bool) -> int:
+def _cmd_cron_list(*, include_disabled: bool, agent: str | None = None) -> int:
+    target_agents, error = _resolve_target_agent_names(agent=agent)
+    if error:
+        _stdout_line(error)
+        return 1
+    if target_agents:
+        args = ["cron", "list"]
+        if include_disabled:
+            args.append("--all")
+        results: list[tuple[str, int, str, str]] = []
+        for agent_name in target_agents:
+            code, out, err = _run_agent_cli_command(agent_name=agent_name, args=args)
+            results.append((agent_name, code, out, err))
+        return _print_agent_output_sections(results)
+
     service = _cron_service()
     jobs = service.list_jobs(include_disabled=include_disabled)
     if not jobs:
@@ -4150,7 +4301,18 @@ def _cmd_cron_run(job_id: str, *, force: bool) -> int:
     return 1
 
 
-def _cmd_cron_status() -> int:
+def _cmd_cron_status(*, agent: str | None = None) -> int:
+    target_agents, error = _resolve_target_agent_names(agent=agent)
+    if error:
+        _stdout_line(error)
+        return 1
+    if target_agents:
+        results: list[tuple[str, int, str, str]] = []
+        for agent_name in target_agents:
+            code, out, err = _run_agent_cli_command(agent_name=agent_name, args=["cron", "status"])
+            results.append((agent_name, code, out, err))
+        return _print_agent_output_sections(results)
+
     info = _cron_service().status()
     runtime_pid = info.get("runtime_pid")
     runtime_pid_text = str(runtime_pid) if runtime_pid is not None else "-"
@@ -4167,8 +4329,52 @@ def _cmd_cron_status() -> int:
 
 def _dispatch_cron_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     """Dispatch cron subcommands from parsed argparse namespace."""
+    raw_agent = getattr(args, "agent", None)
+    selected_agent = str(raw_agent).strip() if raw_agent is not None else ""
+    selected_agent = selected_agent or None
+    enabled_agents = _global_enabled_agent_names()
+    if args.cron_command in {"add", "remove", "enable", "run"} and not selected_agent and enabled_agents:
+        _stdout_line(
+            f"Error: `openheron cron {args.cron_command}` requires --agent in multi-agent mode."
+        )
+        return 1
+    if selected_agent and enabled_agents and args.cron_command in {"add", "remove", "enable", "run"}:
+        proxy_args: list[str] = ["cron", args.cron_command]
+        if args.cron_command == "add":
+            proxy_args.extend(["--name", args.name, "--message", args.message])
+            if args.every is not None:
+                proxy_args.extend(["--every", str(args.every)])
+            if args.cron_expr is not None:
+                proxy_args.extend(["--cron", args.cron_expr])
+            if args.tz is not None:
+                proxy_args.extend(["--tz", args.tz])
+            if args.at is not None:
+                proxy_args.extend(["--at", args.at])
+            if args.deliver:
+                proxy_args.append("--deliver")
+            if args.to is not None:
+                proxy_args.extend(["--to", args.to])
+            if args.channel is not None:
+                proxy_args.extend(["--channel", args.channel])
+        elif args.cron_command == "remove":
+            proxy_args.append(args.job_id)
+        elif args.cron_command == "enable":
+            proxy_args.append(args.job_id)
+            if args.disable:
+                proxy_args.append("--disable")
+        elif args.cron_command == "run":
+            proxy_args.append(args.job_id)
+            if args.force:
+                proxy_args.append("--force")
+        code, out, err = _run_agent_cli_command(agent_name=selected_agent, args=proxy_args)
+        if out.strip():
+            _stdout_line(out.strip())
+        if err.strip():
+            _stdout_line(err.strip())
+        return 0 if code == 0 else 1
+
     cron_handlers: dict[str, Callable[[], int]] = {
-        "list": lambda: _cmd_cron_list(include_disabled=args.all),
+        "list": lambda: _cmd_cron_list(include_disabled=args.all, agent=selected_agent),
         "add": lambda: _cmd_cron_add(
             name=args.name,
             message=args.message,
@@ -4183,7 +4389,7 @@ def _dispatch_cron_command(args: argparse.Namespace, parser: argparse.ArgumentPa
         "remove": lambda: _cmd_cron_remove(args.job_id),
         "enable": lambda: _cmd_cron_enable(args.job_id, disable=args.disable),
         "run": lambda: _cmd_cron_run(args.job_id, force=args.force),
-        "status": _cmd_cron_status,
+        "status": lambda: _cmd_cron_status(agent=selected_agent),
     }
     handler = cron_handlers.get(args.cron_command)
     if handler is None:
@@ -4192,7 +4398,38 @@ def _dispatch_cron_command(args: argparse.Namespace, parser: argparse.ArgumentPa
     return handler()
 
 
-def _cmd_heartbeat_status(*, output_json: bool) -> int:
+def _cmd_heartbeat_status(*, output_json: bool, agent: str | None = None) -> int:
+    target_agents, error = _resolve_target_agent_names(agent=agent)
+    if error:
+        _stdout_line(error)
+        return 1
+    if target_agents:
+        if output_json:
+            merged: dict[str, Any] = {}
+            failures: list[str] = []
+            for agent_name in target_agents:
+                code, out, err = _run_agent_cli_command(
+                    agent_name=agent_name,
+                    args=["heartbeat", "status", "--json"],
+                )
+                if code != 0:
+                    failures.append(f"{agent_name}: {err.strip() or out.strip() or f'exit_code={code}'}")
+                    continue
+                try:
+                    merged[agent_name] = json.loads(out or "{}")
+                except Exception:
+                    failures.append(f"{agent_name}: invalid JSON output")
+            _stdout_line(json.dumps(merged, ensure_ascii=False))
+            if failures:
+                _stdout_line(f"[warn] heartbeat status failed for agents: {'; '.join(failures)}")
+                return 1
+            return 0
+        results: list[tuple[str, int, str, str]] = []
+        for agent_name in target_agents:
+            code, out, err = _run_agent_cli_command(agent_name=agent_name, args=["heartbeat", "status"])
+            results.append((agent_name, code, out, err))
+        return _print_agent_output_sections(results)
+
     workspace = load_security_policy().workspace_root
     snapshot = read_heartbeat_status_snapshot(workspace)
     if output_json:
@@ -4518,9 +4755,12 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="Comma-separated channels for daemon mode (default: enabled channels in config).",
     )
-    subparsers.add_parser("skills", help="List discovered skills as JSON.")
-    subparsers.add_parser("mcps", help="List connected MCP servers and their available APIs.")
-    subparsers.add_parser("spawn", help="List recent sub-agent tasks created by spawn_subagent.")
+    skills_parser = subparsers.add_parser("skills", help="List discovered skills as JSON.")
+    skills_parser.add_argument("--agent", default=None, help="Optional agent id.")
+    mcps_parser = subparsers.add_parser("mcps", help="List connected MCP servers and their available APIs.")
+    mcps_parser.add_argument("--agent", default=None, help="Optional agent id.")
+    spawn_parser = subparsers.add_parser("spawn", help="List recent sub-agent tasks created by spawn_subagent.")
+    spawn_parser.add_argument("--agent", default=None, help="Optional agent id.")
     doctor_parser = subparsers.add_parser("doctor", help="Check local runtime prerequisites.")
     doctor_parser.add_argument(
         "--json",
@@ -4637,6 +4877,7 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     cron_parser = subparsers.add_parser("cron", help="Manage scheduled tasks.")
+    cron_parser.add_argument("--agent", default=None, help="Optional agent id.")
     cron_subparsers = cron_parser.add_subparsers(dest="cron_command", required=True)
 
     cron_list_parser = cron_subparsers.add_parser("list", help="List scheduled cron jobs.")
@@ -4675,6 +4916,7 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Emit heartbeat status snapshot as one machine-readable JSON object.",
     )
+    heartbeat_status_parser.add_argument("--agent", default=None, help="Optional agent id.")
     token_parser = subparsers.add_parser("token", help="Token usage runtime helpers.")
     token_subparsers = token_parser.add_subparsers(dest="token_command", required=True)
     token_stats_parser = token_subparsers.add_parser("stats", help="Show token usage stats.")
@@ -4773,7 +5015,7 @@ def main(argv: list[str] | None = None) -> None:
         code = _dispatch_cron_command(args, parser)
     elif args.command == "heartbeat":
         if args.heartbeat_command == "status":
-            code = _cmd_heartbeat_status(output_json=args.output_json)
+            code = _cmd_heartbeat_status(output_json=args.output_json, agent=args.agent)
         else:
             parser.print_help()
             code = 2
@@ -4801,9 +5043,9 @@ def main(argv: list[str] | None = None) -> None:
                 daemon_channels=args.daemon_channels,
                 init_only=args.init_only,
             ),
-            "skills": _cmd_skills,
-            "mcps": _cmd_mcps,
-            "spawn": _cmd_spawn,
+            "skills": lambda: _cmd_skills(agent=getattr(args, "agent", None)),
+            "mcps": lambda: _cmd_mcps(agent=getattr(args, "agent", None)),
+            "spawn": lambda: _cmd_spawn(agent=getattr(args, "agent", None)),
             "doctor": lambda: _cmd_doctor(
                 output_json=args.output_json,
                 verbose=args.verbose,

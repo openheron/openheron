@@ -268,7 +268,7 @@ class CLITests(unittest.TestCase):
                     cli.main(["mcps"])
                 self.assertEqual(ctx.exception.code, 0)
                 mocked_bootstrap.assert_called_once()
-                mocked_mcps.assert_called_once_with()
+                mocked_mcps.assert_called_once_with(agent=None)
 
     def test_spawn_mode_dispatch(self) -> None:
         from openheron import cli
@@ -279,7 +279,7 @@ class CLITests(unittest.TestCase):
                     cli.main(["spawn"])
                 self.assertEqual(ctx.exception.code, 0)
                 mocked_bootstrap.assert_called_once()
-                mocked_spawn.assert_called_once_with()
+                mocked_spawn.assert_called_once_with(agent=None)
 
     def test_provider_login_mode_dispatch(self) -> None:
         from openheron import cli
@@ -2302,32 +2302,33 @@ class CLITests(unittest.TestCase):
             {"name": "bad_remote", "transport": "http", "status": "error"},
         ]
 
-        with patch.object(cli, "build_mcp_toolsets_from_env", return_value=[fake_toolset_ok, fake_toolset_bad]):
-            with patch.object(cli, "probe_mcp_toolsets", new=AsyncMock(return_value=fake_results)):
-                with patch.object(
-                    cli,
-                    "_collect_connected_mcp_apis",
-                    new=AsyncMock(
-                        return_value={
-                            "filesystem": [
-                                {
-                                    "name": "read_file",
-                                    "description": "Read file content",
-                                    "input": "fields=path(required)",
-                                    "output": "type=string",
-                                },
-                                {
-                                    "name": "write_file",
-                                    "description": "Write file content",
-                                    "input": "fields=path(required),content(required)",
-                                    "output": "type=object",
-                                },
-                            ]
-                        }
-                    ),
-                ):
-                    with patch("builtins.print") as mocked_info:
-                        code = cli._cmd_mcps()
+        with patch.object(cli, "_resolve_target_agent_names", return_value=([], None)):
+            with patch.object(cli, "build_mcp_toolsets_from_env", return_value=[fake_toolset_ok, fake_toolset_bad]):
+                with patch.object(cli, "probe_mcp_toolsets", new=AsyncMock(return_value=fake_results)):
+                    with patch.object(
+                        cli,
+                        "_collect_connected_mcp_apis",
+                        new=AsyncMock(
+                            return_value={
+                                "filesystem": [
+                                    {
+                                        "name": "read_file",
+                                        "description": "Read file content",
+                                        "input": "fields=path(required)",
+                                        "output": "type=string",
+                                    },
+                                    {
+                                        "name": "write_file",
+                                        "description": "Write file content",
+                                        "input": "fields=path(required),content(required)",
+                                        "output": "type=object",
+                                    },
+                                ]
+                            }
+                        ),
+                    ):
+                        with patch("builtins.print") as mocked_info:
+                            code = cli._cmd_mcps()
 
         self.assertEqual(code, 0)
         info_text = "\n".join(call.args[0] for call in mocked_info.call_args_list if call.args)
@@ -2350,15 +2351,16 @@ class CLITests(unittest.TestCase):
         fake_results = [
             {"name": "filesystem", "transport": "stdio", "status": "ok"},
         ]
-        with patch.object(cli, "build_mcp_toolsets_from_env", return_value=[fake_toolset]):
-            with patch.object(cli, "probe_mcp_toolsets", new=AsyncMock(return_value=fake_results)):
-                with patch.object(
-                    cli,
-                    "_collect_connected_mcp_apis",
-                    new=AsyncMock(return_value={"filesystem": []}),
-                ):
-                    with patch("builtins.print"):
-                        code = cli._cmd_mcps()
+        with patch.object(cli, "_resolve_target_agent_names", return_value=([], None)):
+            with patch.object(cli, "build_mcp_toolsets_from_env", return_value=[fake_toolset]):
+                with patch.object(cli, "probe_mcp_toolsets", new=AsyncMock(return_value=fake_results)):
+                    with patch.object(
+                        cli,
+                        "_collect_connected_mcp_apis",
+                        new=AsyncMock(return_value={"filesystem": []}),
+                    ):
+                        with patch("builtins.print"):
+                            code = cli._cmd_mcps()
 
         self.assertEqual(code, 0)
         fake_toolset.close.assert_awaited_once()
@@ -2421,9 +2423,10 @@ class CLITests(unittest.TestCase):
             )
 
             fake_policy = pytypes.SimpleNamespace(workspace_root=Path(tmp))
-            with patch.object(cli, "load_security_policy", return_value=fake_policy):
-                with patch("builtins.print") as mocked_info:
-                    code = cli._cmd_spawn()
+            with patch.object(cli, "_resolve_target_agent_names", return_value=([], None)):
+                with patch.object(cli, "load_security_policy", return_value=fake_policy):
+                    with patch("builtins.print") as mocked_info:
+                        code = cli._cmd_spawn()
 
         self.assertEqual(code, 0)
         info_text = "\n".join(call.args[0] for call in mocked_info.call_args_list if call.args)
@@ -2788,7 +2791,7 @@ class CLITests(unittest.TestCase):
                 with self.assertRaises(SystemExit) as ctx:
                     cli.main(["cron", "list"])
                 self.assertEqual(ctx.exception.code, 0)
-                mocked_list.assert_called_once_with(include_disabled=False)
+                mocked_list.assert_called_once_with(include_disabled=False, agent=None)
                 mocked_bootstrap.assert_called_once()
 
     def test_heartbeat_status_mode_dispatch(self) -> None:
@@ -2799,8 +2802,58 @@ class CLITests(unittest.TestCase):
                 with self.assertRaises(SystemExit) as ctx:
                     cli.main(["heartbeat", "status", "--json"])
                 self.assertEqual(ctx.exception.code, 0)
-                mocked_status.assert_called_once_with(output_json=True)
+                mocked_status.assert_called_once_with(output_json=True, agent=None)
                 mocked_bootstrap.assert_called_once()
+
+    def test_cmd_skills_aggregates_all_agents_when_not_specified(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "_resolve_target_agent_names", return_value=(["agent_a", "agent_b"], None)):
+            with patch.object(
+                cli,
+                "_run_agent_cli_command",
+                side_effect=[
+                    (0, '[{"name":"s1","source":"builtin","location":"/tmp/a"}]', ""),
+                    (0, '[{"name":"s2","source":"workspace","location":"/tmp/b"}]', ""),
+                ],
+            ):
+                with patch("builtins.print") as mocked_info:
+                    code = cli._cmd_skills()
+        self.assertEqual(code, 0)
+        payload = json.loads(mocked_info.call_args_list[0].args[0])
+        self.assertEqual(payload[0]["agent"], "agent_a")
+        self.assertEqual(payload[1]["agent"], "agent_b")
+
+    def test_cmd_heartbeat_status_json_aggregates_all_agents(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "_resolve_target_agent_names", return_value=(["agent_a", "agent_b"], None)):
+            with patch.object(
+                cli,
+                "_run_agent_cli_command",
+                side_effect=[
+                    (0, '{"running": true}', ""),
+                    (0, '{"running": false}', ""),
+                ],
+            ):
+                with patch("builtins.print") as mocked_info:
+                    code = cli._cmd_heartbeat_status(output_json=True)
+        self.assertEqual(code, 0)
+        payload = json.loads(mocked_info.call_args_list[0].args[0])
+        self.assertTrue(payload["agent_a"]["running"])
+        self.assertFalse(payload["agent_b"]["running"])
+
+    def test_cron_add_requires_agent_in_multi_agent_mode(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "bootstrap_env_from_config"):
+            with patch.object(cli, "_global_enabled_agent_names", return_value=["agent_a", "agent_b"]):
+                with patch("builtins.print") as mocked_info:
+                    with self.assertRaises(SystemExit) as ctx:
+                        cli.main(["cron", "add", "--name", "n1", "--message", "m1", "--every", "60"])
+        self.assertEqual(ctx.exception.code, 1)
+        lines = [call.args[0] for call in mocked_info.call_args_list if call.args]
+        self.assertTrue(any("requires --agent" in line for line in lines))
 
     def test_token_stats_mode_dispatch(self) -> None:
         from openheron import cli
@@ -2838,33 +2891,34 @@ class CLITests(unittest.TestCase):
         from openheron import cli
 
         with patch.object(cli, "bootstrap_env_from_config") as mocked_bootstrap:
-            with patch.object(cli, "_cmd_message", return_value=0) as mocked_message:
-                with patch.object(cli, "_cmd_cron_add", return_value=0) as mocked_add:
-                    with self.assertRaises(SystemExit) as ctx:
-                        cli.main(
-                            [
-                                "cron",
-                                "add",
-                                "--name",
-                                "demo",
-                                "--message",
-                                "hello cron",
-                                "--every",
-                                "30",
-                            ]
+            with patch.object(cli, "_global_enabled_agent_names", return_value=[]):
+                with patch.object(cli, "_cmd_message", return_value=0) as mocked_message:
+                    with patch.object(cli, "_cmd_cron_add", return_value=0) as mocked_add:
+                        with self.assertRaises(SystemExit) as ctx:
+                            cli.main(
+                                [
+                                    "cron",
+                                    "add",
+                                    "--name",
+                                    "demo",
+                                    "--message",
+                                    "hello cron",
+                                    "--every",
+                                    "30",
+                                ]
+                            )
+                        self.assertEqual(ctx.exception.code, 0)
+                        mocked_add.assert_called_once_with(
+                            name="demo",
+                            message="hello cron",
+                            every=30,
+                            cron_expr=None,
+                            tz=None,
+                            at=None,
+                            deliver=False,
+                            to=None,
+                            channel=None,
                         )
-                    self.assertEqual(ctx.exception.code, 0)
-                    mocked_add.assert_called_once_with(
-                        name="demo",
-                        message="hello cron",
-                        every=30,
-                        cron_expr=None,
-                        tz=None,
-                        at=None,
-                        deliver=False,
-                        to=None,
-                        channel=None,
-                    )
                     mocked_message.assert_not_called()
                     mocked_bootstrap.assert_called_once()
 
@@ -2946,9 +3000,10 @@ class CLITests(unittest.TestCase):
                 "next_wake_at_ms": None,
             }
         )
-        with patch.object(cli, "_cron_service", return_value=fake_service):
-            with patch("builtins.print") as mocked_info:
-                code = cli._cmd_cron_status()
+        with patch.object(cli, "_resolve_target_agent_names", return_value=([], None)):
+            with patch.object(cli, "_cron_service", return_value=fake_service):
+                with patch("builtins.print") as mocked_info:
+                    code = cli._cmd_cron_status()
 
         self.assertEqual(code, 0)
         line = mocked_info.call_args[0][0]
@@ -2964,9 +3019,10 @@ class CLITests(unittest.TestCase):
         fake_job = pytypes.SimpleNamespace(id="j1", name="demo", enabled=True, schedule=fake_schedule, state=fake_state)
         fake_service = pytypes.SimpleNamespace(list_jobs=lambda include_disabled: [fake_job])
 
-        with patch.object(cli, "_cron_service", return_value=fake_service):
-            with patch("builtins.print") as mocked_print:
-                code = cli._cmd_cron_list(include_disabled=True)
+        with patch.object(cli, "_resolve_target_agent_names", return_value=([], None)):
+            with patch.object(cli, "_cron_service", return_value=fake_service):
+                with patch("builtins.print") as mocked_print:
+                    code = cli._cmd_cron_list(include_disabled=True)
 
         self.assertEqual(code, 0)
         self.assertEqual(mocked_print.call_count, 2)
@@ -2990,9 +3046,10 @@ class CLITests(unittest.TestCase):
             store.parent.mkdir(parents=True, exist_ok=True)
             store.write_text(json.dumps(snapshot), encoding="utf-8")
             policy = pytypes.SimpleNamespace(workspace_root=Path(tmp))
-            with patch.object(cli, "load_security_policy", return_value=policy):
-                with patch("builtins.print") as mocked_info:
-                    code = cli._cmd_heartbeat_status(output_json=False)
+            with patch.object(cli, "_resolve_target_agent_names", return_value=([], None)):
+                with patch.object(cli, "load_security_policy", return_value=policy):
+                    with patch("builtins.print") as mocked_info:
+                        code = cli._cmd_heartbeat_status(output_json=False)
 
         self.assertEqual(code, 0)
         lines = [call.args[0] for call in mocked_info.call_args_list if call.args]
