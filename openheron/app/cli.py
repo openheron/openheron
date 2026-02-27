@@ -1844,6 +1844,22 @@ def _cmd_routes_stats(*, output_json: bool = False, limit: int = 20, window_hour
     _render_top("agents", stats.get("byAgent", {}))
     _render_top("channels", stats.get("byChannel", {}))
     _render_top("matchedBy", stats.get("byMatchedBy", {}))
+    sample_limit = min(len(trimmed_recent), min(5, max_items))
+    if sample_limit > 0:
+        _stdout_line("Recent samples:")
+        for item in trimmed_recent[-sample_limit:]:
+            if not isinstance(item, dict):
+                continue
+            _stdout_line(
+                "- "
+                f"at={item.get('at', '-')}, "
+                f"agent={item.get('agentId', '-')}, "
+                f"channel={item.get('channel', '-')}, "
+                f"account={item.get('accountId', '-')}, "
+                f"peer={item.get('peerKind', '-')}/{item.get('peerId', '-')}, "
+                f"matchedBy={item.get('matchedBy', '-')}, "
+                f"session={item.get('sessionId', '-')}"
+            )
     _stdout_line(f"By agent: {json.dumps(stats.get('byAgent', {}), ensure_ascii=False)}")
     _stdout_line(f"By channel: {json.dumps(stats.get('byChannel', {}), ensure_ascii=False)}")
     _stdout_line(f"By matchedBy: {json.dumps(stats.get('byMatchedBy', {}), ensure_ascii=False)}")

@@ -2531,6 +2531,11 @@ class CLITests(unittest.TestCase):
         self.assertIn("Top agents: main:3, biz:2", lines)
         self.assertIn("Top channels: whatsapp:4, telegram:1", lines)
         self.assertIn("Top matchedBy: binding.peer:3, binding.account:2", lines)
+        self.assertIn("Recent samples:", lines)
+        sample_lines = [line for line in lines if line.startswith("- at=")]
+        self.assertEqual(len(sample_lines), 2)
+        self.assertTrue(any("agent=main" in line and "channel=telegram" in line for line in sample_lines))
+        self.assertTrue(any("agent=biz" in line and "channel=whatsapp" in line for line in sample_lines))
 
     def test_cmd_provider_status_json_output_includes_oauth_issue(self) -> None:
         from openheron import cli

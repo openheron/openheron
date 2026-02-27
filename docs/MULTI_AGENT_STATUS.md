@@ -36,7 +36,7 @@
 - `doctor` 新增 `multiAgent.summary` 与 `multiAgent.routePreview`
 - `doctor` 文本模式冲突提示与排查指引
 - `routes lint` 独立命令（含 `--json/--limit` 与建议动作输出）
-- `routes stats` 独立命令（路由命中统计与审计，含 `--json/--limit/--window-hours`，文本模式 Top 排序视图）
+- `routes stats` 独立命令（路由命中统计与审计，含 `--json/--limit/--window-hours`，文本模式 Top 排序 + Recent samples 预览）
 
 ### 1.6 文档与模板
 
