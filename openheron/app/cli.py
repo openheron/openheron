@@ -1649,6 +1649,13 @@ def _cmd_doctor(
         f"action_tool={gui_action_tool or '-'}, "
         f"hint={gui_hint}"
     )
+    conflict_count = len(multi_agent_summary.get("conflicts", []))
+    if conflict_count > 0:
+        _stdout_line(
+            "Multi-agent routing conflicts detected: "
+            f"{conflict_count}. Review doctor --json fields "
+            "`multiAgent.summary.conflicts` and `multiAgent.routePreview`."
+        )
 
     if issues:
         _stdout_line("Issues:")
