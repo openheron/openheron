@@ -333,7 +333,46 @@ class CLITests(unittest.TestCase):
                     cli.main(["routes", "stats", "--json", "--limit", "9"])
                 self.assertEqual(ctx.exception.code, 0)
                 mocked_bootstrap.assert_called_once()
-                mocked_stats.assert_called_once_with(output_json=True, limit=9, window_hours=None)
+                mocked_stats.assert_called_once_with(
+                    output_json=True,
+                    limit=9,
+                    window_hours=None,
+                    since=None,
+                    until=None,
+                    export_path=None,
+                )
+
+    def test_routes_stats_mode_dispatch_with_time_range_and_export(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "bootstrap_env_from_config") as mocked_bootstrap:
+            with patch.object(cli, "_cmd_routes_stats", return_value=0) as mocked_stats:
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main(
+                        [
+                            "routes",
+                            "stats",
+                            "--agent-id",
+                            "main",
+                            "--since",
+                            "2026-02-27T00:00:00+00:00",
+                            "--until",
+                            "2026-02-27T23:59:59+00:00",
+                            "--export",
+                            "/tmp/route_stats.json",
+                        ]
+                    )
+                self.assertEqual(ctx.exception.code, 0)
+                mocked_bootstrap.assert_called_once()
+                mocked_stats.assert_called_once_with(
+                    output_json=False,
+                    limit=20,
+                    window_hours=None,
+                    agent_id="main",
+                    since="2026-02-27T00:00:00+00:00",
+                    until="2026-02-27T23:59:59+00:00",
+                    export_path="/tmp/route_stats.json",
+                )
 
     def test_channels_login_mode_dispatch(self) -> None:
         from openheron import cli
@@ -2743,6 +2782,41 @@ class CLITests(unittest.TestCase):
         self.assertEqual(len(sample_lines), 2)
         self.assertTrue(any("agent=main" in line and "channel=telegram" in line for line in sample_lines))
         self.assertTrue(any("agent=biz" in line and "channel=whatsapp" in line for line in sample_lines))
+
+    def test_cmd_routes_stats_can_export_with_since_until(self) -> None:
+        from openheron import cli
+
+        now = dt.datetime.now(dt.timezone.utc)
+        snapshot = {
+            "generatedAt": now.isoformat(),
+            "recent": [
+                {
+                    "at": (now - dt.timedelta(minutes=20)).isoformat(),
+                    "agentId": "main",
+                    "channel": "local",
+                    "matchedBy": "binding.account",
+                }
+            ],
+        }
+        fake_runtime = pytypes.SimpleNamespace(agent_id="main", agent_dir=Path("/tmp/agent-main"))
+        fake_router = pytypes.SimpleNamespace(runtime_for_agent=Mock(return_value=fake_runtime))
+        with tempfile.TemporaryDirectory() as tmp:
+            export_file = Path(tmp) / "routes_stats.json"
+            with patch.object(cli, "AgentRouter", return_value=fake_router):
+                with patch.object(cli, "load_config", return_value={}):
+                    with patch.object(cli, "read_route_stats_snapshot", return_value=snapshot):
+                        with patch("builtins.print"):
+                            code = cli._cmd_routes_stats(
+                                output_json=False,
+                                since=(now - dt.timedelta(hours=1)).isoformat(),
+                                until=now.isoformat(),
+                                export_path=str(export_file),
+                            )
+            self.assertEqual(code, 0)
+            self.assertTrue(export_file.exists())
+            payload = json.loads(export_file.read_text(encoding="utf-8"))
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["agentId"], "main")
 
     def test_cmd_provider_status_json_output_includes_oauth_issue(self) -> None:
         from openheron import cli

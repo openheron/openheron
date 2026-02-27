@@ -214,6 +214,12 @@ Smoke script examples:
 
 # multi-agent local smoke (routing/session/heartbeat/route-stats/bootstrap isolation)
 python scripts/multi_agent_smoke.py
+
+# scaffold multi-agent config templates
+python scripts/scaffold_multi_agent_config.py --agents main,biz
+
+# rotate per-agent runtime snapshots by size
+python scripts/rotate_runtime_artifacts.py --dry-run
 ```
 
 macOS permission reminder (required for GUI automation):

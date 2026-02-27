@@ -103,6 +103,20 @@ CI 最小回归建议：
   1. `pip install -e .`
   2. `python scripts/multi_agent_smoke.py`
 
+运行时快照轮转建议（可选）：
+
+```bash
+python scripts/rotate_runtime_artifacts.py --dry-run
+python scripts/rotate_runtime_artifacts.py --max-kb 512
+```
+
+多 agent 配置脚手架（可选）：
+
+```bash
+python scripts/scaffold_multi_agent_config.py --agents main,biz
+python scripts/scaffold_multi_agent_config.py --agents main,biz,ops --force
+```
+
 Gateway service manifest（对齐 OpenClaw install-daemon 的最小实现）：
 
 ```bash
@@ -360,6 +374,8 @@ openheron routes stats --agent-id main
 openheron routes stats --limit 10
 openheron routes stats --json --limit 50
 openheron routes stats --json --window-hours 24
+openheron routes stats --json --agent-id main --since 2026-02-27T00:00:00+08:00 --until 2026-02-27T23:59:59+08:00
+openheron routes stats --agent-id main --export ./route_stats_main.json
 ```
 
 - 无快照时（首次运行常见）：

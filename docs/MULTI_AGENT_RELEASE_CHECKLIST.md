@@ -33,6 +33,7 @@ openheron doctor --verbose
 7. `doctor --json` 的 `multiAgent.summary.conflicts` 为空。
 8. `doctor --json` 的 `multiAgent.routePreview` 中 `sessionIdExample` 与预期一致。
 9. `doctor --json` 的 `observability.byAgent.<id>.heartbeat.snapshot_available` 与 `routeStats.snapshot_available` 符合预期。
+10. 若准备进入 Phase 2，确认 `doctor --json` 的 `observability.legacyHeartbeatFiles` / `legacyRouteStatsFiles` 为 0。
 
 可选一键脚本（本节命令聚合）：
 

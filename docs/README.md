@@ -14,6 +14,8 @@
 - [MULTI_AGENT_RELEASE_CHECKLIST.md](./MULTI_AGENT_RELEASE_CHECKLIST.md): 多智能体发布前检查清单（routes lint/stats、doctor、权限、通道、auth）
 - [MULTI_AGENT_STATUS.md](./MULTI_AGENT_STATUS.md): 多智能体阶段状态（已完成/待推进/回归命令，含 routes lint）
 - [MULTI_AGENT_COMPAT_PLAN.md](./MULTI_AGENT_COMPAT_PLAN.md): 多智能体兼容层收敛计划（旧路径回退的阶段性下线方案）
+- [MULTI_AGENT_LONGRUN_PLAN.md](./MULTI_AGENT_LONGRUN_PLAN.md): 多智能体真实渠道长稳测试计划（24h-72h）
+- [MULTI_AGENT_BASELINE_2026-02-27.md](./MULTI_AGENT_BASELINE_2026-02-27.md): 当前发布基线记录
 - [CHANNEL_ACCOUNTID_CONTRACT.md](./CHANNEL_ACCOUNTID_CONTRACT.md): channel 侧 `accountId` 输入契约（多账号路由场景）
 - [CHANNEL_SCOPE_CONTRACT.md](./CHANNEL_SCOPE_CONTRACT.md): channel 侧 `guild/team/roles` scope 能力矩阵与使用约定
 

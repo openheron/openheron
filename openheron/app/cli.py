@@ -1543,13 +1543,45 @@ def _cmd_doctor(
     observability_by_agent: dict[str, Any] = {}
     heartbeat_snapshot_count = 0
     route_stats_snapshot_count = 0
+    legacy_heartbeat_files = 0
+    legacy_route_stats_files = 0
+    observability_warnings: list[str] = []
+    security_warnings: list[str] = []
     for agent_id, runtime in agent_runtimes.items():
         heartbeat_snapshot = read_heartbeat_status_snapshot(runtime.agent_dir)
         route_stats_snapshot = read_route_stats_snapshot(runtime.agent_dir)
+        legacy_hb_path = runtime.agent_dir / ".openheron" / "heartbeat_status.json"
+        legacy_rs_path = runtime.agent_dir / ".openheron" / "route_stats.json"
         if heartbeat_snapshot is not None:
             heartbeat_snapshot_count += 1
         if route_stats_snapshot is not None:
             route_stats_snapshot_count += 1
+        if legacy_hb_path.exists():
+            legacy_heartbeat_files += 1
+            observability_warnings.append(
+                f"agent '{agent_id}' still has legacy heartbeat snapshot path: {legacy_hb_path}"
+            )
+        if legacy_rs_path.exists():
+            legacy_route_stats_files += 1
+            observability_warnings.append(
+                f"agent '{agent_id}' still has legacy route stats snapshot path: {legacy_rs_path}"
+            )
+        runtime_allow_exec = bool(getattr(runtime, "allow_exec", True))
+        runtime_restrict_workspace = bool(getattr(runtime, "restrict_to_workspace", False))
+        runtime_fs_workspace_only = bool(getattr(runtime, "fs_workspace_only", False))
+        runtime_fs_allowed_paths = getattr(runtime, "fs_allowed_paths", ())
+        if not isinstance(runtime_fs_allowed_paths, tuple):
+            runtime_fs_allowed_paths = tuple(runtime_fs_allowed_paths) if runtime_fs_allowed_paths else ()
+        if (
+            runtime_allow_exec
+            and not runtime_restrict_workspace
+            and not runtime_fs_workspace_only
+            and len(runtime_fs_allowed_paths) == 0
+        ):
+            security_warnings.append(
+                f"agent '{agent_id}' has broad exec+fs scope "
+                "(allowExec=true, restrictToWorkspace=false, fs.workspaceOnly=false, fs.allowedPaths empty)"
+            )
         observability_by_agent[agent_id] = {
             "agentId": agent_id,
             "agentDir": str(runtime.agent_dir),
@@ -1663,6 +1695,9 @@ def _cmd_doctor(
             "agentCount": len(agent_runtimes),
             "heartbeatSnapshots": heartbeat_snapshot_count,
             "routeStatsSnapshots": route_stats_snapshot_count,
+            "legacyHeartbeatFiles": legacy_heartbeat_files,
+            "legacyRouteStatsFiles": legacy_route_stats_files,
+            "warnings": observability_warnings,
             "byAgent": observability_by_agent,
         },
         "web": {
@@ -1675,6 +1710,7 @@ def _cmd_doctor(
             "allow_exec": security_policy.allow_exec,
             "allow_network": security_policy.allow_network,
             "exec_allowlist": list(security_policy.exec_allowlist),
+            "warnings": security_warnings,
         },
         "mcp": {
             "configured": mcp_summaries,
@@ -1717,7 +1753,9 @@ def _cmd_doctor(
     logger.debug(
         "Agent observability: "
         f"heartbeat_snapshots={heartbeat_snapshot_count}/{len(agent_runtimes)}, "
-        f"route_stats_snapshots={route_stats_snapshot_count}/{len(agent_runtimes)}"
+        f"route_stats_snapshots={route_stats_snapshot_count}/{len(agent_runtimes)}, "
+        f"legacy_heartbeat_files={legacy_heartbeat_files}, "
+        f"legacy_route_stats_files={legacy_route_stats_files}"
     )
     logger.debug(
         "Web search: "
@@ -1732,6 +1770,8 @@ def _cmd_doctor(
         f"allow_network={security_policy.allow_network}, "
         f"exec_allowlist={list(security_policy.exec_allowlist)}"
     )
+    if security_warnings:
+        logger.debug(f"Security warnings: {security_warnings}")
     logger.debug(
         "GUI execution: "
         f"builtin_tools_enabled={gui_builtin_tools_enabled}, "
@@ -1816,6 +1856,18 @@ def _cmd_doctor(
             )
         if summary_parts:
             _stdout_line("Agent observability: " + ", ".join(summary_parts))
+    if observability_warnings:
+        _stdout_line(
+            "Observability warnings: "
+            + "; ".join(observability_warnings[:5])
+            + (" ..." if len(observability_warnings) > 5 else "")
+        )
+    if security_warnings:
+        _stdout_line(
+            "Security warnings: "
+            + "; ".join(security_warnings[:5])
+            + (" ..." if len(security_warnings) > 5 else "")
+        )
     _stdout_line(
         "GUI runtime: "
         f"mode={gui_mode}, "
@@ -1961,6 +2013,9 @@ def _cmd_routes_stats(
     limit: int = 20,
     window_hours: int | None = None,
     agent_id: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    export_path: str | None = None,
 ) -> int:
     """Show persisted route hit stats from latest gateway runtime snapshot."""
     router = AgentRouter(load_config())
@@ -1968,6 +2023,18 @@ def _cmd_routes_stats(
     snapshot = read_route_stats_snapshot(runtime.agent_dir)
     max_items = max(1, min(int(limit), 200))
     resolved_window_hours = None if window_hours is None else max(1, min(int(window_hours), 24 * 30))
+    since_ms: int | None = None
+    until_ms: int | None = None
+    if resolved_window_hours is None:
+        try:
+            since_ms = parse_time_filter_to_epoch_ms(since)
+            until_ms = parse_time_filter_to_epoch_ms(until)
+        except ValueError as exc:
+            _stdout_line(f"Error: invalid --since/--until value ({exc})")
+            return 1
+        if since_ms is not None and until_ms is not None and since_ms > until_ms:
+            _stdout_line("Error: --since must be earlier than or equal to --until")
+            return 1
     if snapshot is None:
         report = {
             "ok": False,
@@ -2009,6 +2076,27 @@ def _cmd_routes_stats(
             if parsed_at >= window_start:
                 scoped.append(item)
         filtered_recent = scoped
+    elif since_ms is not None or until_ms is not None:
+        scoped = []
+        for item in recent:
+            if not isinstance(item, dict):
+                continue
+            raw_at = str(item.get("at", "")).strip()
+            if not raw_at:
+                continue
+            try:
+                parsed_at = dt.datetime.fromisoformat(raw_at.replace("Z", "+00:00"))
+            except Exception:
+                continue
+            if parsed_at.tzinfo is None:
+                parsed_at = parsed_at.replace(tzinfo=dt.timezone.utc)
+            at_ms = int(parsed_at.timestamp() * 1000)
+            if since_ms is not None and at_ms < since_ms:
+                continue
+            if until_ms is not None and at_ms > until_ms:
+                continue
+            scoped.append(item)
+        filtered_recent = scoped
     trimmed_recent = filtered_recent[-max_items:]
     by_agent: dict[str, int] = {}
     by_channel: dict[str, int] = {}
@@ -2028,6 +2116,8 @@ def _cmd_routes_stats(
     stats = dict(snapshot)
     stats["recent"] = trimmed_recent
     stats["windowHours"] = resolved_window_hours
+    stats["sinceMs"] = since_ms
+    stats["untilMs"] = until_ms
     stats["totalMessagesInWindow"] = len(filtered_recent)
     stats["byAgent"] = by_agent
     stats["byChannel"] = by_channel
@@ -2040,7 +2130,12 @@ def _cmd_routes_stats(
         "stats": stats,
     }
     if output_json:
-        _stdout_line(json.dumps(report, ensure_ascii=False))
+        rendered = json.dumps(report, ensure_ascii=False)
+        _stdout_line(rendered)
+        if export_path and str(export_path).strip():
+            path = Path(str(export_path)).expanduser().resolve(strict=False)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(rendered + "\n", encoding="utf-8")
         return 0
 
     _stdout_line(
@@ -2052,6 +2147,8 @@ def _cmd_routes_stats(
     )
     if resolved_window_hours is not None:
         _stdout_line(f"Window hours: {resolved_window_hours}")
+    elif since_ms is not None or until_ms is not None:
+        _stdout_line(f"Time range(ms): since={since_ms}, until={until_ms}")
     supported_scope_channels = report.get("scopeSupportedChannels", [])
     if isinstance(supported_scope_channels, list) and supported_scope_channels:
         _stdout_line("Scope-supported channels: " + ", ".join(str(item) for item in supported_scope_channels))
@@ -2095,6 +2192,11 @@ def _cmd_routes_stats(
     _stdout_line(f"By agent: {json.dumps(stats.get('byAgent', {}), ensure_ascii=False)}")
     _stdout_line(f"By channel: {json.dumps(stats.get('byChannel', {}), ensure_ascii=False)}")
     _stdout_line(f"By matchedBy: {json.dumps(stats.get('byMatchedBy', {}), ensure_ascii=False)}")
+    if export_path and str(export_path).strip():
+        path = Path(str(export_path)).expanduser().resolve(strict=False)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        _stdout_line(f"Exported route stats: {path}")
     return 0
 
 
@@ -2317,6 +2419,9 @@ def _dispatch_routes_command(args: argparse.Namespace, parser: argparse.Argument
                 output_json=args.output_json,
                 limit=args.limit,
                 window_hours=args.window_hours,
+                since=args.since,
+                until=args.until,
+                export_path=args.export_path,
             )
             if args.agent_id is None
             else _cmd_routes_stats(
@@ -2324,6 +2429,9 @@ def _dispatch_routes_command(args: argparse.Namespace, parser: argparse.Argument
                 limit=args.limit,
                 window_hours=args.window_hours,
                 agent_id=args.agent_id,
+                since=args.since,
+                until=args.until,
+                export_path=args.export_path,
             )
         ),
     }
@@ -4875,9 +4983,25 @@ def main(argv: list[str] | None = None) -> None:
         help="Optional sliding window (hours) for stats aggregation.",
     )
     routes_stats_parser.add_argument(
+        "--since",
+        default=None,
+        help="Optional inclusive start time in ISO8601 (used when --window-hours is omitted).",
+    )
+    routes_stats_parser.add_argument(
+        "--until",
+        default=None,
+        help="Optional inclusive end time in ISO8601 (used when --window-hours is omitted).",
+    )
+    routes_stats_parser.add_argument(
         "--agent-id",
         default=None,
         help="Optional agent id; defaults to configured default agent.",
+    )
+    routes_stats_parser.add_argument(
+        "--export",
+        dest="export_path",
+        default=None,
+        help="Optional output file path to write the stats payload JSON.",
     )
 
     channels_parser = subparsers.add_parser("channels", help="Manage channel helper commands.")
