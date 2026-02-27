@@ -9,6 +9,7 @@
 - [MCP_SECURITY.md](./MCP_SECURITY.md): MCP 接入和安全策略
 - [examples/multi-agent.v1.config.json](./examples/multi-agent.v1.config.json): 多智能体 v1 可直接改造的配置模板
 - [MULTI_AGENT_MIGRATION.md](./MULTI_AGENT_MIGRATION.md): 单 agent 到多 agent（v1）的迁移步骤与验证清单
+- [MULTI_AGENT_RELEASE_CHECKLIST.md](./MULTI_AGENT_RELEASE_CHECKLIST.md): 多智能体发布前检查清单（路由/权限/通道/auth）
 
 ## 维护建议
 
