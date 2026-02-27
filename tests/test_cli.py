@@ -2506,6 +2506,32 @@ class CLITests(unittest.TestCase):
         self.assertEqual(payload["stats"]["totalMessagesInWindow"], 1)
         self.assertEqual(payload["stats"]["byAgent"], {"biz": 1})
 
+    def test_cmd_routes_stats_text_output_includes_top_rankings(self) -> None:
+        from openheron import cli
+
+        snapshot = {
+            "generatedAt": "2026-02-27T00:00:00+00:00",
+            "totalMessages": 5,
+            "recent": [
+                {"agentId": "main", "channel": "whatsapp", "matchedBy": "binding.peer"},
+                {"agentId": "main", "channel": "whatsapp", "matchedBy": "binding.peer"},
+                {"agentId": "biz", "channel": "whatsapp", "matchedBy": "binding.account"},
+                {"agentId": "main", "channel": "telegram", "matchedBy": "binding.account"},
+                {"agentId": "biz", "channel": "whatsapp", "matchedBy": "binding.peer"},
+            ],
+        }
+        fake_registry = pytypes.SimpleNamespace(workspace=Path("/tmp"), list_skills=lambda: [])
+        with patch.object(cli, "get_registry", return_value=fake_registry):
+            with patch.object(cli, "read_route_stats_snapshot", return_value=snapshot):
+                with patch("builtins.print") as mocked_print:
+                    code = cli._cmd_routes_stats(output_json=False, limit=2)
+        self.assertEqual(code, 0)
+        lines = [call.args[0] for call in mocked_print.call_args_list if call.args]
+        self.assertTrue(any(line.startswith("Routes stats:") for line in lines))
+        self.assertIn("Top agents: main:3, biz:2", lines)
+        self.assertIn("Top channels: whatsapp:4, telegram:1", lines)
+        self.assertIn("Top matchedBy: binding.peer:3, binding.account:2", lines)
+
     def test_cmd_provider_status_json_output_includes_oauth_issue(self) -> None:
         from openheron import cli
 

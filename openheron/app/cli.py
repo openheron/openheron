@@ -1825,6 +1825,25 @@ def _cmd_routes_stats(*, output_json: bool = False, limit: int = 20, window_hour
     if resolved_window_hours is not None:
         _stdout_line(f"Window hours: {resolved_window_hours}")
     _stdout_line(f"Generated at: {stats.get('generatedAt', '-')}")
+    top_limit = max(1, min(max_items, 20))
+
+    def _render_top(label: str, counts: dict[str, int]) -> None:
+        normalized: list[tuple[str, int]] = []
+        for key, value in counts.items():
+            try:
+                normalized.append((str(key), int(value)))
+            except Exception:
+                continue
+        normalized.sort(key=lambda item: (-item[1], item[0]))
+        if not normalized:
+            _stdout_line(f"Top {label}: -")
+            return
+        pairs = ", ".join(f"{key}:{value}" for key, value in normalized[:top_limit])
+        _stdout_line(f"Top {label}: {pairs}")
+
+    _render_top("agents", stats.get("byAgent", {}))
+    _render_top("channels", stats.get("byChannel", {}))
+    _render_top("matchedBy", stats.get("byMatchedBy", {}))
     _stdout_line(f"By agent: {json.dumps(stats.get('byAgent', {}), ensure_ascii=False)}")
     _stdout_line(f"By channel: {json.dumps(stats.get('byChannel', {}), ensure_ascii=False)}")
     _stdout_line(f"By matchedBy: {json.dumps(stats.get('byMatchedBy', {}), ensure_ascii=False)}")
