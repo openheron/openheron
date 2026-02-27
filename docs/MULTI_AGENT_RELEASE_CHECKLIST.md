@@ -16,6 +16,7 @@
 ```bash
 openheron routes lint --json
 openheron routes stats --json
+openheron routes stats --json --window-hours 24
 openheron doctor --json
 openheron doctor --verbose
 ```
@@ -23,11 +24,12 @@ openheron doctor --verbose
 检查点：
 
 1. `routes lint --json` 返回 `ok=true`，且 `summary.conflicts` 为空。
-2. `routes stats --json` 返回 `ok=true`，并且 `stats.totalMessages` 与预期流量量级一致。
-3. `doctor --json` 的 `issues` 为空。
-4. `doctor --json` 的 `multiAgent.issues` 为空。
-5. `doctor --json` 的 `multiAgent.summary.conflicts` 为空。
-6. `doctor --json` 的 `multiAgent.routePreview` 中 `sessionIdExample` 与预期一致。
+2. `routes stats --json` 返回 `ok=true`，并且 `stats.totalMessagesInWindow` 与预期流量量级一致。
+3. `routes stats --json --window-hours 24` 的窗口统计与近期流量预期一致。
+4. `doctor --json` 的 `issues` 为空。
+5. `doctor --json` 的 `multiAgent.issues` 为空。
+6. `doctor --json` 的 `multiAgent.summary.conflicts` 为空。
+7. `doctor --json` 的 `multiAgent.routePreview` 中 `sessionIdExample` 与预期一致。
 
 ## 3. 路由行为检查（本地）
 

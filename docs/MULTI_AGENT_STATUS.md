@@ -36,7 +36,7 @@
 - `doctor` 新增 `multiAgent.summary` 与 `multiAgent.routePreview`
 - `doctor` 文本模式冲突提示与排查指引
 - `routes lint` 独立命令（含 `--json/--limit` 与建议动作输出）
-- `routes stats` 独立命令（路由命中统计与审计，含 `--json/--limit`）
+- `routes stats` 独立命令（路由命中统计与审计，含 `--json/--limit/--window-hours`）
 
 ### 1.6 文档与模板
 
@@ -57,7 +57,7 @@
 ./.venv/bin/python -m pytest -q tests/test_agent_routing.py tests/test_bus_gateway.py tests/test_whatsapp_channel.py tests/test_telegram_channel.py tests/test_discord_channel.py tests/test_feishu_channel.py tests/test_cli.py
 ```
 
-最近结果：`205 passed`。
+最近结果：`206 passed`。
 
 ## 4. 当前结论
 

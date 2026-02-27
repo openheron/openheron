@@ -314,6 +314,7 @@ openheron doctor --verbose
 openheron routes stats
 openheron routes stats --json
 openheron routes stats --json --limit 50
+openheron routes stats --json --window-hours 24
 ```
 
 - 无快照时（首次运行常见）：
