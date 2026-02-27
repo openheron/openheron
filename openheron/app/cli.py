@@ -1269,6 +1269,86 @@ def _doctor_summarize_multi_agent_config(config: dict[str, Any]) -> dict[str, An
     }
 
 
+def _doctor_preview_multi_agent_routes(config: dict[str, Any], *, limit: int = 8) -> list[dict[str, Any]]:
+    """Build route preview examples for doctor JSON output."""
+    agents = config.get("agents", {})
+    entries = agents.get("list", []) if isinstance(agents, dict) else []
+    bindings = config.get("bindings", [])
+    normalized_bindings = bindings if isinstance(bindings, list) else []
+
+    def _default_agent_id() -> str:
+        first = "main"
+        for item in entries:
+            if not isinstance(item, dict):
+                continue
+            candidate = _normalize_agent_id_for_doctor(item.get("id")) or "main"
+            if first == "main":
+                first = candidate
+            if bool(item.get("default")):
+                return candidate
+        return first
+
+    preview: list[dict[str, Any]] = []
+    for idx, item in enumerate(normalized_bindings):
+        if len(preview) >= limit:
+            break
+        if not isinstance(item, dict):
+            continue
+        match = item.get("match", {})
+        if not isinstance(match, dict):
+            continue
+        channel = str(match.get("channel", "")).strip().lower()
+        if not channel:
+            continue
+        agent_id = _normalize_agent_id_for_doctor(item.get("agentId")) or "main"
+        account_id = str(match.get("accountId", "")).strip().lower() or "default"
+        peer = match.get("peer", {})
+        peer_kind = "direct"
+        peer_id = "sample-peer"
+        tier = "channel"
+        if isinstance(peer, dict):
+            raw_peer_kind = str(peer.get("kind", "")).strip().lower()
+            raw_peer_id = str(peer.get("id", "")).strip()
+            if raw_peer_kind and raw_peer_id:
+                peer_kind = "direct" if raw_peer_kind in {"dm", "direct"} else raw_peer_kind
+                peer_id = raw_peer_id
+                tier = "peer"
+            elif str(match.get("accountId", "")).strip():
+                tier = "account"
+        elif str(match.get("accountId", "")).strip():
+            tier = "account"
+
+        session_id = f"agent:{agent_id}:{channel}:{account_id}:{peer_kind}:{peer_id}"
+        preview.append(
+            {
+                "type": "binding",
+                "bindingIndex": idx,
+                "tier": tier,
+                "agentId": agent_id,
+                "channel": channel,
+                "accountId": account_id,
+                "peerKind": peer_kind,
+                "peerId": peer_id,
+                "sessionIdExample": session_id,
+            }
+        )
+
+    if len(preview) < limit:
+        default_agent = _default_agent_id()
+        preview.append(
+            {
+                "type": "default",
+                "agentId": default_agent,
+                "channel": "local",
+                "accountId": "default",
+                "peerKind": "direct",
+                "peerId": "sample-peer",
+                "sessionIdExample": f"agent:{default_agent}:local:default:direct:sample-peer",
+            }
+        )
+    return preview[:limit]
+
+
 def _cmd_doctor(
     *,
     output_json: bool = False,
@@ -1347,6 +1427,7 @@ def _cmd_doctor(
     issues.extend(channel_issues)
     multi_agent_issues = _doctor_validate_multi_agent_config(config_payload)
     multi_agent_summary = _doctor_summarize_multi_agent_config(config_payload)
+    multi_agent_preview = _doctor_preview_multi_agent_routes(config_payload)
     issues.extend(multi_agent_issues)
     if "whatsapp" in configured_channels and _whatsapp_bridge_precheck_enabled():
         bridge_issue = _check_whatsapp_bridge_ready()
@@ -1424,6 +1505,7 @@ def _cmd_doctor(
         "multiAgent": {
             "issues": multi_agent_issues,
             "summary": multi_agent_summary,
+            "routePreview": multi_agent_preview,
             "agent_count": len(config_payload.get("agents", {}).get("list", []))
             if isinstance(config_payload.get("agents", {}).get("list", []), list)
             else 0,
@@ -1534,6 +1616,14 @@ def _cmd_doctor(
             f"channels={len(multi_agent_summary.get('byChannel', {}))}, "
             f"conflicts={len(multi_agent_summary.get('conflicts', []))}"
         )
+        for item in multi_agent_preview[:5]:
+            _stdout_line(
+                "Multi-agent preview: "
+                f"type={item.get('type')}, "
+                f"tier={item.get('tier', '-')}, "
+                f"agent={item.get('agentId')}, "
+                f"session={item.get('sessionIdExample')}"
+            )
         for item in multi_agent_summary.get("conflicts", [])[:10]:
             _stdout_line(f"Multi-agent conflict: {item}")
         _stdout_line("Doctor details:")

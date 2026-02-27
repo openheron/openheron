@@ -514,6 +514,29 @@ class CLITests(unittest.TestCase):
         self.assertEqual(len(summary["conflicts"]), 1)
         self.assertIn("duplicates route match", summary["conflicts"][0])
 
+    def test_doctor_preview_multi_agent_routes_builds_binding_and_default_examples(self) -> None:
+        from openheron import cli
+
+        cfg = cli.default_config()
+        cfg["agents"]["list"] = [
+            {"id": "main", "default": True},
+            {"id": "biz"},
+        ]
+        cfg["bindings"] = [
+            {"agentId": "biz", "match": {"channel": "whatsapp", "accountId": "business"}},
+            {
+                "agentId": "biz",
+                "match": {"channel": "whatsapp", "accountId": "business", "peer": {"kind": "direct", "id": "+1"}},
+            },
+        ]
+        preview = cli._doctor_preview_multi_agent_routes(cfg, limit=8)
+        self.assertGreaterEqual(len(preview), 3)
+        self.assertEqual(preview[0]["type"], "binding")
+        self.assertIn("agent:biz:whatsapp:business:direct:sample-peer", preview[0]["sessionIdExample"])
+        self.assertEqual(preview[1]["tier"], "peer")
+        self.assertEqual(preview[-1]["type"], "default")
+        self.assertIn("agent:main:local:default:direct:sample-peer", preview[-1]["sessionIdExample"])
+
     def test_check_github_copilot_oauth_non_invasive_missing_cache(self) -> None:
         from openheron import cli
 
@@ -1594,6 +1617,8 @@ class CLITests(unittest.TestCase):
         self.assertIn("issues", payload)
         self.assertIn("installPrereqs", payload)
         self.assertIn("heartbeat", payload)
+        self.assertIn("multiAgent", payload)
+        self.assertIn("routePreview", payload["multiAgent"])
 
     def test_cmd_doctor_json_output_includes_provider_oauth_issue(self) -> None:
         from openheron import cli
