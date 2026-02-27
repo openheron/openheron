@@ -1690,6 +1690,7 @@ class CLITests(unittest.TestCase):
         self.assertIn("routePreview", payload["multiAgent"])
         self.assertIn("warnings", payload["multiAgent"])
         self.assertIn("scopeSupportedChannels", payload["multiAgent"])
+        self.assertIn("scopeCapabilities", payload["multiAgent"])
 
     def test_cmd_doctor_json_output_includes_provider_oauth_issue(self) -> None:
         from openheron import cli
@@ -2507,6 +2508,42 @@ class CLITests(unittest.TestCase):
         lines = [call.args[0] for call in mocked_print.call_args_list if call.args]
         self.assertTrue(any("Multi-agent routing warnings detected: 1." in line for line in lines))
         self.assertTrue(any("multiAgent.warnings" in line for line in lines))
+
+    def test_cmd_doctor_verbose_output_includes_scope_capabilities_summary(self) -> None:
+        from openheron import cli
+
+        fake_registry = pytypes.SimpleNamespace(workspace=Path("/tmp"), list_skills=lambda: [])
+        fake_session_cfg = pytypes.SimpleNamespace(db_url="sqlite+aiosqlite:////tmp/sessions.db")
+        fake_security_policy = pytypes.SimpleNamespace(
+            restrict_to_workspace=False,
+            allow_exec=True,
+            allow_network=True,
+            exec_allowlist=(),
+        )
+        with patch.dict(
+            os.environ,
+            {
+                "OPENHERON_PROVIDER": "google",
+                "OPENHERON_PROVIDER_ENABLED": "1",
+                "GOOGLE_API_KEY": "k",
+            },
+            clear=False,
+        ):
+            with patch("openheron.app.cli.shutil.which", return_value="/usr/bin/adk"):
+                with patch.object(cli, "validate_provider_runtime", return_value=None):
+                    with patch.object(cli, "get_registry", return_value=fake_registry):
+                        with patch.object(cli, "load_session_config", return_value=fake_session_cfg):
+                            with patch.object(cli, "parse_enabled_channels", return_value=["local"]):
+                                with patch.object(cli, "validate_channel_setup", return_value=[]):
+                                    with patch.object(cli, "load_security_policy", return_value=fake_security_policy):
+                                        with patch.object(cli, "build_mcp_toolsets_from_env", return_value=[]):
+                                            with patch.object(cli.logger, "debug"):
+                                                with patch("builtins.print") as mocked_print:
+                                                    code = cli._cmd_doctor(output_json=False, verbose=True)
+
+        self.assertEqual(code, 0)
+        lines = [call.args[0] for call in mocked_print.call_args_list if call.args]
+        self.assertTrue(any(line.startswith("Multi-agent scope capabilities:") for line in lines))
 
     def test_cmd_routes_lint_json_output_contains_summary_and_preview(self) -> None:
         from openheron import cli

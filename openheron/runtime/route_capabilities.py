@@ -66,3 +66,11 @@ def list_scope_metadata_supported_channels() -> list[str]:
         for channel, capability in _SCOPE_CAPABILITIES.items()
         if capability.level in {"best_effort", "stable"}
     )
+
+
+def describe_scope_capabilities() -> dict[str, dict[str, str]]:
+    """Return scope capability details per channel."""
+    out: dict[str, dict[str, str]] = {}
+    for channel, capability in sorted(_SCOPE_CAPABILITIES.items()):
+        out[channel] = {"level": capability.level, "reason": capability.reason}
+    return out

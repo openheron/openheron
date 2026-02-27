@@ -74,6 +74,7 @@ from ..runtime.heartbeat_status_store import read_heartbeat_status_snapshot
 from ..runtime.route_stats_store import read_route_stats_snapshot
 from ..runtime.route_capabilities import (
     channel_supports_scope_metadata,
+    describe_scope_capabilities,
     get_scope_capability,
     list_scope_metadata_supported_channels,
 )
@@ -1610,6 +1611,7 @@ def _cmd_doctor(
             "summary": multi_agent_summary,
             "routePreview": multi_agent_preview,
             "scopeSupportedChannels": list_scope_metadata_supported_channels(),
+            "scopeCapabilities": describe_scope_capabilities(),
             "agent_count": len(config_payload.get("agents", {}).get("list", []))
             if isinstance(config_payload.get("agents", {}).get("list", []), list)
             else 0,
@@ -1721,6 +1723,11 @@ def _cmd_doctor(
             f"conflicts={len(multi_agent_summary.get('conflicts', []))}, "
             f"warnings={len(multi_agent_warnings)}"
         )
+        scope_capabilities = describe_scope_capabilities()
+        compact_capabilities = ", ".join(
+            f"{channel}:{details.get('level', '-')}" for channel, details in scope_capabilities.items()
+        )
+        _stdout_line(f"Multi-agent scope capabilities: {compact_capabilities}")
         for item in multi_agent_preview[:5]:
             _stdout_line(
                 "Multi-agent preview: "

@@ -250,6 +250,8 @@ openheron doctor --verbose
   非阻断风险提示（例如 scope 配置在当前 channel 上可能不可达）。
 - `multiAgent.scopeSupportedChannels`
   当前版本可稳定承载 scope（guild/team/roles）metadata 的 channel 列表。
+- `multiAgent.scopeCapabilities`
+  各 channel 的 scope 能力分级与原因（`unsupported/best_effort/stable`）。
 - `multiAgent.summary`
   路由汇总信息：
   - `agentCount` / `bindingCount`
