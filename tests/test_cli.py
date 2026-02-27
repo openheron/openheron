@@ -333,7 +333,7 @@ class CLITests(unittest.TestCase):
                     cli.main(["routes", "stats", "--json", "--limit", "9"])
                 self.assertEqual(ctx.exception.code, 0)
                 mocked_bootstrap.assert_called_once()
-                mocked_stats.assert_called_once_with(output_json=True, limit=9)
+                mocked_stats.assert_called_once_with(output_json=True, limit=9, window_hours=None)
 
     def test_channels_login_mode_dispatch(self) -> None:
         from openheron import cli
@@ -2472,6 +2472,39 @@ class CLITests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["stats"]["totalMessages"], 3)
         self.assertEqual(len(payload["stats"]["recent"]), 2)
+
+    def test_cmd_routes_stats_json_output_applies_window_hours(self) -> None:
+        from openheron import cli
+
+        now = dt.datetime.now(dt.timezone.utc)
+        snapshot = {
+            "generatedAt": now.isoformat(),
+            "totalMessages": 4,
+            "recent": [
+                {
+                    "at": (now - dt.timedelta(hours=10)).isoformat(),
+                    "agentId": "main",
+                    "channel": "whatsapp",
+                    "matchedBy": "binding.account",
+                },
+                {
+                    "at": (now - dt.timedelta(minutes=30)).isoformat(),
+                    "agentId": "biz",
+                    "channel": "whatsapp",
+                    "matchedBy": "binding.peer",
+                },
+            ],
+        }
+        fake_registry = pytypes.SimpleNamespace(workspace=Path("/tmp"), list_skills=lambda: [])
+        with patch.object(cli, "get_registry", return_value=fake_registry):
+            with patch.object(cli, "read_route_stats_snapshot", return_value=snapshot):
+                with patch("builtins.print") as mocked_print:
+                    code = cli._cmd_routes_stats(output_json=True, limit=10, window_hours=1)
+        self.assertEqual(code, 0)
+        payload = json.loads(mocked_print.call_args.args[0])
+        self.assertEqual(payload["stats"]["windowHours"], 1)
+        self.assertEqual(payload["stats"]["totalMessagesInWindow"], 1)
+        self.assertEqual(payload["stats"]["byAgent"], {"biz": 1})
 
     def test_cmd_provider_status_json_output_includes_oauth_issue(self) -> None:
         from openheron import cli

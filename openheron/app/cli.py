@@ -1740,11 +1740,12 @@ def _cmd_routes_lint(*, output_json: bool = False, limit: int = 8) -> int:
     return 0 if report["ok"] else 1
 
 
-def _cmd_routes_stats(*, output_json: bool = False, limit: int = 20) -> int:
+def _cmd_routes_stats(*, output_json: bool = False, limit: int = 20, window_hours: int | None = None) -> int:
     """Show persisted route hit stats from latest gateway runtime snapshot."""
     registry = get_registry()
     snapshot = read_route_stats_snapshot(registry.workspace)
     max_items = max(1, min(int(limit), 200))
+    resolved_window_hours = None if window_hours is None else max(1, min(int(window_hours), 24 * 30))
     if snapshot is None:
         report = {
             "ok": False,
@@ -1762,9 +1763,49 @@ def _cmd_routes_stats(*, output_json: bool = False, limit: int = 20) -> int:
     recent = snapshot.get("recent", [])
     if not isinstance(recent, list):
         recent = []
-    trimmed_recent = recent[-max_items:]
+    filtered_recent = recent
+    if resolved_window_hours is not None:
+        now_utc = dt.datetime.now(dt.timezone.utc)
+        window_start = now_utc - dt.timedelta(hours=resolved_window_hours)
+        scoped: list[dict[str, Any]] = []
+        for item in recent:
+            if not isinstance(item, dict):
+                continue
+            raw_at = str(item.get("at", "")).strip()
+            if not raw_at:
+                continue
+            try:
+                parsed_at = dt.datetime.fromisoformat(raw_at.replace("Z", "+00:00"))
+            except Exception:
+                continue
+            if parsed_at.tzinfo is None:
+                parsed_at = parsed_at.replace(tzinfo=dt.timezone.utc)
+            if parsed_at >= window_start:
+                scoped.append(item)
+        filtered_recent = scoped
+    trimmed_recent = filtered_recent[-max_items:]
+    by_agent: dict[str, int] = {}
+    by_channel: dict[str, int] = {}
+    by_matched_by: dict[str, int] = {}
+    for item in filtered_recent:
+        if not isinstance(item, dict):
+            continue
+        agent_id = str(item.get("agentId", "")).strip()
+        channel = str(item.get("channel", "")).strip().lower()
+        matched_by = str(item.get("matchedBy", "")).strip()
+        if agent_id:
+            by_agent[agent_id] = by_agent.get(agent_id, 0) + 1
+        if channel:
+            by_channel[channel] = by_channel.get(channel, 0) + 1
+        if matched_by:
+            by_matched_by[matched_by] = by_matched_by.get(matched_by, 0) + 1
     stats = dict(snapshot)
     stats["recent"] = trimmed_recent
+    stats["windowHours"] = resolved_window_hours
+    stats["totalMessagesInWindow"] = len(filtered_recent)
+    stats["byAgent"] = by_agent
+    stats["byChannel"] = by_channel
+    stats["byMatchedBy"] = by_matched_by
     report = {
         "ok": True,
         "workspace": str(registry.workspace),
@@ -1776,11 +1817,13 @@ def _cmd_routes_stats(*, output_json: bool = False, limit: int = 20) -> int:
 
     _stdout_line(
         "Routes stats: "
-        f"total={stats.get('totalMessages', 0)}, "
+        f"total_in_window={stats.get('totalMessagesInWindow', 0)}, "
         f"agents={len(stats.get('byAgent', {}))}, "
         f"channels={len(stats.get('byChannel', {}))}, "
         f"recent={len(trimmed_recent)}"
     )
+    if resolved_window_hours is not None:
+        _stdout_line(f"Window hours: {resolved_window_hours}")
     _stdout_line(f"Generated at: {stats.get('generatedAt', '-')}")
     _stdout_line(f"By agent: {json.dumps(stats.get('byAgent', {}), ensure_ascii=False)}")
     _stdout_line(f"By channel: {json.dumps(stats.get('byChannel', {}), ensure_ascii=False)}")
@@ -2002,7 +2045,11 @@ def _dispatch_routes_command(args: argparse.Namespace, parser: argparse.Argument
     """Dispatch routes subcommands from parsed argparse namespace."""
     handlers: dict[str, Callable[[], int]] = {
         "lint": lambda: _cmd_routes_lint(output_json=args.output_json, limit=args.limit),
-        "stats": lambda: _cmd_routes_stats(output_json=args.output_json, limit=args.limit),
+        "stats": lambda: _cmd_routes_stats(
+            output_json=args.output_json,
+            limit=args.limit,
+            window_hours=args.window_hours,
+        ),
     }
     handler = handlers.get(args.routes_command)
     if handler is None:
@@ -4516,6 +4563,12 @@ def main(argv: list[str] | None = None) -> None:
         type=int,
         default=20,
         help="Max recent route-hit records in output (default: 20).",
+    )
+    routes_stats_parser.add_argument(
+        "--window-hours",
+        type=int,
+        default=None,
+        help="Optional sliding window (hours) for stats aggregation.",
     )
 
     channels_parser = subparsers.add_parser("channels", help="Manage channel helper commands.")
