@@ -86,6 +86,22 @@ scripts/multi_agent_e2e.sh --strict-warnings
 
 脚本会在输出中打印当前 `scopeSupportedChannels`，方便判断 scope warnings 是否来自 channel 能力限制。
 
+多智能体隔离 smoke（纯本地、无真实渠道依赖）：
+
+```bash
+python scripts/multi_agent_smoke.py
+python scripts/multi_agent_smoke.py --keep-temp
+```
+
+该脚本会自动验证：`channel+accountId` 路由、session 隔离、heartbeat/route_stats 按 agent 落盘、bootstrap 按 agent 生效。
+
+CI 最小回归建议：
+
+- 仓库已提供 workflow：`.github/workflows/multi-agent-smoke.yml`
+- 默认执行：
+  1. `pip install -e .`
+  2. `python scripts/multi_agent_smoke.py`
+
 Gateway service manifest（对齐 OpenClaw install-daemon 的最小实现）：
 
 ```bash
@@ -261,6 +277,8 @@ openheron doctor --verbose
   - `conflicts`（同一匹配签名绑定到不同 agent）
 - `multiAgent.routePreview`
   路由样例预览（含 `sessionIdExample`），便于人工快速核对会话键是否符合预期。
+- `observability.byAgent`
+  每个 agent 的可观测快照（`heartbeat` + `routeStats`），用于快速判断某个 agent 是否有运行流量与心跳状态。
 
 示例（节选）：
 

@@ -15,8 +15,9 @@
 
 ```bash
 openheron routes lint --json
-openheron routes stats --json
-openheron routes stats --json --window-hours 24
+openheron routes stats --json --agent-id main
+openheron routes stats --json --agent-id biz
+openheron routes stats --json --agent-id main --window-hours 24
 openheron doctor --json
 openheron doctor --verbose
 ```
@@ -25,12 +26,13 @@ openheron doctor --verbose
 
 1. `routes lint --json` 返回 `ok=true`，且 `summary.conflicts` 为空。
 2. 若使用 `guild/team/roles`，确认 `routes lint --json` 的 `scopeSupportedChannels` 覆盖目标 channel。
-3. `routes stats --json` 返回 `ok=true`，并且 `stats.totalMessagesInWindow` 与预期流量量级一致。
-4. `routes stats --json --window-hours 24` 的窗口统计与近期流量预期一致。
+3. `routes stats --json --agent-id <id>` 返回 `ok=true`，并且 `stats.totalMessagesInWindow` 与预期流量量级一致。
+4. `routes stats --json --agent-id <id> --window-hours 24` 的窗口统计与近期流量预期一致。
 5. `doctor --json` 的 `issues` 为空。
 6. `doctor --json` 的 `multiAgent.issues` 为空。
 7. `doctor --json` 的 `multiAgent.summary.conflicts` 为空。
 8. `doctor --json` 的 `multiAgent.routePreview` 中 `sessionIdExample` 与预期一致。
+9. `doctor --json` 的 `observability.byAgent.<id>.heartbeat.snapshot_available` 与 `routeStats.snapshot_available` 符合预期。
 
 可选一键脚本（本节命令聚合）：
 

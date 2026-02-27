@@ -211,6 +211,9 @@ Smoke script examples:
 
 # multi-step (dry-run)
 ./.venv/bin/python scripts/gui_smoke.py --mode task --task "打开浏览器并搜索 openheron" --max-steps 8 --dry-run
+
+# multi-agent local smoke (routing/session/heartbeat/route-stats/bootstrap isolation)
+python scripts/multi_agent_smoke.py
 ```
 
 macOS permission reminder (required for GUI automation):
