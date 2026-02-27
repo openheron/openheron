@@ -211,6 +211,69 @@ openheron doctor --fix --json
 }
 ```
 
+### doctor 多智能体诊断（summary / routePreview）
+
+当你在排查多 agent 路由错配时，建议优先看：
+
+```bash
+openheron doctor --json
+openheron doctor --verbose
+```
+
+`doctor --json` 中新增 `multiAgent` 关键字段：
+
+- `multiAgent.issues`
+  多智能体配置结构错误（如默认 agent 数量异常、binding 指向不存在 agent、binding 缺 channel）。
+- `multiAgent.summary`
+  路由汇总信息：
+  - `agentCount` / `bindingCount`
+  - `byChannel`
+  - `routeTierCount`（`peer/account/channel`）
+  - `conflicts`（同一匹配签名绑定到不同 agent）
+- `multiAgent.routePreview`
+  路由样例预览（含 `sessionIdExample`），便于人工快速核对会话键是否符合预期。
+
+示例（节选）：
+
+```json
+{
+  "multiAgent": {
+    "issues": [],
+    "summary": {
+      "agentCount": 3,
+      "bindingCount": 4,
+      "byChannel": {"whatsapp": 3, "telegram": 1},
+      "routeTierCount": {"peer": 1, "account": 2, "channel": 1},
+      "conflicts": []
+    },
+    "routePreview": [
+      {
+        "type": "binding",
+        "tier": "account",
+        "agentId": "whatsapp_business",
+        "channel": "whatsapp",
+        "accountId": "business",
+        "sessionIdExample": "agent:whatsapp_business:whatsapp:business:direct:sample-peer"
+      }
+    ]
+  }
+}
+```
+
+常见排错示例：
+
+- 默认 agent 配置错误  
+  现象：`multiAgent.issues` 出现 `exactly one default agent is required`。  
+  处理：保证 `agents.list` 里且仅有一个 `default=true`。
+
+- binding 指向不存在 agent  
+  现象：`multiAgent.issues` 出现 `agentId 'xxx' does not exist in agents.list`。  
+  处理：修正 `bindings[*].agentId`，或在 `agents.list` 新增对应 agent。
+
+- 路由冲突（同签名多目标）  
+  现象：`multiAgent.summary.conflicts` 非空。  
+  处理：检查冲突 binding（按输出中的 `bindings[idx]`），同一个 `channel/accountId/peer` 签名只保留一个目标 agent。
+
 ## 运行方式
 
 ### 单轮调用
