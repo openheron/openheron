@@ -307,12 +307,14 @@ openheron doctor --verbose
 `routes stats` 使用说明：
 
 - 作用：查看最近网关运行期的路由命中统计（按 agent/channel/matchedBy 聚合）。
+- 文本模式会额外输出 Top 排名视图（按命中次数降序，受 `--limit` 控制）。
 - 数据文件：`<workspace>/.openheron/route_stats.json`。
 - 常用命令：
 
 ```bash
 openheron routes stats
 openheron routes stats --json
+openheron routes stats --limit 10
 openheron routes stats --json --limit 50
 openheron routes stats --json --window-hours 24
 ```
