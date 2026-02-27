@@ -9,19 +9,25 @@ set -euo pipefail
 # Usage:
 #   scripts/multi_agent_e2e.sh
 #   scripts/multi_agent_e2e.sh --strict-routes-stats
+#   scripts/multi_agent_e2e.sh --strict-warnings
 #   scripts/multi_agent_e2e.sh --with-gateway-probe
-#   scripts/multi_agent_e2e.sh --with-gateway-probe --strict-routes-stats
+#   scripts/multi_agent_e2e.sh --with-gateway-probe --strict-routes-stats --strict-warnings
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
 STRICT_ROUTES_STATS=0
+STRICT_WARNINGS=0
 WITH_GATEWAY_PROBE=0
 
 while (($# > 0)); do
   case "$1" in
     --strict-routes-stats)
       STRICT_ROUTES_STATS=1
+      shift
+      ;;
+    --strict-warnings)
+      STRICT_WARNINGS=1
       shift
       ;;
     --with-gateway-probe)
@@ -56,7 +62,26 @@ if issues:
     print("[fail] doctor issues:", issues)
     raise SystemExit(1)
 print("[ok] doctor reports no blocking issues")
+warnings = payload.get("multiAgent", {}).get("warnings", [])
+if warnings:
+    print(f"[warn] doctor reports {len(warnings)} multi-agent warning(s)")
+    for item in warnings[:10]:
+        print("  -", item)
 PY
+
+if [[ "${STRICT_WARNINGS}" == "1" ]]; then
+  python3 - "${TMP_DIR}/doctor.json" <<'PY'
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+warnings = payload.get("multiAgent", {}).get("warnings", [])
+if warnings:
+    print("[fail] doctor has multi-agent warnings under --strict-warnings")
+    raise SystemExit(1)
+PY
+fi
 
 echo "[multi-agent-e2e] routes lint --json"
 openheron routes lint --json >"${TMP_DIR}/routes_lint.json"
@@ -71,7 +96,26 @@ if not payload.get("ok", False):
     print(payload.get("summary", {}))
     raise SystemExit(1)
 print("[ok] routes lint passed")
+warnings = payload.get("warnings", [])
+if warnings:
+    print(f"[warn] routes lint reports {len(warnings)} warning(s)")
+    for item in warnings[:10]:
+        print("  -", item)
 PY
+
+if [[ "${STRICT_WARNINGS}" == "1" ]]; then
+  python3 - "${TMP_DIR}/routes_lint.json" <<'PY'
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+warnings = payload.get("warnings", [])
+if warnings:
+    print("[fail] routes lint has warnings under --strict-warnings")
+    raise SystemExit(1)
+PY
+fi
 
 if [[ "${WITH_GATEWAY_PROBE}" == "1" ]]; then
   echo "[multi-agent-e2e] gateway probe (5s timeout)"

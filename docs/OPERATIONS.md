@@ -81,6 +81,7 @@ scripts/install_smoke.sh --with-gateway
 scripts/multi_agent_e2e.sh
 scripts/multi_agent_e2e.sh --with-gateway-probe
 scripts/multi_agent_e2e.sh --strict-routes-stats
+scripts/multi_agent_e2e.sh --strict-warnings
 ```
 
 Gateway service manifest（对齐 OpenClaw install-daemon 的最小实现）：

@@ -37,6 +37,7 @@ openheron doctor --verbose
 scripts/multi_agent_e2e.sh
 scripts/multi_agent_e2e.sh --with-gateway-probe
 scripts/multi_agent_e2e.sh --strict-routes-stats
+scripts/multi_agent_e2e.sh --strict-warnings
 ```
 
 ## 3. 路由行为检查（本地）
