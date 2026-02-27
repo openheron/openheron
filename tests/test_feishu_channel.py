@@ -18,6 +18,7 @@ class FeishuChannelTests(unittest.IsolatedAsyncioTestCase):
         bus = MessageBus()
         channel = FeishuChannel(bus=bus, app_id="app-id", app_secret="app-secret")
         data = pytypes.SimpleNamespace(
+            header=pytypes.SimpleNamespace(tenant_key="tenant_a"),
             event=pytypes.SimpleNamespace(
                 message=pytypes.SimpleNamespace(
                     message_id="om_123",
@@ -42,6 +43,7 @@ class FeishuChannelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(inbound.chat_id, "oc_group_1")
         self.assertEqual(inbound.content, "hello from feishu")
         self.assertEqual(inbound.metadata.get("message_id"), "om_123")
+        self.assertEqual(inbound.metadata.get("teamId"), "tenant_a")
 
     async def test_on_message_ignores_bot_messages(self) -> None:
         bus = MessageBus()

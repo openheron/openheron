@@ -1956,6 +1956,7 @@ def _cmd_routes_stats(*, output_json: bool = False, limit: int = 20, window_hour
     report = {
         "ok": True,
         "workspace": str(registry.workspace),
+        "scopeSupportedChannels": list_scope_metadata_supported_channels(),
         "stats": stats,
     }
     if output_json:
@@ -1971,6 +1972,9 @@ def _cmd_routes_stats(*, output_json: bool = False, limit: int = 20, window_hour
     )
     if resolved_window_hours is not None:
         _stdout_line(f"Window hours: {resolved_window_hours}")
+    supported_scope_channels = report.get("scopeSupportedChannels", [])
+    if isinstance(supported_scope_channels, list) and supported_scope_channels:
+        _stdout_line("Scope-supported channels: " + ", ".join(str(item) for item in supported_scope_channels))
     _stdout_line(f"Generated at: {stats.get('generatedAt', '-')}")
     top_limit = max(1, min(max_items, 20))
 

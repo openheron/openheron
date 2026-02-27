@@ -767,6 +767,12 @@ class FeishuChannel(BaseChannel):
                 "chat_type": chat_type,
                 "message_id": message_id,
             }
+            header = getattr(data, "header", None)
+            tenant_key = str(getattr(header, "tenant_key", "") or "").strip()
+            if tenant_key:
+                metadata["team_id"] = tenant_key
+                metadata["teamId"] = tenant_key
+                metadata["team"] = {"id": tenant_key}
             content, media_paths = await self._handle_supported_message(
                 msg_type=msg_type,
                 raw_content=raw_content,

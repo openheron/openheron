@@ -14,13 +14,14 @@
 |---|---|---|---|---|
 | discord | yes (best-effort) | yes (best-effort) | yes (best-effort) | 上游事件提供时透传；建议在真实流量下验证 |
 | telegram | no | no | no | 协议侧通常无对应主体模型 |
-| feishu | no (v1) | no (v1) | no (v1) | 当前主要是 peer/chat_type 语义 |
+| feishu | no | yes (best-effort) | no | 可从事件 header 的 `tenant_key` 映射 `teamId`；角色信息缺失 |
 | whatsapp | no | no | no | 当前聚焦 accountId + peer |
 | local | no | no | no | 本地调试通道，无主体模型 |
 
 ## 3. 配置建议
 
 - 需要稳定 scope 路由时，优先在 `discord` 场景使用，并做实机验证。
+- `feishu` 目前仅适合 team 级 best-effort 过滤（`tenant_key -> teamId`），不建议用于角色精细路由。
 - 对于不提供 scope 的 channel，不建议配置 `match.guild/team/roles`，避免“看起来可配但永远命不中”。
 - 可通过 `openheron routes lint --json` 观察 `warnings` 字段中的可达性提示。
   `warnings` 会附带 `capability` 与 `reason`，用于区分“协议不支持”与“仅 best-effort”。

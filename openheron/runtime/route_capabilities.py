@@ -27,8 +27,8 @@ _SCOPE_CAPABILITIES: dict[str, ScopeCapability] = {
         reason="protocol model does not provide stable guild/team/roles fields",
     ),
     "feishu": ScopeCapability(
-        level="unsupported",
-        reason="current adapter only normalizes peer/chat_type metadata",
+        level="best_effort",
+        reason="tenant_key may map to teamId, but organization/role metadata is limited",
     ),
     "whatsapp": ScopeCapability(
         level="unsupported",

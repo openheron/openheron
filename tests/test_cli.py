@@ -2620,6 +2620,7 @@ class CLITests(unittest.TestCase):
         self.assertEqual(code, 0)
         payload = json.loads(mocked_print.call_args.args[0])
         self.assertTrue(payload["ok"])
+        self.assertIn("scopeSupportedChannels", payload)
         self.assertEqual(payload["stats"]["totalMessages"], 3)
         self.assertEqual(len(payload["stats"]["recent"]), 2)
 
@@ -2678,6 +2679,7 @@ class CLITests(unittest.TestCase):
         self.assertEqual(code, 0)
         lines = [call.args[0] for call in mocked_print.call_args_list if call.args]
         self.assertTrue(any(line.startswith("Routes stats:") for line in lines))
+        self.assertTrue(any(line.startswith("Scope-supported channels:") for line in lines))
         self.assertIn("Top agents: main:3, biz:2", lines)
         self.assertIn("Top channels: whatsapp:4, telegram:1", lines)
         self.assertIn("Top matchedBy: binding.peer:3, binding.account:2", lines)

@@ -327,6 +327,7 @@ openheron doctor --verbose
 - 多账号 channel 的 `accountId` 输入契约见：`docs/CHANNEL_ACCOUNTID_CONTRACT.md`。
 - 文本模式会额外输出 Top 排名视图（按命中次数降序，受 `--limit` 控制）。
 - 文本模式会输出 `Recent samples`（最近明细预览，默认最多 5 条，仍受 `--limit` 约束，含 `guild/team/roles` scope）。
+- JSON 输出包含 `scopeSupportedChannels`，可用于脚本侧联动判断能力边界。
 - 数据文件：`<workspace>/.openheron/route_stats.json`。
 - 常用命令：
 
