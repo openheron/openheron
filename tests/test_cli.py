@@ -160,6 +160,56 @@ class CLITests(unittest.TestCase):
                 )
                 mocked_bootstrap.assert_not_called()
 
+    def test_init_mode_dispatch(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "bootstrap_env_from_config") as mocked_bootstrap:
+            with patch.object(cli, "_cmd_init", return_value=0) as mocked_init:
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main(["init", "--force"])
+                self.assertEqual(ctx.exception.code, 0)
+                mocked_init.assert_called_once_with(force=True)
+                mocked_bootstrap.assert_not_called()
+
+    def test_cmd_init_creates_three_agent_configs_and_global_config(self) -> None:
+        from openheron import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp) / ".openheron"
+            with patch.object(cli, "get_data_dir", return_value=data_dir):
+                with patch("builtins.print") as mocked_info:
+                    code = cli._cmd_init(force=True)
+
+            self.assertEqual(code, 0)
+            agent_names = list(cli._INIT_DEFAULT_AGENT_NAMES)
+            for agent_name in agent_names:
+                config_path = data_dir / agent_name / "config.json"
+                runtime_path = data_dir / agent_name / "runtime.json"
+                self.assertTrue(config_path.exists())
+                self.assertTrue(runtime_path.exists())
+                cfg = json.loads(config_path.read_text(encoding="utf-8"))
+                self.assertEqual(cfg["agent"]["workspace"], str(data_dir / agent_name / "workspace"))
+                workspace = data_dir / agent_name / "workspace"
+                for bootstrap_name in cli._INIT_BOOTSTRAP_TEMPLATES:
+                    self.assertTrue((workspace / bootstrap_name).exists())
+                self.assertTrue((workspace / "memory" / "MEMORY.md").exists())
+                self.assertTrue((workspace / "memory" / "HISTORY.md").exists())
+
+            global_cfg_path = data_dir / "global_config.json"
+            self.assertTrue(global_cfg_path.exists())
+            global_cfg = json.loads(global_cfg_path.read_text(encoding="utf-8"))
+            self.assertEqual(global_cfg["agents"][0]["name"], agent_names[0])
+            self.assertTrue(bool(global_cfg["agents"][0]["enabled"]))
+            self.assertFalse(bool(global_cfg["agents"][1]["enabled"]))
+            self.assertFalse(bool(global_cfg["agents"][2]["enabled"]))
+
+            lines = [call.args[0] for call in mocked_info.call_args_list if call.args]
+            self.assertTrue(any("Initialized multi-agent config: agents=3" in line for line in lines))
+            self.assertTrue(any("You can edit global_config.json" in line for line in lines))
+            self.assertTrue(any("Bootstrap file purposes:" in line for line in lines))
+            self.assertTrue(any("HEARTBEAT.md" in line for line in lines))
+            self.assertTrue(any("skills/" in line for line in lines))
+
     def test_gateway_service_install_mode_dispatch(self) -> None:
         from openheron import cli
 

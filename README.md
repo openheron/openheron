@@ -23,7 +23,7 @@ cd openheron_root
 python3.14 -m venv .venv
 source .venv/bin/activate
 pip install .
-openheron doctor --fix
+openheron init
 python -m openheron.cli -m "Describe what you can do"
 ```
 
@@ -70,7 +70,8 @@ Background runtime/log files are stored under:
 - `~/.openheron/log/gateway.debug.log`
 - `~/.openheron/token_usage.db` (LLM token usage events)
 
-首次启动建议先跑 `openheron doctor --fix`，它会补齐最小可运行配置并给出缺失项提示。
+首次启动建议先跑 `openheron init`。它会初始化 3 个 agent 配置和 `global_config.json`（默认只启用第一个 agent）。
+然后执行 `openheron doctor` 查看环境检查结果。
 
 ## Development
 

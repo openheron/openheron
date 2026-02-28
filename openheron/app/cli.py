@@ -2006,6 +2006,24 @@ def _cmd_run(passthrough_args: list[str]) -> int:
 
 
 _INSTALL_EMBEDDED_INIT_SETUP = False
+_INIT_DEFAULT_AGENT_NAMES: tuple[str, str, str] = ("agent_name_1", "agent_name_2", "agent_name_3")
+_INIT_BOOTSTRAP_TEMPLATES: dict[str, str] = {
+    "AGENTS.md": "# AGENTS\n\nDescribe coding/runtime constraints for this agent.\n",
+    "SOUL.md": "# SOUL\n\nDescribe personality, tone, and decision style.\n",
+    "TOOLS.md": "# TOOLS\n\nList allowed tools and usage boundaries.\n",
+    "IDENTITY.md": "# IDENTITY\n\nDescribe the role, owner, and responsibilities of this agent.\n",
+    "USER.md": "# USER\n\nDescribe user profile and collaboration preferences.\n",
+    "HEARTBEAT.md": (
+        "# HEARTBEAT\n\n"
+        "Write periodic background tasks here.\n"
+        "- One task per bullet\n"
+        "- Keep each task concrete and actionable\n"
+    ),
+}
+_INIT_MEMORY_FILES: dict[str, str] = {
+    "MEMORY.md": "# Long-term Memory\n\nFacts and preferences extracted from conversations.\n",
+    "HISTORY.md": "# Conversation History\n\nAppend-only interaction transcript.\n",
+}
 
 
 @dataclass(frozen=True)
@@ -2096,6 +2114,126 @@ def _cmd_install_init_setup(force: bool) -> int:
     print("4. Fill providers.<provider>.apiKey for the enabled provider (and channel credentials if needed)")
     print("5. Start gateway: openheron gateway")
     print("6. Dry run: openheron doctor")
+    return 0
+
+
+def _run_multi_agent_init_setup(*, force: bool) -> list[tuple[str, InstallInitResult]]:
+    """Create/refresh three agent config/runtime/workspace sets."""
+    data_dir = get_data_dir()
+    data_dir.mkdir(parents=True, exist_ok=True)
+    results: list[tuple[str, InstallInitResult]] = []
+    for agent_name in _INIT_DEFAULT_AGENT_NAMES:
+        config_path = _agent_config_path(agent_name)
+        runtime_config_path = config_path.with_name("runtime.json")
+        existed = config_path.exists()
+        runtime_existed = runtime_config_path.exists()
+
+        if force or not existed:
+            config = default_config()
+            config["agent"]["workspace"] = str((data_dir / agent_name / "workspace").expanduser())
+            saved_to = save_config(config, config_path=config_path)
+            config_state = "reset to defaults" if force and existed else "created"
+        else:
+            config = load_config(config_path=config_path)
+            config.setdefault("agent", {})
+            config["agent"]["workspace"] = str((data_dir / agent_name / "workspace").expanduser())
+            saved_to = save_config(config, config_path=config_path)
+            config_state = "refreshed"
+
+        if force or not runtime_existed:
+            runtime_cfg = default_runtime_config()
+            runtime_saved_to = save_runtime_config(runtime_cfg, runtime_config_path=runtime_config_path)
+            runtime_state = "reset to defaults" if force and runtime_existed else "created"
+        else:
+            runtime_cfg = load_runtime_config(runtime_config_path=runtime_config_path)
+            runtime_saved_to = save_runtime_config(runtime_cfg, runtime_config_path=runtime_config_path)
+            runtime_state = "refreshed"
+
+        workspace = Path(str(config.get("agent", {}).get("workspace", ""))).expanduser()
+        workspace.mkdir(parents=True, exist_ok=True)
+        (workspace / "skills").mkdir(parents=True, exist_ok=True)
+
+        results.append(
+            (
+                agent_name,
+                InstallInitResult(
+                    config_path=saved_to,
+                    runtime_config_path=runtime_saved_to,
+                    workspace=workspace,
+                    config_state=config_state,
+                    runtime_state=runtime_state,
+                ),
+            )
+        )
+    return results
+
+
+def _write_text_if_missing(*, path: Path, content: str, force: bool) -> None:
+    """Write one UTF-8 text file once, or overwrite when force is true."""
+    if path.exists() and not force:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def _init_workspace_support_files(*, workspace: Path, force: bool) -> None:
+    """Initialize bootstrap/heartbeat/memory files under one workspace."""
+    for name, content in _INIT_BOOTSTRAP_TEMPLATES.items():
+        _write_text_if_missing(path=workspace / name, content=content, force=force)
+    (workspace / "skills").mkdir(parents=True, exist_ok=True)
+    memory_dir = workspace / "memory"
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    for name, content in _INIT_MEMORY_FILES.items():
+        _write_text_if_missing(path=memory_dir / name, content=content, force=force)
+
+
+def _write_init_global_config() -> Path:
+    """Write multi-agent global config with only the first agent enabled."""
+    path = _global_config_path()
+    payload = {
+        "agents": [
+            {"name": agent_name, "enabled": idx == 0}
+            for idx, agent_name in enumerate(_INIT_DEFAULT_AGENT_NAMES)
+        ]
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def _cmd_init(*, force: bool) -> int:
+    """Initialize default multi-agent config layout."""
+    results = _run_multi_agent_init_setup(force=force)
+    global_config_path = _write_init_global_config()
+
+    _stdout_line(f"Initialized multi-agent config: agents={len(results)}")
+    for agent_name, result in results:
+        _init_workspace_support_files(workspace=result.workspace, force=force)
+        _stdout_line(f"[agent={agent_name}] Config {result.config_state}: {result.config_path}")
+        _stdout_line(f"[agent={agent_name}] Runtime config {result.runtime_state}: {result.runtime_config_path}")
+        _stdout_line(f"[agent={agent_name}] Workspace ready: {result.workspace}")
+        _stdout_line(
+            f"[agent={agent_name}] Bootstrap files initialized: {', '.join(sorted(_INIT_BOOTSTRAP_TEMPLATES.keys()))}"
+        )
+        _stdout_line(f"[agent={agent_name}] Memory files initialized: memory/MEMORY.md, memory/HISTORY.md")
+
+    _stdout_line(f"Global config updated: {global_config_path}")
+    _stdout_line(f"Enabled agent in global_config.json: {_INIT_DEFAULT_AGENT_NAMES[0]}")
+    _stdout_line("You can edit global_config.json to enable/disable agents.")
+    _stdout_line("You can edit each agent config/runtime/workspace file under ~/.openheron/<agent_name>/.")
+    _stdout_line("Bootstrap file purposes:")
+    _stdout_line("- AGENTS.md: agent engineering rules and execution constraints.")
+    _stdout_line("- SOUL.md: personality and behavior style guidance.")
+    _stdout_line("- TOOLS.md: tool usage policy and guardrails.")
+    _stdout_line("- IDENTITY.md: role definition and responsibility boundaries.")
+    _stdout_line("- USER.md: user profile and collaboration preferences.")
+    _stdout_line("- HEARTBEAT.md: periodic tasks to execute during heartbeat runs.")
+    _stdout_line("- skills/: place per-agent local skills (each skill as <name>/SKILL.md).")
+    _stdout_line("Next steps:")
+    _stdout_line("1. openheron doctor")
+    _stdout_line(
+        f"2. openheron --config-path {str(_agent_config_path(_INIT_DEFAULT_AGENT_NAMES[0]))} gateway run --channels local --interactive-local"
+    )
     return 0
 
 
@@ -4252,6 +4390,15 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="Comma-separated channels for daemon mode (default: enabled channels in config).",
     )
+    init_parser = subparsers.add_parser(
+        "init",
+        help="Initialize default multi-agent layout (3 agents + global_config).",
+    )
+    init_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Reset config to defaults before initialization.",
+    )
     skills_parser = subparsers.add_parser("skills", help="List discovered skills as JSON.")
     skills_parser.add_argument("--agent", default=None, help="Optional agent id.")
     mcps_parser = subparsers.add_parser("mcps", help="List connected MCP servers and their available APIs.")
@@ -4540,7 +4687,7 @@ def main(argv: list[str] | None = None) -> None:
                     f"openheron --config-path {str(_agent_config_path(enabled_agents[0]))} gateway run"
                 )
                 raise SystemExit(1)
-    if args.command != "install":
+    if args.command not in {"install", "init"}:
         if config_path:
             bootstrap_env_from_config(Path(config_path).expanduser())
         else:
@@ -4605,6 +4752,7 @@ def main(argv: list[str] | None = None) -> None:
                 daemon_channels=args.daemon_channels,
                 init_only=args.init_only,
             ),
+            "init": lambda: _cmd_init(force=args.force),
             "skills": lambda: _cmd_skills(agent=getattr(args, "agent", None)),
             "mcps": lambda: _cmd_mcps(agent=getattr(args, "agent", None)),
             "spawn": lambda: _cmd_spawn(agent=getattr(args, "agent", None)),
