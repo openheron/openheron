@@ -3029,6 +3029,26 @@ class CLITests(unittest.TestCase):
         mocked_print.assert_any_call("Scheduled jobs:")
         mocked_print.assert_any_call("- demo (id: j1, every:30s, enabled, next=-)")
 
+    def test_cmd_cron_list_multi_agent_uses_direct_store_read_without_subprocess(self) -> None:
+        from openheron import cli
+
+        fake_schedule = pytypes.SimpleNamespace(kind="every", every_seconds=30)
+        fake_state = pytypes.SimpleNamespace(next_run_at_ms=None)
+        fake_job = pytypes.SimpleNamespace(id="j1", name="demo", enabled=True, schedule=fake_schedule, state=fake_state)
+        fake_service = pytypes.SimpleNamespace(list_jobs=lambda include_disabled: [fake_job])
+
+        with patch.object(cli, "_resolve_target_agent_names", return_value=(["agent_a", "agent_b"], None)):
+            with patch.object(cli, "_cron_service_for_agent", return_value=(fake_service, None)):
+                with patch.object(cli, "_run_agent_cli_command") as mocked_subprocess:
+                    with patch("builtins.print") as mocked_print:
+                        code = cli._cmd_cron_list(include_disabled=True)
+
+        self.assertEqual(code, 0)
+        mocked_subprocess.assert_not_called()
+        lines = [call.args[0] for call in mocked_print.call_args_list if call.args]
+        self.assertTrue(any("[agent=agent_a]" in line for line in lines))
+        self.assertTrue(any("[agent=agent_b]" in line for line in lines))
+
     def test_cmd_heartbeat_status_prints_runtime_fields(self) -> None:
         from openheron import cli
 

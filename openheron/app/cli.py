@@ -4167,6 +4167,23 @@ def _cron_service() -> CronService:
     return CronService(cron_store_path(workspace))
 
 
+def _cron_service_for_agent(agent_name: str) -> tuple[CronService | None, str | None]:
+    """Build one cron service directly from one agent config/workspace."""
+    config_path = _agent_config_path(agent_name)
+    if not config_path.exists():
+        return None, f"agent '{agent_name}' config not found: {config_path}"
+    try:
+        cfg = load_config(config_path=config_path)
+    except Exception as exc:
+        return None, f"agent '{agent_name}' config load failed: {exc}"
+    agent_cfg = cfg.get("agent")
+    workspace_text = ""
+    if isinstance(agent_cfg, dict):
+        workspace_text = str(agent_cfg.get("workspace", "")).strip()
+    workspace = Path(workspace_text).expanduser() if workspace_text else (config_path.parent / "workspace")
+    return CronService(cron_store_path(workspace)), None
+
+
 def _format_schedule(job) -> str:
     return format_schedule(getattr(job, "schedule", None))
 
@@ -4181,13 +4198,25 @@ def _cmd_cron_list(*, include_disabled: bool, agent: str | None = None) -> int:
         _stdout_line(error)
         return 1
     if target_agents:
-        args = ["cron", "list"]
-        if include_disabled:
-            args.append("--all")
         results: list[tuple[str, int, str, str]] = []
         for agent_name in target_agents:
-            code, out, err = _run_agent_cli_command(agent_name=agent_name, args=args)
-            results.append((agent_name, code, out, err))
+            service, service_error = _cron_service_for_agent(agent_name)
+            if service_error:
+                results.append((agent_name, 1, "", service_error))
+                continue
+            assert service is not None
+            jobs = service.list_jobs(include_disabled=include_disabled)
+            lines: list[str] = []
+            if not jobs:
+                lines.append("No scheduled jobs.")
+            else:
+                lines.append("Scheduled jobs:")
+                for job in jobs:
+                    status = "enabled" if job.enabled else "disabled"
+                    lines.append(
+                        f"- {job.name} (id: {job.id}, {_format_schedule(job)}, {status}, next={_format_ts(job.state.next_run_at_ms)})"
+                    )
+            results.append((agent_name, 0, "\n".join(lines), ""))
         return _print_agent_output_sections(results)
 
     service = _cron_service()
@@ -4309,8 +4338,23 @@ def _cmd_cron_status(*, agent: str | None = None) -> int:
     if target_agents:
         results: list[tuple[str, int, str, str]] = []
         for agent_name in target_agents:
-            code, out, err = _run_agent_cli_command(agent_name=agent_name, args=["cron", "status"])
-            results.append((agent_name, code, out, err))
+            service, service_error = _cron_service_for_agent(agent_name)
+            if service_error:
+                results.append((agent_name, 1, "", service_error))
+                continue
+            assert service is not None
+            info = service.status()
+            runtime_pid = info.get("runtime_pid")
+            runtime_pid_text = str(runtime_pid) if runtime_pid is not None else "-"
+            line = (
+                "Cron status: "
+                f"local_running={info['running']}, "
+                f"runtime_active={info.get('runtime_active', False)}, "
+                f"runtime_pid={runtime_pid_text}, "
+                f"jobs={info['jobs']}, "
+                f"next_wake_at={_format_ts(info['next_wake_at_ms'])}"
+            )
+            results.append((agent_name, 0, line, ""))
         return _print_agent_output_sections(results)
 
     info = _cron_service().status()
