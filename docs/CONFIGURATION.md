@@ -19,9 +19,8 @@
 
 - `agent.workspace` / `agent.builtinSkillsDir`
 - `providers.<provider>.enabled / apiKey / model / apiBase / extraHeaders`
-- `multimodalProviders.<name>.enabled / apiKey / model / apiBase / extraHeaders`
+- `multimodalProviders.<alias>.enabled / provider / apiKey / model / apiBase / extraHeaders`
 - `gui.groundingProvider / gui.plannerProvider / gui.builtinGUIToolsEnabled`（绑定到 `multimodalProviders` 名称）
-- `session.dbUrl`
 - `channels.<name>.*`
 - `web.enabled` / `web.search.*`
 - `security.restrictToWorkspace / allowExec / allowNetwork / execAllowlist`
@@ -125,6 +124,7 @@ Provider 选择由 `enabled` 控制，建议保持“仅一个 provider 为 true
   "multimodalProviders": {
     "grounding_mm": {
       "enabled": true,
+      "provider": "openai",
       "apiKey": "your_grounding_key",
       "model": "gpt-4.1-mini",
       "apiBase": "",
@@ -132,6 +132,7 @@ Provider 选择由 `enabled` 控制，建议保持“仅一个 provider 为 true
     },
     "planner_mm": {
       "enabled": true,
+      "provider": "openai",
       "apiKey": "your_planner_key",
       "model": "gpt-4.1",
       "apiBase": "",
@@ -146,8 +147,10 @@ Provider 选择由 `enabled` 控制，建议保持“仅一个 provider 为 true
 ```
 
 说明：
+- `multimodalProviders.<alias>.provider` 建议显式填写（如 `openai` / `google`），用于 provider 识别与 API key env 映射
 - `gui.groundingProvider` 对应 `OPENHERON_GUI_MODEL/API_KEY/BASE_URL`
 - `gui.plannerProvider` 对应 `OPENHERON_GUI_PLANNER_MODEL/API_KEY/BASE_URL`
+- 若 `provider` 为空，则兼容旧行为：回退使用 `<alias>` 作为 provider 名
 - provider 未配置或 `enabled=false` 时，不会从 `config.json` 注入对应 GUI 环境变量
 
 ## 不太常见变量速查（含意义）
@@ -250,9 +253,6 @@ export OPENHERON_GUI_ALLOW_DANGEROUS_KEYS=false
       "apiKey": "",
       "model": "openai/gpt-4.1-mini"
     }
-  },
-  "session": {
-    "dbUrl": ""
   },
   "channels": {
     "local": {

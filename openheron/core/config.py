@@ -604,29 +604,30 @@ def _resolve_mcp_servers_json(cfg: dict[str, Any]) -> str:
     return json.dumps(raw, ensure_ascii=False, separators=(",", ":"))
 
 
-def _resolve_gui_provider_env(cfg: dict[str, Any], *, provider_name: str) -> tuple[str, str, str]:
-    """Resolve one multimodal provider into (model, api_key, api_base)."""
+def _resolve_gui_provider_env(cfg: dict[str, Any], *, provider_name: str) -> tuple[str, str, str, str]:
+    """Resolve one GUI multimodal provider alias into model/api settings and provider identity."""
     name = str(provider_name).strip()
     if not name:
-        return "", "", ""
+        return "", "", "", ""
 
     providers = cfg.get("multimodalProviders")
     if not isinstance(providers, dict):
-        return "", "", ""
+        return "", "", "", canonical_provider_name(name)
     raw = providers.get(name, {})
     if not isinstance(raw, dict):
-        return "", "", ""
+        return "", "", "", canonical_provider_name(name)
+    resolved_provider = canonical_provider_name(str(raw.get("provider", "")).strip() or name)
     if not is_enabled(raw.get("enabled"), default=False):
-        return "", "", ""
+        return "", "", "", resolved_provider
 
     model = str(raw.get("model", "")).strip()
     api_key = str(raw.get("apiKey", "")).strip()
     if not api_key:
-        api_key_env = provider_api_key_env(canonical_provider_name(name))
+        api_key_env = provider_api_key_env(resolved_provider)
         if api_key_env:
             api_key = os.getenv(api_key_env, "").strip()
     api_base = str(raw.get("apiBase", "")).strip()
-    return model, api_key, api_base
+    return model, api_key, api_base, resolved_provider
 
 
 def _resolve_gui_multimodal_env(cfg: dict[str, Any]) -> dict[str, str]:
@@ -635,11 +636,11 @@ def _resolve_gui_multimodal_env(cfg: dict[str, Any]) -> dict[str, str]:
     if not isinstance(gui, dict):
         gui = {}
 
-    grounding_model, _, grounding_api_base = _resolve_gui_provider_env(
+    grounding_model, _, grounding_api_base, grounding_provider = _resolve_gui_provider_env(
         cfg,
         provider_name=str(gui.get("groundingProvider", "")),
     )
-    planner_model, _, planner_api_base = _resolve_gui_provider_env(
+    planner_model, _, planner_api_base, planner_provider = _resolve_gui_provider_env(
         cfg,
         provider_name=str(gui.get("plannerProvider", "")),
     )
@@ -649,8 +650,8 @@ def _resolve_gui_multimodal_env(cfg: dict[str, Any]) -> dict[str, str]:
         "OPENHERON_GUI_BASE_URL": grounding_api_base,
         "OPENHERON_GUI_PLANNER_MODEL": planner_model,
         "OPENHERON_GUI_PLANNER_BASE_URL": planner_api_base,
-        "OPENHERON_GUI_GROUNDING_PROVIDER": canonical_provider_name(str(gui.get("groundingProvider", ""))),
-        "OPENHERON_GUI_PLANNER_PROVIDER": canonical_provider_name(str(gui.get("plannerProvider", ""))),
+        "OPENHERON_GUI_GROUNDING_PROVIDER": grounding_provider,
+        "OPENHERON_GUI_PLANNER_PROVIDER": planner_provider,
     }
 
 
@@ -666,8 +667,8 @@ def _resolve_gui_provider_api_key_env(cfg: dict[str, Any]) -> dict[str, str]:
         provider_name = str(gui.get(gui_key, "")).strip()
         if not provider_name:
             continue
-        _, api_key, _ = _resolve_gui_provider_env(cfg, provider_name=provider_name)
-        env_name = provider_api_key_env(canonical_provider_name(provider_name))
+        _, api_key, _, resolved_provider = _resolve_gui_provider_env(cfg, provider_name=provider_name)
+        env_name = provider_api_key_env(resolved_provider)
         if env_name and api_key:
             api_env[env_name] = api_key
 

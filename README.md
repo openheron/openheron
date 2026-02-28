@@ -100,9 +100,37 @@ openheron gateway-service install --channels local,feishu --enable
 openheron gateway-service status
 ```
 
-## 🖥️ GUI Automation
+## 🖥️ Computer Use
 
-`openheron` includes desktop GUI tools. Configure `config.json` or set the following environment variables:
+`openheron` includes desktop GUI tools.
+Recommended: configure GUI models/providers in `config.json` (`multimodalProviders`, `gui.groundingProvider`, `gui.plannerProvider`).
+
+Minimal `config.json` example:
+
+```json
+{
+  "multimodalProviders": {
+    "grounding_mm": {
+      "enabled": true,
+      "provider": "openai",
+      "apiKey": "your_openai_key",
+      "model": "gpt-5.2"
+    },
+    "planner_mm": {
+      "enabled": true,
+      "provider": "google",
+      "apiKey": "your_gemini_key",
+      "model": "gemini-3-flash-preview"
+    }
+  },
+  "gui": {
+    "groundingProvider": "grounding_mm",
+    "plannerProvider": "planner_mm"
+  }
+}
+```
+
+Optional: use environment variables for temporary overrides or local debugging:
 
 ```bash
 export OPENHERON_GUI_MODEL=$NAME_OF_YOUR_MLLM
