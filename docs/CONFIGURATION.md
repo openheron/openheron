@@ -20,7 +20,7 @@
 - `agent.workspace` / `agent.builtinSkillsDir`
 - `providers.<provider>.enabled / apiKey / model / apiBase / extraHeaders`
 - `multimodalProviders.<name>.enabled / apiKey / model / apiBase / extraHeaders`
-- `gui.groundingProvider / gui.plannerProvider / gui.builtinToolsEnabled`（绑定到 `multimodalProviders` 名称）
+- `gui.groundingProvider / gui.plannerProvider / gui.builtinGUIToolsEnabled`（绑定到 `multimodalProviders` 名称）
 - `session.dbUrl`
 - `channels.<name>.*`
 - `web.enabled` / `web.search.*`

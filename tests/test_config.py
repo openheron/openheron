@@ -47,7 +47,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg["multimodalProviders"], {})
         self.assertEqual(cfg["gui"]["groundingProvider"], "")
         self.assertEqual(cfg["gui"]["plannerProvider"], "")
-        self.assertTrue(cfg["gui"]["builtinToolsEnabled"])
+        self.assertTrue(cfg["gui"]["builtinGUIToolsEnabled"])
         self.assertTrue(cfg["web"]["search"]["enabled"])
         self.assertEqual(cfg["session"]["dbUrl"], "")
         self.assertEqual(cfg["agent"]["heartbeat"]["every"], "30m")
@@ -677,7 +677,7 @@ class ConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config.json"
             cfg = default_config()
-            cfg["gui"]["builtinToolsEnabled"] = False
+            cfg["gui"]["builtinGUIToolsEnabled"] = False
             save_config(cfg, path)
 
             os.environ.pop("OPENHERON_GUI_BUILTIN_TOOLS_ENABLED", None)

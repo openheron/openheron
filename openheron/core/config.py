@@ -255,7 +255,7 @@ def default_config() -> dict[str, Any]:
         "gui": {
             "groundingProvider": "",
             "plannerProvider": "",
-            "builtinToolsEnabled": True,
+            "builtinGUIToolsEnabled": True,
         },
         "session": {
             "dbUrl": "",
@@ -824,7 +824,7 @@ def config_to_env(
         "OPENHERON_EXEC_ALLOWLIST": exec_allowlist,
         "OPENHERON_MCP_SERVERS_JSON": mcp_servers_json,
         "OPENHERON_GUI_BUILTIN_TOOLS_ENABLED": "1"
-        if is_enabled(gui.get("builtinToolsEnabled"), default=True)
+        if is_enabled(gui.get("builtinGUIToolsEnabled"), default=True)
         else "0",
         "OPENHERON_DEBUG": "1" if bool(debug) else "0",
     }
