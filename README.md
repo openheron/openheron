@@ -64,7 +64,7 @@ openheron --config-path ~/.openheron/agent_name_1/config.json gateway run --chan
 
 ### 🛰️ 4. Enable Channel Chat and Start Background Service
 
-For channel keys and secrets, see `docs/CHANNELS.md`. After filling in channel keys, start the background gateway for regular usage:
+For channel keys and secrets, see [`docs/CHANNELS.md`](./docs/CHANNELS.md). After filling in channel keys, start the background gateway for regular usage:
 
 ```bash
 openheron gateway start
