@@ -12,7 +12,7 @@ from ..runtime.cron_helpers import cron_store_path, format_schedule, format_time
 from ..runtime.cron_service import CronService
 from ..runtime.cron_schedule_parser import parse_schedule_input
 from ..runtime.heartbeat_status_store import read_heartbeat_status_snapshot
-from ..runtime.token_usage_store import parse_time_filter_to_epoch_ms, read_token_usage_stats
+from ..runtime.token_usage_store import parse_time_filter_to_epoch_ms
 
 
 def _format_response_at(raw: Any, *, display_utc: bool) -> str:

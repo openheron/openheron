@@ -51,7 +51,6 @@ from ..core.provider import (
 from ..core.provider_registry import find_provider_spec
 from ..runtime.cron_helpers import cron_store_path, format_schedule, format_timestamp_ms
 from ..runtime.cron_service import CronService
-from ..runtime.cron_schedule_parser import parse_schedule_input
 from ..runtime.heartbeat_status_store import read_heartbeat_status_snapshot
 from ..runtime.token_usage_store import read_token_usage_stats
 from ..runtime.gateway_service import (
@@ -258,33 +257,6 @@ CHANNEL_ENV_BACKFILL_MAPPINGS = doctor_rules.CHANNEL_ENV_BACKFILL_MAPPINGS
 
 
 DoctorFixOutcome = Literal["applied", "skipped", "failed"]
-
-
-@dataclass(frozen=True)
-class DoctorChannelEnvBackfillRule:
-    """Structured metadata for one doctor channel env-backfill rule."""
-
-    channel: str
-    key: str
-    env_name: str
-    rule: str = "channel_env_backfill"
-    code_applied: str = "channel.env.backfilled"
-    code_disabled: str = "channel.env.channel_disabled"
-    code_target_set: str = "channel.env.target_already_set"
-    code_source_missing: str = "channel.env.source_missing"
-
-    @property
-    def target_path(self) -> str:
-        return f"channels.{self.channel}.{self.key}"
-
-
-def _build_doctor_channel_env_backfill_rules() -> tuple[DoctorChannelEnvBackfillRule, ...]:
-    """Build doctor channel env-backfill rules from shared channel env mappings."""
-
-    return tuple(
-        DoctorChannelEnvBackfillRule(channel=channel, key=key, env_name=env_name)
-        for channel, key, env_name in CHANNEL_ENV_BACKFILL_MAPPINGS
-    )
 
 
 DOCTOR_CHANNEL_ENV_BACKFILL_RULES = doctor_rules.DOCTOR_CHANNEL_ENV_BACKFILL_RULES
@@ -2369,117 +2341,6 @@ def _install_prereq_lines() -> list[str]:
     else:
         lines.append("Install prereq: optional package rich detected")
     return lines
-
-
-def _render_install_sections_with_rich(*, summary_lines: list[str], prereq_lines: list[str]) -> bool:
-    """Render install summary/prereq sections with Rich when terminal supports it."""
-    if not sys.stdout.isatty():
-        return False
-    try:
-        from rich.console import Console  # type: ignore
-        from rich.panel import Panel  # type: ignore
-        from rich.table import Table  # type: ignore
-    except Exception:
-        return False
-
-    console = Console()
-    summary_table = Table(show_header=False, box=None, pad_edge=False)
-    summary_table.add_column("key", style="bold cyan", no_wrap=True)
-    summary_table.add_column("value", style="white")
-    next_steps: list[str] = []
-    missing_items: list[str] = []
-    fix_items: list[str] = []
-    notes: list[str] = []
-
-    for line in summary_lines:
-        raw = line.strip()
-        if not raw.startswith("Install summary:"):
-            notes.append(raw)
-            continue
-        content = raw[len("Install summary:") :].strip()
-        if content.startswith("provider="):
-            summary_table.add_row("Active", content)
-        elif content.startswith("missing="):
-            summary_table.add_row("Missing", content[len("missing=") :])
-            value = content[len("missing=") :].strip()
-            if value.startswith("[") and value.endswith("]"):
-                body = value[1:-1].strip()
-                if body:
-                    missing_items = [item.strip().strip("'\"") for item in body.split(",") if item.strip()]
-        elif content.startswith("fixes="):
-            summary_table.add_row("Fixes", content[len("fixes=") :])
-            value = content[len("fixes=") :].strip()
-            if value.startswith("[") and value.endswith("]"):
-                body = value[1:-1].strip()
-                if body:
-                    fix_items = [item.strip().strip("'\"") for item in body.split(",") if item.strip()]
-        elif content.startswith("next["):
-            next_steps.append(content.split("=", 1)[1].strip() if "=" in content else content)
-        else:
-            notes.append(content)
-
-    if summary_table.row_count > 0:
-        console.print(
-            Panel(
-                summary_table,
-                title="[bold]Install Summary[/bold]",
-                border_style="cyan",
-            )
-        )
-
-    if missing_items:
-        grouped_missing: dict[str, list[str]] = {"provider": [], "channel": [], "other": []}
-        for item in missing_items:
-            if item.startswith("channels."):
-                grouped_missing["channel"].append(item)
-            elif "." in item:
-                grouped_missing["provider"].append(item)
-            else:
-                grouped_missing["other"].append(item)
-        missing_table = Table(show_header=True, box=None, pad_edge=False)
-        missing_table.add_column("Group", style="bold yellow", no_wrap=True)
-        missing_table.add_column("Missing Field", style="yellow")
-        for group_name in ("provider", "channel", "other"):
-            for item in grouped_missing[group_name]:
-                missing_table.add_row(group_name, item)
-        console.print(Panel(missing_table, title="[bold]Required Fields[/bold]", border_style="yellow"))
-
-    if fix_items:
-        fix_table = Table(show_header=True, box=None, pad_edge=False)
-        fix_table.add_column("Suggested Fix", style="green")
-        for item in fix_items:
-            fix_table.add_row(item)
-        console.print(Panel(fix_table, title="[bold]Suggested Fixes[/bold]", border_style="green"))
-
-    if prereq_lines:
-        prereq_table = Table(show_header=True, box=None, pad_edge=False)
-        prereq_table.add_column("Status", style="bold", no_wrap=True)
-        prereq_table.add_column("Check")
-        for line in prereq_lines:
-            normalized = _doctor_install_prereq_line(line)
-            status = "OK"
-            style = "green"
-            if "[warn]" in normalized:
-                status = "WARN"
-                style = "yellow"
-            detail = normalized
-            if ":" in normalized:
-                detail = normalized.split(":", 1)[1].strip()
-            prereq_table.add_row(f"[{style}]{status}[/{style}]", detail)
-        console.print(Panel(prereq_table, title="[bold]Prerequisites[/bold]", border_style="magenta"))
-
-    if next_steps:
-        next_table = Table(show_header=False, box=None, pad_edge=False)
-        next_table.add_column("step", style="bold cyan", no_wrap=True)
-        next_table.add_column("command", style="white")
-        for index, step in enumerate(next_steps, start=1):
-            next_table.add_row(str(index), step)
-        console.print(Panel(next_table, title="[bold]Next Commands[/bold]", border_style="blue"))
-
-    for note in notes:
-        if note:
-            console.print(note)
-    return True
 
 
 def _render_install_welcome_with_rich(
