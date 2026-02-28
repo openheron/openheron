@@ -204,7 +204,7 @@ openheron channels bridge stop
 ### 本地通道
 
 ```bash
-python -m openheron.cli gateway-local
+python -m openheron.cli gateway run --channels local --interactive-local
 ```
 
 ### 多通道模式（含 Feishu）

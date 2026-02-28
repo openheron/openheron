@@ -221,6 +221,22 @@ class CLITests(unittest.TestCase):
                 mocked_status.assert_called_once_with(output_json=True)
                 mocked_bootstrap.assert_called_once()
 
+    def test_gateway_run_requires_explicit_config_when_default_missing_in_multi_agent(self) -> None:
+        from openheron import cli
+
+        with patch.object(cli, "get_config_path", return_value=Path("/tmp/openheron/config.json")):
+            with patch.object(cli, "_global_enabled_agent_names", return_value=["agent_a", "agent_b"]):
+                with patch.object(cli, "_agent_config_path", return_value=Path("/tmp/openheron/agent_a/config.json")):
+                    with patch.object(cli, "bootstrap_env_from_config") as mocked_bootstrap:
+                        with patch("builtins.print") as mocked_info:
+                            with self.assertRaises(SystemExit) as ctx:
+                                cli.main(["gateway", "run"])
+        self.assertEqual(ctx.exception.code, 1)
+        mocked_bootstrap.assert_not_called()
+        lines = [call.args[0] for call in mocked_info.call_args_list if call.args]
+        self.assertTrue(any("Gateway run requires agent config" in line for line in lines))
+        self.assertTrue(any("Please pass --config-path explicitly" in line for line in lines))
+
     def test_main_bootstrap_uses_explicit_config_path_when_provided(self) -> None:
         from openheron import cli
 

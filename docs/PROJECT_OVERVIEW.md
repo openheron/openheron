@@ -143,7 +143,7 @@ openheron doctor --fix
 python -m openheron.cli -m "Describe what you can do"
 
 # 网关本地模式
-python -m openheron.cli gateway-local
+python -m openheron.cli gateway run --channels local --interactive-local
 
 # 网关多渠道模式
 openheron gateway run --channels local,feishu --interactive-local

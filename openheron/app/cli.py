@@ -3084,10 +3084,6 @@ def _cmd_install(
     return 0
 
 
-def _cmd_gateway_local(sender_id: str, chat_id: str) -> int:
-    return _cmd_gateway(channels="local", sender_id=sender_id, chat_id=chat_id, interactive_local=True)
-
-
 def _gateway_log_dir() -> Path:
     """Return gateway runtime/log directory under ~/.openheron/log."""
     path = get_data_dir() / "log"
@@ -4192,6 +4188,13 @@ def _cmd_gateway_service_status(*, output_json: bool) -> int:
     return 0
 
 
+def _should_require_agent_config_for_gateway(args: argparse.Namespace) -> bool:
+    """Return true when command needs an explicit/available single-agent config."""
+    if args.command != "gateway":
+        return False
+    return getattr(args, "gateway_action", None) == "run"
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="openheron",
@@ -4285,12 +4288,6 @@ def main(argv: list[str] | None = None) -> None:
 
     run_parser = subparsers.add_parser("run", help="Run `adk run` for this agent.")
     run_parser.add_argument("adk_args", nargs=argparse.REMAINDER, help="Extra args passed to adk run.")
-    gateway_parser = subparsers.add_parser(
-        "gateway-local",
-        help="Run minimal local channel gateway (bus + runner + stdio).",
-    )
-    gateway_parser.add_argument("--sender-id", default="local-user", help="Sender id used for inbound messages.")
-    gateway_parser.add_argument("--chat-id", default="terminal", help="Chat id used for inbound messages.")
     gateway_parser = subparsers.add_parser(
         "gateway",
         help="Gateway runtime commands (run/start/stop/restart/status).",
@@ -4524,8 +4521,26 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     args = parser.parse_args(argv)
+    config_path = str(getattr(args, "config_path", "")).strip()
+    if not config_path and _should_require_agent_config_for_gateway(args):
+        default_config_path = get_config_path()
+        if not default_config_path.exists():
+            enabled_agents = _global_enabled_agent_names()
+            if enabled_agents:
+                _stdout_line(
+                    "Gateway run requires agent config, but default config is missing: "
+                    f"{default_config_path}"
+                )
+                _stdout_line(
+                    "Detected enabled agents in global_config.json: "
+                    + ", ".join(enabled_agents)
+                )
+                _stdout_line(
+                    "Please pass --config-path explicitly, e.g.: "
+                    f"openheron --config-path {str(_agent_config_path(enabled_agents[0]))} gateway run"
+                )
+                raise SystemExit(1)
     if args.command != "install":
-        config_path = str(getattr(args, "config_path", "")).strip()
         if config_path:
             bootstrap_env_from_config(Path(config_path).expanduser())
         else:
@@ -4601,7 +4616,6 @@ def main(argv: list[str] | None = None) -> None:
                 no_color=args.no_color,
             ),
             "run": lambda: _cmd_run(args.adk_args),
-            "gateway-local": lambda: _cmd_gateway_local(sender_id=args.sender_id, chat_id=args.chat_id),
             "gateway": _dispatch_gateway_command,
         }
         handler = handlers.get(args.command)

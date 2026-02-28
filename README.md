@@ -115,7 +115,7 @@ python -m openheron.cli -m "Describe what you can do"
 python -m openheron.cli -m "Describe what you can do" --user-id local --session-id demo001
 
 # local gateway
-python -m openheron.cli gateway-local
+python -m openheron.cli gateway run --channels local --interactive-local
 
 # multi-channel gateway runtime
 openheron gateway run --channels local,feishu --interactive-local
