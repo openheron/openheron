@@ -70,6 +70,37 @@ class DebugCallbacksTests(unittest.TestCase):
         serialized = json.dumps(payload, ensure_ascii=False)
         self.assertIn("Tomorrow is cloudy.", serialized)
 
+    def test_after_model_does_not_truncate_when_max_chars_is_zero(self) -> None:
+        callback_context = pytypes.SimpleNamespace(
+            invocation_id="inv-2b",
+            agent_name="openheron",
+            user_id="u-2b",
+            session=pytypes.SimpleNamespace(id="s-2b"),
+        )
+        long_text = "A" * 5000
+        llm_response = pytypes.SimpleNamespace(
+            finish_reason="stop",
+            partial=False,
+            turn_complete=True,
+            error_code=None,
+            error_message=None,
+            content=pytypes.SimpleNamespace(parts=[pytypes.SimpleNamespace(text=long_text)]),
+        )
+
+        with patch.dict(
+            os.environ,
+            {"OPENHERON_DEBUG": "1", "OPENHERON_DEBUG_MAX_CHARS": "0"},
+            clear=False,
+        ):
+            with patch("openheron.runtime.debug_callbacks._write_debug") as mocked_emit:
+                result = after_model_debug_callback(callback_context, llm_response)
+
+        self.assertIsNone(result)
+        mocked_emit.assert_called_once()
+        _, payload = mocked_emit.call_args.args
+        self.assertEqual(payload["text"], long_text)
+        self.assertNotIn("truncated", payload["text"])
+
     def test_callbacks_are_silent_when_debug_disabled(self) -> None:
         callback_context = pytypes.SimpleNamespace(session=pytypes.SimpleNamespace(id="s-3"))
         llm_request = pytypes.SimpleNamespace(

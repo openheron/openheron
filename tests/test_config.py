@@ -110,7 +110,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(runtime_cfg["env"]["OPENHERON_MEMORY_BACKEND"], "markdown")
         self.assertEqual(runtime_cfg["env"]["OPENHERON_COMPACTION_INTERVAL"], 8)
         self.assertEqual(runtime_cfg["env"]["OPENHERON_MCP_DOCTOR_TIMEOUT_SECONDS"], 5)
-        self.assertEqual(runtime_cfg["env"]["OPENHERON_DEBUG_MAX_CHARS"], 2000)
+        self.assertEqual(runtime_cfg["env"]["OPENHERON_DEBUG_MAX_CHARS"], 0)
 
     def test_save_then_load_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -432,7 +432,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(os.environ["OPENHERON_MEMORY_BACKEND"], "markdown")
         self.assertEqual(os.environ["OPENHERON_COMPACTION_INTERVAL"], "8")
         self.assertEqual(os.environ["OPENHERON_MCP_DOCTOR_TIMEOUT_SECONDS"], "5")
-        self.assertEqual(os.environ["OPENHERON_DEBUG_MAX_CHARS"], "2000")
+        self.assertEqual(os.environ["OPENHERON_DEBUG_MAX_CHARS"], "0")
         self.assertNotIn("OPENHERON_MEMORY_MARKDOWN_DIR", os.environ)
         self.assertNotIn("OPENHERON_COMPACTION_TOKEN_THRESHOLD", os.environ)
         self.assertNotIn("OPENHERON_MCP_REQUIRED_SERVERS", os.environ)

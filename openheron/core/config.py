@@ -172,7 +172,7 @@ def _default_runtime_env_overrides() -> dict[str, Any]:
         "OPENHERON_MCP_GATEWAY_TIMEOUT_SECONDS": 5,
         "OPENHERON_WHATSAPP_BRIDGE_PRECHECK": True,
         "OPENHERON_WHATSAPP_BRIDGE_SOURCE": "",
-        "OPENHERON_DEBUG_MAX_CHARS": 2000,
+        "OPENHERON_DEBUG_MAX_CHARS": 0,
     }
 
 

@@ -17,7 +17,7 @@ from google.adk.models.llm_response import LlmResponse
 from ..core.logging_utils import debug_logging_enabled, emit_debug
 from .token_usage_store import extract_usage_tokens, write_token_usage_event
 
-_DEFAULT_MAX_TEXT_CHARS = 2000
+_DEFAULT_MAX_TEXT_CHARS = 0
 _MAX_TOOL_CALL_ID_CHARS = 40
 _SECRET_PATTERNS = [
     re.compile(r"sk-[A-Za-z0-9_-]{16,}"),
@@ -33,6 +33,9 @@ def _max_chars() -> int:
         value = int(raw)
     except ValueError:
         value = _DEFAULT_MAX_TEXT_CHARS
+    if value <= 0:
+        # Non-positive values explicitly disable clipping for debug payload text.
+        return 0
     return max(200, min(value, 20000))
 
 
@@ -48,6 +51,8 @@ def _redact(text: str) -> str:
 
 def _clip(text: str) -> str:
     max_chars = _max_chars()
+    if max_chars <= 0:
+        return text
     if len(text) <= max_chars:
         return text
     return text[:max_chars] + f"\n... (truncated {len(text) - max_chars} chars)"
