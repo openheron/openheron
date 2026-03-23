@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-openpipixia = "openpipixia.app.cli:main"
+ppx = "openpipixia.app.cli:main"
 openpipixia-gui-mcp = "openpipixia.gui.mcp_server:main"
 
 [build-system]

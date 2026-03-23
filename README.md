@@ -25,11 +25,11 @@ python3.14 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt 
 pip install .
-openpipixia init
-# Follow the `openpipixia init` output and edit the generated config files.
+ppx init
+# Follow the `ppx init` output and edit the generated config files.
 ```
 
-`openpipixia init` scaffolds a default multi-agent setup:
+`ppx init` scaffolds a default multi-agent setup:
 
 - `~/.openpipixia/agent_name_1`
 - `~/.openpipixia/agent_name_2`
@@ -59,7 +59,7 @@ You can leave channel-specific keys (for example Telegram or Feishu) empty at th
 ### 💬 3. Try Local Interactive Mode
 
 ```bash
-openpipixia --config-path ~/.openpipixia/agent_name_1/config.json gateway run --channels local --interactive-local
+ppx --config-path ~/.openpipixia/agent_name_1/config.json gateway run --channels local --interactive-local
 ```
 
 ### 🛰️ 4. Enable Channel Chat and Start Background Service
@@ -67,7 +67,7 @@ openpipixia --config-path ~/.openpipixia/agent_name_1/config.json gateway run --
 For channel keys and secrets, see [`docs/CHANNELS.md`](./docs/CHANNELS.md). After filling in channel keys, start the background gateway for regular usage:
 
 ```bash
-openpipixia gateway start
+ppx gateway start
 ```
 
 
@@ -75,29 +75,29 @@ openpipixia gateway start
 ## 🧪 Command Discovery
 
 ```bash
-openpipixia --help
-openpipixia gateway --help
-openpipixia gateway-service --help
-openpipixia provider --help
-openpipixia channels --help
-openpipixia cron --help
-openpipixia heartbeat --help
-openpipixia token --help
+ppx --help
+ppx gateway --help
+ppx gateway-service --help
+ppx provider --help
+ppx channels --help
+ppx cron --help
+ppx heartbeat --help
+ppx token --help
 ```
 
 ## 🌉 Gateway Usage
 
-- `openpipixia gateway run`: run the gateway in the foreground
-- `openpipixia gateway start|stop|restart|status`: start, stop, restart, and inspect the background gateway process
-- `openpipixia gateway-service`: manage OS user-service manifests (launchd/systemd)
+- `ppx gateway run`: run the gateway in the foreground
+- `ppx gateway start|stop|restart|status`: start, stop, restart, and inspect the background gateway process
+- `ppx gateway-service`: manage OS user-service manifests (launchd/systemd)
 
 Examples:
 
 ```bash
-openpipixia gateway run --channels local,feishu --interactive-local
-openpipixia gateway status
-openpipixia gateway-service install --channels local,feishu --enable
-openpipixia gateway-service status
+ppx gateway run --channels local,feishu --interactive-local
+ppx gateway status
+ppx gateway-service install --channels local,feishu --enable
+ppx gateway-service status
 ```
 
 ## 🖥️ Computer Use
@@ -194,13 +194,13 @@ python -m openpipixia.cli -m "Describe what you can do" --user-id local --sessio
 python -m openpipixia.cli gateway run --channels local --interactive-local
 
 # Multi-channel runtime
-openpipixia gateway run --channels local,feishu --interactive-local
-openpipixia gateway-service install --channels local,feishu --enable
-openpipixia gateway-service status
-openpipixia doctor
-openpipixia heartbeat status
-openpipixia token stats --provider google --limit 50
-openpipixia token stats --last-hours 24
+ppx gateway run --channels local,feishu --interactive-local
+ppx gateway-service install --channels local,feishu --enable
+ppx gateway-service status
+ppx doctor
+ppx heartbeat status
+ppx token stats --provider google --limit 50
+ppx token stats --last-hours 24
 ```
 
 ## 🗂️ Project Layout
@@ -251,7 +251,7 @@ Recommended reading order:
 For programmatic doctor output:
 
 ```bash
-openpipixia doctor --fix --json
+ppx doctor --fix --json
 ```
 
 Then inspect `fix.reasonCodes` and `fix.byRule`

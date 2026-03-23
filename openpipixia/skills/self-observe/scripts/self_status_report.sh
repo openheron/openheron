@@ -10,14 +10,14 @@ date '+generated_at=%Y-%m-%dT%H:%M:%S%z'
 
 echo
 echo "[1] Runtime status"
-openpipixia gateway status --json 2>/dev/null || echo '{"gateway":"unavailable"}'
-openpipixia heartbeat status --json 2>/dev/null || echo '{"heartbeat":"unavailable"}'
-openpipixia provider status --json 2>/dev/null || echo '{"provider":"unavailable"}'
-openpipixia cron status 2>/dev/null || echo 'cron status unavailable'
+ppx gateway status --json 2>/dev/null || echo '{"gateway":"unavailable"}'
+ppx heartbeat status --json 2>/dev/null || echo '{"heartbeat":"unavailable"}'
+ppx provider status --json 2>/dev/null || echo '{"provider":"unavailable"}'
+ppx cron status 2>/dev/null || echo 'cron status unavailable'
 
 echo
 echo "[2] Token usage"
-openpipixia token stats --json 2>/dev/null || echo '{"token":"unavailable"}'
+ppx token stats --json 2>/dev/null || echo '{"token":"unavailable"}'
 
 echo
 echo "[3] Recent errors"

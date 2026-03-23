@@ -18,8 +18,8 @@
 ### 最小验证流程
 
 1. 在 `~/.openpipixia/config.json` 配置 `tools.mcpServers`
-2. 执行 `openpipixia doctor` 查看服务健康状态与工具列表
-3. 启动 `openpipixia gateway run`
+2. 执行 `ppx doctor` 查看服务健康状态与工具列表
+3. 启动 `ppx gateway run`
 4. 在对话中调用 MCP 工具（例如 `mcp_filesystem_...`）
 
 ### 内置 GUI MCP（推荐）

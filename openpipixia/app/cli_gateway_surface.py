@@ -62,7 +62,7 @@ def cmd_gateway_start_single(
     existing = read_gateway_pid()
     if existing and is_pid_running(existing):
         stdout_line(f"Gateway service already running (pid={existing}).")
-        stdout_line("Use `openpipixia gateway status` or `openpipixia gateway restart`.")
+        stdout_line("Use `ppx gateway status` or `ppx gateway restart`.")
         return 0
 
     if existing and not is_pid_running(existing):

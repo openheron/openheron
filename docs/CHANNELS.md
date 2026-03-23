@@ -72,7 +72,7 @@ Requires **Node.js ≥18**.
 **1. Link device**
 
 ```bash
-openpipixia channels login
+ppx channels login
 # Scan QR with WhatsApp → Settings → Linked Devices
 ```
 

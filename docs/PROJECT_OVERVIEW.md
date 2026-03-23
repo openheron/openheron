@@ -127,7 +127,7 @@
 ### 6.1 推荐初始化
 
 ```bash
-openpipixia doctor --fix
+ppx doctor --fix
 ```
 
 会生成：
@@ -146,7 +146,7 @@ python -m openpipixia.cli -m "Describe what you can do"
 python -m openpipixia.cli gateway run --channels local --interactive-local
 
 # 网关多渠道模式
-openpipixia gateway run --channels local,feishu --interactive-local
+ppx gateway run --channels local,feishu --interactive-local
 ```
 
 ### 6.3 测试

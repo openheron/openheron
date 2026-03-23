@@ -310,7 +310,7 @@ def dispatch_cron_command(
     selected_agent = selected_agent or None
     enabled_agents = global_enabled_agent_names()
     if args.cron_command in {"add", "remove", "enable", "run"} and not selected_agent and enabled_agents:
-        stdout_line(f"Error: `openpipixia cron {args.cron_command}` requires --agent in multi-agent mode.")
+        stdout_line(f"Error: `ppx cron {args.cron_command}` requires --agent in multi-agent mode.")
         return 1
     if selected_agent and enabled_agents and args.cron_command in {"add", "remove", "enable", "run"}:
         proxy_args: list[str] = ["cron", args.cron_command]

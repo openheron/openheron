@@ -1,4 +1,4 @@
-"""Tests for openpipixia skills behavior."""
+"""Tests for ppx skills behavior."""
 
 from __future__ import annotations
 

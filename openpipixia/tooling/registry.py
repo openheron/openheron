@@ -2019,7 +2019,7 @@ def _append_subagent_record(record: dict[str, Any]) -> Path:
     """Append one sub-agent spawn record to local JSONL log.
 
     The record is written only when ``spawn_subagent`` successfully dispatches
-    the task. The log is used by CLI introspection (`openpipixia spawn`).
+    the task. The log is used by CLI introspection (`ppx spawn`).
     """
     log_path = _workspace() / ".openpipixia" / "subagents.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)

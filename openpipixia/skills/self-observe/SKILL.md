@@ -11,17 +11,17 @@ Use this skill when the user asks for agent self-inspection, runtime health chec
 
 1. Token usage:
 ```bash
-openpipixia token stats --json
-openpipixia token stats --provider google --limit 50 --json
-openpipixia token stats --provider openai --limit 50 --json
+ppx token stats --json
+ppx token stats --provider google --limit 50 --json
+ppx token stats --provider openai --limit 50 --json
 ```
 
 2. Runtime status:
 ```bash
-openpipixia gateway status --json
-openpipixia heartbeat status --json
-openpipixia cron status
-openpipixia provider status --json
+ppx gateway status --json
+ppx heartbeat status --json
+ppx cron status
+ppx provider status --json
 ```
 
 3. Error logs (read-only):

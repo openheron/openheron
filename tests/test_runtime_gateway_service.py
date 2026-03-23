@@ -25,7 +25,7 @@ def test_gateway_service_name_normalization() -> None:
 def test_render_launchd_plist_contains_required_sections() -> None:
     content = render_launchd_plist(
         label="ai.openpipixia.app.gateway",
-        program="/usr/local/bin/openpipixia",
+        program="/usr/local/bin/ppx",
         args=["gateway", "run", "--channels", "local,feishu"],
         working_directory="/tmp/openpipixia",
         env={"OPENPIPIXIA_CHANNELS": "local,feishu"},
@@ -36,7 +36,7 @@ def test_render_launchd_plist_contains_required_sections() -> None:
     assert "<key>Label</key>" in content
     assert "<string>ai.openpipixia.app.gateway</string>" in content
     assert "<key>ProgramArguments</key>" in content
-    assert "<string>/usr/local/bin/openpipixia</string>" in content
+    assert "<string>/usr/local/bin/ppx</string>" in content
     assert "<string>gateway</string>" in content
     assert "<key>EnvironmentVariables</key>" in content
     assert "<key>OPENPIPIXIA_CHANNELS</key><string>local,feishu</string>" in content
@@ -47,7 +47,7 @@ def test_render_launchd_plist_contains_required_sections() -> None:
 def test_render_systemd_unit_contains_required_sections() -> None:
     content = render_systemd_unit(
         description="Openpipixia Gateway",
-        exec_start="/usr/local/bin/openpipixia gateway run --channels local",
+        exec_start="/usr/local/bin/ppx gateway run --channels local",
         working_directory="/tmp/openpipixia",
         env={"OPENPIPIXIA_CHANNELS": "local", "OPENPIPIXIA_DEBUG": "1"},
     )
@@ -56,7 +56,7 @@ def test_render_systemd_unit_contains_required_sections() -> None:
     assert "Description=Openpipixia Gateway" in content
     assert "After=network-online.target" in content
     assert "[Service]" in content
-    assert "ExecStart=/usr/local/bin/openpipixia gateway run --channels local" in content
+    assert "ExecStart=/usr/local/bin/ppx gateway run --channels local" in content
     assert 'Environment="OPENPIPIXIA_CHANNELS=local"' in content
     assert 'Environment="OPENPIPIXIA_DEBUG=1"' in content
     assert "WantedBy=default.target" in content

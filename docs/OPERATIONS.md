@@ -13,25 +13,25 @@ pip install -e .
 
 ```bash
 # 初始化/修复最小可运行配置
-openpipixia doctor --fix
+ppx doctor --fix
 
 # 查看完整诊断结果
-openpipixia doctor
+ppx doctor
 ```
 
 ## Gateway 后台服务（进程级）
 
 ```bash
 # 启动后台 gateway（写 pid/meta/log 到 ~/.openpipixia/log）
-openpipixia gateway start --channels local,feishu
+ppx gateway start --channels local,feishu
 
 # 查看状态（可加 --json）
-openpipixia gateway status
-openpipixia gateway status --json
+ppx gateway status
+ppx gateway status --json
 
 # 重启 / 停止
-openpipixia gateway restart --channels local,feishu
-openpipixia gateway stop
+ppx gateway restart --channels local,feishu
+ppx gateway stop
 ```
 
 后台运行相关文件：
@@ -54,15 +54,15 @@ Gateway service manifest（对齐 OpenClaw install-daemon 的最小实现）：
 
 ```bash
 # 写入用户级 service manifest（不直接执行 launchctl/systemctl）
-openpipixia gateway-service install
-openpipixia gateway-service install --force --channels local,feishu
+ppx gateway-service install
+ppx gateway-service install --force --channels local,feishu
 
 # 写入后立即启用并启动（会调用 launchctl/systemctl --user）
-openpipixia gateway-service install --enable
+ppx gateway-service install --enable
 
 # 查看当前平台下 manifest 状态
-openpipixia gateway-service status
-openpipixia gateway-service status --json
+ppx gateway-service status
+ppx gateway-service status --json
 ```
 
 ### 常见缺失字段与修复路径
@@ -95,25 +95,25 @@ openpipixia gateway-service status --json
 ### 常见问题
 
 - `Missing ... API key`  
-  打开 `~/.openpipixia/config.json`，给启用 provider 填 `apiKey`，再运行 `openpipixia doctor`。
-  如果本地环境变量已配置，也可先运行 `openpipixia doctor --fix` 让系统自动回填缺失项。
+  打开 `~/.openpipixia/config.json`，给启用 provider 填 `apiKey`，再运行 `ppx doctor`。
+  如果本地环境变量已配置，也可先运行 `ppx doctor --fix` 让系统自动回填缺失项。
 
 - `channels....` 凭证字段缺失（例如 feishu/telegram/discord/dingtalk/slack/whatsapp/email/qq）  
-  在 `~/.openpipixia/config.json` 的 `channels` 段补齐对应字段，再运行 `openpipixia doctor`。
-  如果不确定具体字段，直接看 `openpipixia doctor --json` 的缺失项。
+  在 `~/.openpipixia/config.json` 的 `channels` 段补齐对应字段，再运行 `ppx doctor`。
+  如果不确定具体字段，直接看 `ppx doctor --json` 的缺失项。
 
 - `MCP server ... health check failed`  
-  先确认 MCP 服务进程可达，再用 `openpipixia doctor --json` 查看 `mcp.health` 明细错误。
+  先确认 MCP 服务进程可达，再用 `ppx doctor --json` 查看 `mcp.health` 明细错误。
 
 - provider/channel 全部被关闭导致无法运行  
-  执行 `openpipixia doctor --fix`，会自动启用默认 provider 与 `channels.local`（最小可运行修复）。
+  执行 `ppx doctor --fix`，会自动启用默认 provider 与 `channels.local`（最小可运行修复）。
 
 ### doctor --fix --json 字段说明（新增）
 
 当你需要把修复结果喂给上层自动化逻辑（例如告警/重试/策略回路）时，建议用：
 
 ```bash
-openpipixia doctor --fix --json
+ppx doctor --fix --json
 ```
 
 `fix` 节点关键字段：
@@ -169,33 +169,33 @@ adk run openpipixia
 ### Wrapper CLI
 
 ```bash
-openpipixia run
+ppx run
 ```
 
 ### 常用工具命令
 
 ```bash
-openpipixia skills
-openpipixia doctor
-openpipixia doctor --fix
-openpipixia doctor --fix-dry-run
-openpipixia heartbeat status
-openpipixia heartbeat status --json
-openpipixia token stats
-openpipixia token stats --provider google --limit 50
-openpipixia token stats --json
-openpipixia gateway-service install
-openpipixia gateway-service status
-openpipixia provider list
-openpipixia provider status
-openpipixia provider status --json
-openpipixia provider login github-copilot
-openpipixia provider login openai-codex
-openpipixia provider login codex
-openpipixia channels login
-openpipixia channels bridge start
-openpipixia channels bridge status
-openpipixia channels bridge stop
+ppx skills
+ppx doctor
+ppx doctor --fix
+ppx doctor --fix-dry-run
+ppx heartbeat status
+ppx heartbeat status --json
+ppx token stats
+ppx token stats --provider google --limit 50
+ppx token stats --json
+ppx gateway-service install
+ppx gateway-service status
+ppx provider list
+ppx provider status
+ppx provider status --json
+ppx provider login github-copilot
+ppx provider login openai-codex
+ppx provider login codex
+ppx channels login
+ppx channels bridge start
+ppx channels bridge status
+ppx channels bridge stop
 ```
 
 ## Gateway 模式
@@ -209,14 +209,14 @@ python -m openpipixia.cli gateway run --channels local --interactive-local
 ### 多通道模式（含 Feishu）
 
 ```bash
-openpipixia gateway run --channels local,feishu --interactive-local
+ppx gateway run --channels local,feishu --interactive-local
 ```
 
 也可通过环境变量指定默认通道：
 
 ```bash
 export OPENPIPIXIA_CHANNELS=feishu
-openpipixia gateway
+ppx gateway
 ```
 
 ## WhatsApp Bridge
@@ -225,12 +225,12 @@ openpipixia gateway
 
 ```bash
 # 前台扫码登录
-openpipixia channels login
+ppx channels login
 
 # 后台 bridge 生命周期
-openpipixia channels bridge start
-openpipixia channels bridge status
-openpipixia channels bridge stop
+ppx channels bridge start
+ppx channels bridge status
+ppx channels bridge stop
 ```
 
 快速自检：
@@ -250,16 +250,16 @@ scripts/whatsapp_bridge_e2e.sh smoke
 常用命令：
 
 ```bash
-openpipixia cron list
-openpipixia cron add --name weather --message "check weather and summarize" --every 300
-openpipixia cron add --name daily --message "daily report" --cron "0 9 * * 1-5" --tz Asia/Shanghai
-openpipixia cron add --name reminder --message "remind me to review PR" --at 2026-02-19T09:30:00
-openpipixia cron add --name push --message "send update" --every 600 --deliver --channel feishu --to ou_xxx
-openpipixia cron run <job_id>
-openpipixia cron enable <job_id>
-openpipixia cron enable <job_id> --disable
-openpipixia cron remove <job_id>
-openpipixia cron status
+ppx cron list
+ppx cron add --name weather --message "check weather and summarize" --every 300
+ppx cron add --name daily --message "daily report" --cron "0 9 * * 1-5" --tz Asia/Shanghai
+ppx cron add --name reminder --message "remind me to review PR" --at 2026-02-19T09:30:00
+ppx cron add --name push --message "send update" --every 600 --deliver --channel feishu --to ou_xxx
+ppx cron run <job_id>
+ppx cron enable <job_id>
+ppx cron enable <job_id> --disable
+ppx cron remove <job_id>
+ppx cron status
 ```
 
 ## Token 统计
@@ -271,9 +271,9 @@ openpipixia cron status
 - 查询命令：
 
 ```bash
-openpipixia token stats
-openpipixia token stats --provider google --limit 50
-openpipixia token stats --provider openai --json
+ppx token stats
+ppx token stats --provider google --limit 50
+ppx token stats --provider openai --json
 ```
 
 说明：

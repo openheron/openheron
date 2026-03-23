@@ -621,7 +621,7 @@ class CLITests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         lines = [call.args[0] for call in mocked_print.call_args_list if call.args]
-        self.assertTrue(any("Install complete. Next: run `openpipixia gateway`." in line for line in lines))
+        self.assertTrue(any("Install complete. Next: run `ppx gateway`." in line for line in lines))
 
 
     def test_doctor_channel_backfill_schema_matches_channel_env_mappings(self) -> None:
@@ -751,7 +751,7 @@ class CLITests(unittest.TestCase):
                     with patch.object(cli, "get_data_dir", return_value=data):
                         with patch.object(cli, "get_config_path", return_value=data / "config.json"):
                             with patch.object(cli, "load_config", return_value=cli.default_config()):
-                                with patch.object(cli.shutil, "which", return_value="/usr/local/bin/openpipixia"):
+                                with patch.object(cli.shutil, "which", return_value="/usr/local/bin/ppx"):
                                     with patch("builtins.print") as mocked_print:
                                         code = cli._cmd_gateway_service_install(
                                             force=False,
@@ -762,7 +762,7 @@ class CLITests(unittest.TestCase):
             manifest_path = home / "Library" / "LaunchAgents" / "openpipixia-gateway.plist"
             self.assertTrue(manifest_path.exists())
             content = manifest_path.read_text(encoding="utf-8")
-            self.assertIn("/usr/local/bin/openpipixia", content)
+            self.assertIn("/usr/local/bin/ppx", content)
             self.assertIn("<string>gateway</string>", content)
             self.assertIn("<string>run</string>", content)
             lines = [call.args[0] for call in mocked_print.call_args_list if call.args]
@@ -804,7 +804,7 @@ class CLITests(unittest.TestCase):
                     with patch.object(cli, "get_data_dir", return_value=data):
                         with patch.object(cli, "get_config_path", return_value=data / "config.json"):
                             with patch.object(cli, "load_config", return_value=cli.default_config()):
-                                with patch.object(cli.shutil, "which", return_value="/usr/local/bin/openpipixia"):
+                                with patch.object(cli.shutil, "which", return_value="/usr/local/bin/ppx"):
                                     with patch.object(cli.subprocess, "run") as mocked_run:
                                         code = cli._cmd_gateway_service_install(
                                             force=False,
@@ -832,7 +832,7 @@ class CLITests(unittest.TestCase):
                     with patch.object(cli, "get_data_dir", return_value=data):
                         with patch.object(cli, "get_config_path", return_value=data / "config.json"):
                             with patch.object(cli, "load_config", return_value=cli.default_config()):
-                                with patch.object(cli.shutil, "which", return_value="/usr/local/bin/openpipixia"):
+                                with patch.object(cli.shutil, "which", return_value="/usr/local/bin/ppx"):
                                     with patch.object(
                                         cli.subprocess,
                                         "run",
@@ -2122,7 +2122,7 @@ class CLITests(unittest.TestCase):
 
     def test_script_entrypoint_accepts_m(self) -> None:
         project_root = Path(__file__).resolve().parents[1]
-        script_path = project_root / "openpipixia-cli"
+        script_path = project_root / "ppx"
         self.assertTrue(script_path.exists())
 
     def test_cmd_message_collects_final_text(self) -> None:

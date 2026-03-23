@@ -146,7 +146,7 @@ def _get_codex_token() -> Any:
     token = get_token()
     if not token or not getattr(token, "access", ""):
         raise RuntimeError(
-            "OpenAI Codex OAuth token missing. Run: openpipixia provider login openai-codex"
+            "OpenAI Codex OAuth token missing. Run: ppx provider login openai-codex"
         )
     if not getattr(token, "account_id", ""):
         raise RuntimeError("OpenAI Codex OAuth token is missing account_id.")
@@ -416,7 +416,7 @@ def _map_finish_reason(status: str) -> types.FinishReason:
 def _friendly_error(status_code: int, body_text: str) -> str:
     """Render user-friendly transport error for Codex responses API."""
     if status_code == 401:
-        return "Codex authentication failed. Please re-run: openpipixia provider login openai-codex"
+        return "Codex authentication failed. Please re-run: ppx provider login openai-codex"
     if status_code == 429:
         return "Codex quota exceeded or rate limited. Please retry later."
     return f"Codex HTTP {status_code}: {body_text}"

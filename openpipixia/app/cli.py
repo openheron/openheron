@@ -531,7 +531,7 @@ def _provider_oauth_health(provider_name: str) -> tuple[str | None, dict[str, An
             return None, status
         return (
             "OpenAI Codex OAuth token is not ready "
-            f"({detail}). Run: openpipixia provider login openai-codex",
+            f"({detail}). Run: ppx provider login openai-codex",
             status,
         )
 
@@ -543,7 +543,7 @@ def _provider_oauth_health(provider_name: str) -> tuple[str | None, dict[str, An
             return None, status
         return (
             "GitHub Copilot OAuth token cache is not ready "
-            f"({detail}). Run: openpipixia provider login github-copilot",
+            f"({detail}). Run: ppx provider login github-copilot",
             status,
         )
 
@@ -1928,7 +1928,7 @@ def _check_whatsapp_bridge_ready() -> str | None:
     except OSError as exc:
         return (
             f"WhatsApp bridge is unreachable at {bridge_url} ({exc}). "
-            "Run: openpipixia channels bridge start"
+            "Run: ppx channels bridge start"
         )
     return None
 
@@ -2077,8 +2077,8 @@ def _cmd_install_init_setup(force: bool) -> int:
     print(f"2. Optional advanced tuning: {result.runtime_config_path}")
     print("3. Configure providers/channels/web sections and their `enabled` flags")
     print("4. Fill providers.<provider>.apiKey for the enabled provider (and channel credentials if needed)")
-    print("5. Start gateway: openpipixia gateway")
-    print("6. Dry run: openpipixia doctor")
+    print("5. Start gateway: ppx gateway")
+    print("6. Dry run: ppx doctor")
     return 0
 
 
@@ -2199,14 +2199,14 @@ def _cmd_init(*, force: bool) -> int:
     _stdout_line("- skills/: place per-agent local skills (each skill as <name>/SKILL.md).")
     _stdout_line("Next steps:")
     _stdout_line("1. Configure related config files (global_config.json and per-agent config/runtime/workspace files).")
-    _stdout_line("2. openpipixia doctor  # check whether current config is valid and runnable")
+    _stdout_line("2. ppx doctor  # check whether current config is valid and runnable")
     _stdout_line(
-        "3. openpipixia --config-path "
+        "3. ppx --config-path "
         f"{str(_agent_config_path(_INIT_DEFAULT_AGENT_NAMES[0]))} "
         "gateway run --channels local --interactive-local "
         "# try local interactive experience first"
     )
-    _stdout_line("4. openpipixia gateway start  # start real background gateway service journey")
+    _stdout_line("4. ppx gateway start  # start real background gateway service journey")
     return 0
 
 
@@ -2279,13 +2279,13 @@ def _render_init_sections_with_rich(
     )
     next_steps.add_row(
         "2",
-        "openpipixia doctor",
+        "ppx doctor",
         "Validate config and runtime readiness.",
     )
     next_steps.add_row(
         "3",
         (
-            "openpipixia --config-path "
+            "ppx --config-path "
             f"{str(_agent_config_path(_INIT_DEFAULT_AGENT_NAMES[0]))} "
             "gateway run --channels local --interactive-local"
         ),
@@ -2293,7 +2293,7 @@ def _render_init_sections_with_rich(
     )
     next_steps.add_row(
         "4",
-        "openpipixia gateway start",
+        "ppx gateway start",
         "Start background gateway for daily usage.",
     )
     console.print(Panel(next_steps, title="[bold]Next Steps[/bold]", border_style="blue"))
@@ -2447,9 +2447,9 @@ def _cmd_install(
         _render_install_step_outcome_with_rich(
             step=2, total=total_steps, outcome="fail", message="doctor reported issues"
         )
-        _stdout_line("Install completed with issues. Fix the items above, then rerun `openpipixia doctor`.")
+        _stdout_line("Install completed with issues. Fix the items above, then rerun `ppx doctor`.")
         _render_install_action_plan_with_rich(
-            commands=["openpipixia doctor"],
+            commands=["ppx doctor"],
             title="Retry Plan",
         )
         return 1
@@ -2457,9 +2457,9 @@ def _cmd_install(
         step=2, total=total_steps, outcome="done", message="environment checks passed"
     )
 
-    _stdout_line("Install complete. Next: run `openpipixia gateway`.")
+    _stdout_line("Install complete. Next: run `ppx gateway`.")
     _render_install_action_plan_with_rich(
-        commands=["openpipixia doctor", "openpipixia gateway"],
+        commands=["ppx doctor", "ppx gateway"],
     )
     return 0
 
@@ -2937,7 +2937,7 @@ def _cmd_gateway_start(*, channels: str | None, sender_id: str, chat_id: str) ->
             "Gateway service already running in multi-agent mode: "
             + (", ".join(names) if names else f"{len(running_multi)} process(es)")
         )
-        _stdout_line("Use `openpipixia gateway status` or `openpipixia gateway restart`.")
+        _stdout_line("Use `ppx gateway status` or `ppx gateway restart`.")
         return 0
     if multi_meta and not running_multi:
         _gateway_cleanup_multi_runtime_files()
@@ -2945,7 +2945,7 @@ def _cmd_gateway_start(*, channels: str | None, sender_id: str, chat_id: str) ->
     existing_single = _read_gateway_pid()
     if existing_single and _is_pid_running(existing_single):
         _stdout_line(f"Gateway service already running (pid={existing_single}).")
-        _stdout_line("Use `openpipixia gateway status` or `openpipixia gateway restart`.")
+        _stdout_line("Use `ppx gateway status` or `ppx gateway restart`.")
         return 0
     if existing_single and not _is_pid_running(existing_single):
         _gateway_cleanup_runtime_files()
@@ -3436,9 +3436,9 @@ def _gateway_service_manifest_path(manager: str, service_name: str) -> Path:
 def _gateway_service_exec_argv(channels: str) -> tuple[str, list[str]]:
     """Return executable argv used by generated gateway service manifests."""
 
-    openpipixia_bin = shutil.which("openpipixia")
-    if openpipixia_bin:
-        return openpipixia_bin, ["gateway", "run", "--channels", channels]
+    ppx_bin = shutil.which("ppx")
+    if ppx_bin:
+        return ppx_bin, ["gateway", "run", "--channels", channels]
     return sys.executable, ["-m", "openpipixia.app.cli", "gateway", "run", "--channels", channels]
 
 
@@ -3509,14 +3509,14 @@ def _cmd_gateway_service_install(*, force: bool, channels: str, enable: bool) ->
         disable_hint = f"systemctl --user disable --now {service_name}.service"
 
     manifest_path.write_text(manifest, encoding="utf-8")
-    _stdout_line("Gateway service install: this config lets OS user service manager run `openpipixia gateway run`.")
+    _stdout_line("Gateway service install: this config lets OS user service manager run `ppx gateway run`.")
     _stdout_line(f"Gateway service manifest written: {manifest_path}")
     _stdout_line(f"Gateway service manager: {manager}")
     _stdout_line(f"Gateway service channels: {channels_value}")
     _stdout_line(f"Gateway service logs: stdout={stdout_log}, stderr={stderr_log}")
     _stdout_line(f"Next step (enable/start): {enable_hint}")
     _stdout_line(f"Stop/disable command: {disable_hint}")
-    _stdout_line("Tip: use `openpipixia gateway status` for process status, `openpipixia gateway-service status` for manifest state.")
+    _stdout_line("Tip: use `ppx gateway status` for process status, `ppx gateway-service status` for manifest state.")
     if enable:
         ok, message = _run_gateway_service_enable(
             manager=manager,
@@ -3560,10 +3560,10 @@ def _cmd_gateway_service_status(*, output_json: bool) -> int:
                 f"manifest_exists={payload.get('manifestExists')}"
             )
             if payload.get("manifestExists"):
-                _stdout_line("Manifest is ready. If service is not running yet, run `openpipixia gateway-service install --enable`.")
+                _stdout_line("Manifest is ready. If service is not running yet, run `ppx gateway-service install --enable`.")
             else:
-                _stdout_line("Manifest not found. Run `openpipixia gateway-service install` first.")
-            _stdout_line("Note: this checks service manifest only; use `openpipixia gateway status` for process runtime state.")
+                _stdout_line("Manifest not found. Run `ppx gateway-service install` first.")
+            _stdout_line("Note: this checks service manifest only; use `ppx gateway status` for process runtime state.")
     return 0
 
 
@@ -3576,7 +3576,7 @@ def _should_require_agent_config_for_gateway(args: argparse.Namespace) -> bool:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        prog="openpipixia",
+        prog="ppx",
         description="Lightweight skills-only agent based on Google ADK.",
     )
     parser.add_argument("-m", "--message", help="Run a single-turn request and print the response.")
@@ -3684,7 +3684,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     provider_parser = subparsers.add_parser("provider", help="Manage runtime LLM providers.")
     provider_subparsers = provider_parser.add_subparsers(dest="provider_command", required=True)
-    provider_list_parser = provider_subparsers.add_parser("list", help="List providers available to openpipixia.")
+    provider_list_parser = provider_subparsers.add_parser("list", help="List providers available to ppx.")
     provider_list_parser.add_argument(
         "--verbose",
         action="store_true",
@@ -3838,7 +3838,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     gateway_service_parser = subparsers.add_parser(
         "gateway-service",
-        help="Manage OS user service config (launchd/systemd) that runs `openpipixia gateway run`.",
+        help="Manage OS user service config (launchd/systemd) that runs `ppx gateway run`.",
         description=(
             "Service-manager integration for gateway. This does not directly run foreground gateway; "
             "it installs/checks launchd/systemd user manifests used to auto-run gateway."
@@ -3851,7 +3851,7 @@ def main(argv: list[str] | None = None) -> None:
         "install",
         help="Install service manifest and optionally enable/start it.",
         description=(
-            "Write launchd/systemd user manifest that executes `openpipixia gateway run --channels ...`.\n"
+            "Write launchd/systemd user manifest that executes `ppx gateway run --channels ...`.\n"
             "Use --enable to start service immediately via launchctl/systemctl."
         ),
     )
@@ -3873,7 +3873,7 @@ def main(argv: list[str] | None = None) -> None:
     gateway_service_status_parser = gateway_service_subparsers.add_parser(
         "status",
         help="Show whether service manifest exists and where it is located.",
-        description="Inspect launchd/systemd user manifest state for openpipixia gateway service.",
+        description="Inspect launchd/systemd user manifest state for ppx gateway service.",
     )
     gateway_service_status_parser.add_argument(
         "--json",
@@ -3899,7 +3899,7 @@ def main(argv: list[str] | None = None) -> None:
                 )
                 _stdout_line(
                     "Please pass --config-path explicitly, e.g.: "
-                    f"openpipixia --config-path {str(_agent_config_path(enabled_agents[0]))} gateway run"
+                    f"ppx --config-path {str(_agent_config_path(enabled_agents[0]))} gateway run"
                 )
                 raise SystemExit(1)
     if args.command not in {"install", "init"}:
