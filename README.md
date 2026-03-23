@@ -1,5 +1,5 @@
 <div align="center">
- <img src="assets/openpipixia_logo_2.png" alt="openpipixia" width="500">
+ <img src="assets/openpipixia_logo_3.png" alt="openpipixia" width="500">
   <h1>OpenPipixia: A Lightweight Personal AI Assistant 🚀</h1>
 </div>
 
