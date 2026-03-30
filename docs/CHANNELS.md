@@ -300,6 +300,7 @@ This prints a QR code or login URL in the terminal. After you confirm the login 
     "weixin": {
       "enabled": true,
       "baseUrl": "https://ilinkai.weixin.qq.com",
+      "cdnBaseUrl": "https://novac2c.cdn.weixin.qq.com/c2c",
       "token": "",
       "stateDir": "",
       "pollTimeoutSeconds": 35,
