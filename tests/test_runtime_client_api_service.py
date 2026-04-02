@@ -115,7 +115,7 @@ def test_project_session_event_builds_structured_parts() -> None:
     assert message["parts"][0]["type"] == "markdown"
     assert message["parts"][1]["type"] == "step_ref"
     assert message["parts"][2]["type"] == "step_ref"
-    assert message["parts"][3]["type"] == "code"
+    assert message["parts"][3]["type"] == "tool_result"
 
 
 def test_project_session_event_skips_unrenderable_events() -> None:

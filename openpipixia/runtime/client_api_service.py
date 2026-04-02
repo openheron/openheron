@@ -224,6 +224,39 @@ def _error_part_payload(*, code: str, text: str) -> dict[str, Any]:
     }
 
 
+def _tool_result_payload(*, tool_name: str, summary: str, detail: str, raw_text: str) -> dict[str, Any]:
+    """Build one client-facing tool result part payload."""
+
+    return {
+        "type": "tool_result",
+        "tool_name": tool_name,
+        "summary": summary,
+        "detail": detail,
+        "raw_text": raw_text,
+    }
+
+
+def _tool_result_summary(tool_name: str, response: Any) -> str:
+    """Build a short human-readable summary for one tool response."""
+
+    if isinstance(response, dict):
+        message = response.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+        summary = response.get("summary")
+        if isinstance(summary, str) and summary.strip():
+            return summary.strip()
+        ok = response.get("ok")
+        if isinstance(ok, bool):
+            return f"{tool_name} returned successfully." if ok else f"{tool_name} reported a failure."
+        keys = list(response.keys())
+        if keys:
+            return f"{tool_name} returned {len(keys)} fields."
+    if isinstance(response, str) and response.strip():
+        return response.strip()[:140]
+    return f"{tool_name} returned a result."
+
+
 def _event_preview_text(event: dict[str, Any]) -> str:
     """Build a lightweight session preview string from one serialized event."""
 
@@ -288,21 +321,24 @@ def project_session_event(event: dict[str, Any], session_id: str) -> dict[str, A
         function_response = raw_part.get("function_response")
         if isinstance(function_response, dict):
             step_id = str(function_response.get("id") or function_response.get("name") or "tool")
+            tool_name = str(function_response.get("name") or "tool")
+            response = function_response.get("response") or {}
             parts.append(
                 {
                     "type": "step_ref",
                     "step_id": step_id,
-                    "title": str(function_response.get("name") or "tool"),
+                    "title": tool_name,
                     "status": "completed",
-                    "detail": _preview_value(function_response.get("response"), "Tool returned without a payload"),
+                    "detail": _preview_value(response, "Tool returned without a payload"),
                 }
             )
             parts.append(
-                {
-                    "type": "code",
-                    "language": "json",
-                    "text": json.dumps(function_response.get("response") or {}, ensure_ascii=False, indent=2),
-                }
+                _tool_result_payload(
+                    tool_name=tool_name,
+                    summary=_tool_result_summary(tool_name, response),
+                    detail=_preview_value(response, "Tool returned without a payload"),
+                    raw_text=json.dumps(response, ensure_ascii=False, indent=2),
+                )
             )
     if not parts:
         return None
