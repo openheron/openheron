@@ -9,20 +9,18 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
-import ipaddress
 import json
 import os
-import socket
 from typing import Any, Protocol
 from urllib.parse import urlparse
 import uuid
 
 from .schema import apply_status_metadata, make_profile_entry, make_runtime_capability
+from ..core.security import validate_network_url
 from ..core.env_utils import env_enabled
 
 
 _SUPPORTED_SCHEMES = {"http", "https", "about"}
-_LOCAL_HOSTS = {"localhost", "localhost.localdomain"}
 _SUPPORTED_PROFILES = {"openpipixia", "chrome"}
 _OPENPIPIXIA_ACTIONS = [
     "status",
@@ -168,48 +166,6 @@ class BrowserRuntime(Protocol):
         """Arm dialog handling for the current page."""
 
 
-def _is_private_or_local_ip(raw_ip: str) -> bool:
-    try:
-        ip = ipaddress.ip_address(raw_ip)
-    except ValueError:
-        return False
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_multicast
-        or ip.is_reserved
-        or ip.is_unspecified
-    )
-
-
-def _validate_private_network_policy(hostname: str) -> None:
-    if not env_enabled("OPENPIPIXIA_BROWSER_BLOCK_PRIVATE_NETWORKS", default=True):
-        return
-
-    normalized = hostname.strip().lower()
-    if not normalized:
-        return
-    if normalized in _LOCAL_HOSTS or normalized.endswith(".localhost"):
-        raise BrowserRuntimeError("navigation to private host is blocked by policy")
-    if _is_private_or_local_ip(normalized):
-        raise BrowserRuntimeError("navigation to private host is blocked by policy")
-
-    if not env_enabled("OPENPIPIXIA_BROWSER_BLOCK_PRIVATE_DNS", default=False):
-        return
-
-    try:
-        infos = socket.getaddrinfo(normalized, None)
-    except OSError:
-        # Keep navigation available when DNS cannot be resolved in current environment.
-        return
-    for info in infos:
-        sockaddr = info[4]
-        ip_text = str(sockaddr[0]) if isinstance(sockaddr, tuple) and sockaddr else ""
-        if ip_text and _is_private_or_local_ip(ip_text):
-            raise BrowserRuntimeError("navigation to private host is blocked by policy")
-
-
 def validate_browser_url(url: str) -> None:
     parsed = urlparse(url)
     if parsed.scheme not in _SUPPORTED_SCHEMES:
@@ -217,7 +173,17 @@ def validate_browser_url(url: str) -> None:
     if parsed.scheme in {"http", "https"} and not parsed.netloc:
         raise BrowserRuntimeError("target_url must include host for http/https")
     if parsed.scheme in {"http", "https"}:
-        _validate_private_network_policy(parsed.hostname or "")
+        error = validate_network_url(
+            url,
+            allowed_schemes=("http", "https", "about"),
+            require_host=True,
+            block_private_env="OPENPIPIXIA_BROWSER_BLOCK_PRIVATE_NETWORKS",
+            block_private_default=True,
+            block_dns_env="OPENPIPIXIA_BROWSER_BLOCK_PRIVATE_DNS",
+            block_dns_default=False,
+        )
+        if error:
+            raise BrowserRuntimeError(error)
 
 
 def _resolve_upload_root() -> str:
