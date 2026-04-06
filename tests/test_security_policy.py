@@ -25,7 +25,7 @@ class SecurityPolicyTests(unittest.TestCase):
 
     def test_load_security_policy_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             policy = load_security_policy()
 
         self.assertFalse(policy.restrict_to_workspace)
@@ -36,10 +36,10 @@ class SecurityPolicyTests(unittest.TestCase):
 
     def test_policy_reads_explicit_flags(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
-            os.environ["OPENPIPIXIA_RESTRICT_TO_WORKSPACE"] = "1"
-            os.environ["OPENPIPIXIA_ALLOW_EXEC"] = "0"
-            os.environ["OPENPIPIXIA_ALLOW_NETWORK"] = "0"
+            os.environ["OPENPPX_WORKSPACE"] = tmp
+            os.environ["OPENPPX_RESTRICT_TO_WORKSPACE"] = "1"
+            os.environ["OPENPPX_ALLOW_EXEC"] = "0"
+            os.environ["OPENPPX_ALLOW_NETWORK"] = "0"
             policy = load_security_policy()
 
         self.assertTrue(policy.restrict_to_workspace)
@@ -48,8 +48,8 @@ class SecurityPolicyTests(unittest.TestCase):
 
     def test_allowlist_is_parsed_and_deduplicated(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
-            os.environ["OPENPIPIXIA_EXEC_ALLOWLIST"] = "python, ls,python"
+            os.environ["OPENPPX_WORKSPACE"] = tmp
+            os.environ["OPENPPX_EXEC_ALLOWLIST"] = "python, ls,python"
             policy = load_security_policy()
 
         self.assertEqual(policy.exec_allowlist, ("python", "ls"))
@@ -62,7 +62,7 @@ class SecurityPolicyTests(unittest.TestCase):
         self.assertIn("blocked", error.lower())
 
     def test_validate_network_url_allows_private_hosts_when_policy_disabled(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_BLOCK_PRIVATE_NETWORKS"] = "0"
+        os.environ["OPENPPX_BROWSER_BLOCK_PRIVATE_NETWORKS"] = "0"
         error = validate_network_url("http://127.0.0.1:8080")
         self.assertIsNone(error)
 

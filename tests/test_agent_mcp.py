@@ -32,7 +32,7 @@ class AgentMcpTests(unittest.TestCase):
         from openpipixia import agent
         from openpipixia.tooling.registry import computer_task, computer_use
 
-        with patch.dict(os.environ, {"OPENPIPIXIA_GUI_BUILTIN_TOOLS_ENABLED": "0"}, clear=False):
+        with patch.dict(os.environ, {"OPENPPX_GUI_BUILTIN_TOOLS_ENABLED": "0"}, clear=False):
             with patch("openpipixia.app.agent.build_mcp_toolsets_from_env", return_value=[]):
                 tools = agent._build_tools()
         self.assertNotIn(computer_task, tools)
@@ -44,7 +44,7 @@ class AgentMcpTests(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "OPENPIPIXIA_MCP_SERVERS_JSON": (
+                "OPENPPX_MCP_SERVERS_JSON": (
                     '{"gui_remote":{"enabled":true,"command":"openpipixia-gui-mcp","toolNamePrefix":"desktop_"}}'
                 )
             },
@@ -60,7 +60,7 @@ class AgentMcpTests(unittest.TestCase):
 
         with patch.dict(
             os.environ,
-            {"OPENPIPIXIA_AGENT_ROLE": "Assistant", "OPENPIPIXIA_CAN_DELEGATE": "0"},
+            {"OPENPPX_AGENT_ROLE": "Assistant", "OPENPPX_CAN_DELEGATE": "0"},
             clear=False,
         ):
             with patch("openpipixia.app.agent.build_mcp_toolsets_from_env", return_value=[]):
@@ -78,7 +78,7 @@ class AgentMcpTests(unittest.TestCase):
 
         with patch.dict(
             os.environ,
-            {"OPENPIPIXIA_AGENT_ROLE": "Operator", "OPENPIPIXIA_CAN_DELEGATE": "1"},
+            {"OPENPPX_AGENT_ROLE": "Operator", "OPENPPX_CAN_DELEGATE": "1"},
             clear=False,
         ):
             with patch("openpipixia.app.agent.build_mcp_toolsets_from_env", return_value=[]):

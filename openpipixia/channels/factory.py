@@ -13,7 +13,7 @@ from .registry import get_channel_spec, known_channel_names
 
 def parse_enabled_channels(channels: str | None) -> list[str]:
     """Parse channel list from CLI arg or env."""
-    raw = channels if channels is not None else os.getenv("OPENPIPIXIA_CHANNELS", "local")
+    raw = channels if channels is not None else os.getenv("OPENPPX_CHANNELS", "local")
     names = [item.strip().lower() for item in raw.split(",") if item.strip()]
     if not names:
         return ["local"]

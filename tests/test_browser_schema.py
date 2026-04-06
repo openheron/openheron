@@ -55,7 +55,7 @@ class BrowserSchemaTests(unittest.TestCase):
             available=True,
             attach_mode="launch-or-cdp",
             ownership_model={"browser": "owned"},
-            requires={"OPENPIPIXIA_BROWSER_CDP_URL": False},
+            requires={"OPENPPX_BROWSER_CDP_URL": False},
         )
         self.assertEqual(entry["attachMode"], "launch-or-cdp")
         self.assertIn("ownershipModel", entry)
@@ -94,7 +94,7 @@ class BrowserSchemaTests(unittest.TestCase):
                     {
                         "name": "chrome",
                         "attachMode": "cdp-required",
-                        "requires": {"OPENPIPIXIA_BROWSER_CHROME_CDP_URL": True},
+                        "requires": {"OPENPPX_BROWSER_CHROME_CDP_URL": True},
                         "ownershipModel": {"browser": "borrowed"},
                         "capability": {
                             "backend": "extension-relay",

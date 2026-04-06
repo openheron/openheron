@@ -86,8 +86,8 @@ class BrowserControlService:
 
     def __init__(self) -> None:
         self._registry = _Registry()
-        self._auth_token = os.getenv("OPENPIPIXIA_BROWSER_CONTROL_TOKEN", "").strip() or None
-        mutation_token = os.getenv("OPENPIPIXIA_BROWSER_MUTATION_TOKEN", "").strip() or None
+        self._auth_token = os.getenv("OPENPPX_BROWSER_CONTROL_TOKEN", "").strip() or None
+        mutation_token = os.getenv("OPENPPX_BROWSER_MUTATION_TOKEN", "").strip() or None
         # Reuse auth token as mutation token by default so enabling auth is enough
         # to protect mutating actions.
         self._mutation_token = mutation_token if mutation_token is not None else self._auth_token

@@ -88,47 +88,47 @@ class ConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             config_path = Path(tmp) / "agent_1" / "config.json"
             runtime_path = config_path.with_name("runtime.json")
-            os.environ["OPENPIPIXIA_CONFIG_FILE"] = str(config_path)
-            os.environ.pop("OPENPIPIXIA_RUNTIME_CONFIG_FILE", None)
-            os.environ.pop("OPENPIPIXIA_DATA_DIR", None)
+            os.environ["OPENPPX_CONFIG_FILE"] = str(config_path)
+            os.environ.pop("OPENPPX_RUNTIME_CONFIG_FILE", None)
+            os.environ.pop("OPENPPX_DATA_DIR", None)
 
             self.assertEqual(get_config_path(), config_path)
             self.assertEqual(get_runtime_config_path(), runtime_path)
-            self.assertEqual(get_data_dir(), Path.home() / ".openpipixia")
+            self.assertEqual(get_data_dir(), Path.home() / ".openppx")
 
     def test_bootstrap_sets_process_config_runtime_data_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config_path = Path(tmp) / "agent_a" / "config.json"
             cfg = default_config()
             save_config(cfg, config_path)
-            os.environ.pop("OPENPIPIXIA_CONFIG_FILE", None)
-            os.environ.pop("OPENPIPIXIA_RUNTIME_CONFIG_FILE", None)
-            os.environ.pop("OPENPIPIXIA_DATA_DIR", None)
+            os.environ.pop("OPENPPX_CONFIG_FILE", None)
+            os.environ.pop("OPENPPX_RUNTIME_CONFIG_FILE", None)
+            os.environ.pop("OPENPPX_DATA_DIR", None)
 
             loaded = bootstrap_env_from_config(config_path)
 
         self.assertIsNotNone(loaded)
         self.assertEqual(
-            Path(os.environ["OPENPIPIXIA_CONFIG_FILE"]).resolve(),
+            Path(os.environ["OPENPPX_CONFIG_FILE"]).resolve(),
             config_path.resolve(),
         )
         self.assertEqual(
-            Path(os.environ["OPENPIPIXIA_RUNTIME_CONFIG_FILE"]).resolve(),
+            Path(os.environ["OPENPPX_RUNTIME_CONFIG_FILE"]).resolve(),
             config_path.with_name("runtime.json").resolve(),
         )
         self.assertEqual(
-            Path(os.environ["OPENPIPIXIA_DATA_DIR"]).resolve(),
+            Path(os.environ["OPENPPX_DATA_DIR"]).resolve(),
             config_path.parent.resolve(),
         )
 
     def test_load_runtime_missing_returns_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             runtime_cfg = load_runtime_config(Path(tmp) / "runtime.json")
-        self.assertTrue(runtime_cfg["env"]["OPENPIPIXIA_MEMORY_ENABLED"])
-        self.assertEqual(runtime_cfg["env"]["OPENPIPIXIA_MEMORY_BACKEND"], "markdown")
-        self.assertEqual(runtime_cfg["env"]["OPENPIPIXIA_COMPACTION_INTERVAL"], 8)
-        self.assertEqual(runtime_cfg["env"]["OPENPIPIXIA_MCP_DOCTOR_TIMEOUT_SECONDS"], 5)
-        self.assertEqual(runtime_cfg["env"]["OPENPIPIXIA_DEBUG_MAX_CHARS"], 0)
+        self.assertTrue(runtime_cfg["env"]["OPENPPX_MEMORY_ENABLED"])
+        self.assertEqual(runtime_cfg["env"]["OPENPPX_MEMORY_BACKEND"], "markdown")
+        self.assertEqual(runtime_cfg["env"]["OPENPPX_COMPACTION_INTERVAL"], 8)
+        self.assertEqual(runtime_cfg["env"]["OPENPPX_MCP_DOCTOR_TIMEOUT_SECONDS"], 5)
+        self.assertEqual(runtime_cfg["env"]["OPENPPX_DEBUG_MAX_CHARS"], 0)
 
     def test_save_then_load_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -147,30 +147,30 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(loaded["channels"]["feishu"]["appSecret"], "app-secret-1")
 
     def test_apply_config_to_env_respects_existing_values(self) -> None:
-        os.environ["OPENPIPIXIA_MODEL"] = "from-shell"
+        os.environ["OPENPPX_MODEL"] = "from-shell"
         os.environ["GOOGLE_API_KEY"] = "key-from-shell"
         cfg = default_config()
         cfg["providers"]["google"]["model"] = "from-config"
         cfg["providers"]["google"]["apiKey"] = "key-from-config"
         apply_config_to_env(cfg, overwrite=False)
-        self.assertEqual(os.environ["OPENPIPIXIA_MODEL"], "from-shell")
+        self.assertEqual(os.environ["OPENPPX_MODEL"], "from-shell")
         self.assertEqual(os.environ["GOOGLE_API_KEY"], "key-from-shell")
 
         apply_config_to_env(cfg, overwrite=True)
-        self.assertEqual(os.environ["OPENPIPIXIA_MODEL"], "from-config")
+        self.assertEqual(os.environ["OPENPPX_MODEL"], "from-config")
         self.assertEqual(os.environ["GOOGLE_API_KEY"], "key-from-config")
 
     def test_apply_config_to_env_preserves_explicit_shell_debug_flags(self) -> None:
         cfg = default_config()
         cfg["debug"] = False
 
-        os.environ["OPENPIPIXIA_DEBUG"] = "1"
-        os.environ["OPENPIPIXIA_DEBUG_LOG_PATH"] = "/tmp/openppx-debug.log"
+        os.environ["OPENPPX_DEBUG"] = "1"
+        os.environ["OPENPPX_DEBUG_LOG_PATH"] = "/tmp/openppx-debug.log"
 
         apply_config_to_env(cfg, overwrite=True)
 
-        self.assertEqual(os.environ["OPENPIPIXIA_DEBUG"], "1")
-        self.assertEqual(os.environ["OPENPIPIXIA_DEBUG_LOG_PATH"], "/tmp/openppx-debug.log")
+        self.assertEqual(os.environ["OPENPPX_DEBUG"], "1")
+        self.assertEqual(os.environ["OPENPPX_DEBUG_LOG_PATH"], "/tmp/openppx-debug.log")
 
     def test_apply_agent_role_defaults_syncs_assistant_permissions(self) -> None:
         cfg = default_config()
@@ -193,8 +193,8 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(cfg["security"]["restrictToWorkspace"])
         self.assertTrue(cfg["security"]["allowExec"])
         self.assertTrue(cfg["security"]["allowNetwork"])
-        self.assertEqual(env["OPENPIPIXIA_AGENT_ROLE"], "Operator")
-        self.assertEqual(env["OPENPIPIXIA_FILESYSTEM_ACCESS"], "read_write")
+        self.assertEqual(env["OPENPPX_AGENT_ROLE"], "Operator")
+        self.assertEqual(env["OPENPPX_FILESYSTEM_ACCESS"], "read_write")
 
     def test_default_channel_streaming_flags(self) -> None:
         cfg = default_config()
@@ -286,18 +286,18 @@ class ConfigTests(unittest.TestCase):
             cfg["security"]["execAllowlist"] = ["python", "ls", "python"]
             save_config(cfg, path)
 
-            os.environ.pop("OPENPIPIXIA_CHANNELS", None)
-            os.environ.pop("OPENPIPIXIA_HEARTBEAT_EVERY", None)
-            os.environ.pop("OPENPIPIXIA_HEARTBEAT_PROMPT", None)
-            os.environ.pop("OPENPIPIXIA_HEARTBEAT_ACK_MAX_CHARS", None)
-            os.environ.pop("OPENPIPIXIA_HEARTBEAT_SHOW_OK", None)
-            os.environ.pop("OPENPIPIXIA_HEARTBEAT_SHOW_ALERTS", None)
-            os.environ.pop("OPENPIPIXIA_HEARTBEAT_TARGET", None)
-            os.environ.pop("OPENPIPIXIA_HEARTBEAT_TARGET_CHANNEL", None)
-            os.environ.pop("OPENPIPIXIA_HEARTBEAT_TARGET_CHAT_ID", None)
-            os.environ.pop("OPENPIPIXIA_HEARTBEAT_ACTIVE_HOURS_START", None)
-            os.environ.pop("OPENPIPIXIA_HEARTBEAT_ACTIVE_HOURS_END", None)
-            os.environ.pop("OPENPIPIXIA_HEARTBEAT_ACTIVE_HOURS_TIMEZONE", None)
+            os.environ.pop("OPENPPX_CHANNELS", None)
+            os.environ.pop("OPENPPX_HEARTBEAT_EVERY", None)
+            os.environ.pop("OPENPPX_HEARTBEAT_PROMPT", None)
+            os.environ.pop("OPENPPX_HEARTBEAT_ACK_MAX_CHARS", None)
+            os.environ.pop("OPENPPX_HEARTBEAT_SHOW_OK", None)
+            os.environ.pop("OPENPPX_HEARTBEAT_SHOW_ALERTS", None)
+            os.environ.pop("OPENPPX_HEARTBEAT_TARGET", None)
+            os.environ.pop("OPENPPX_HEARTBEAT_TARGET_CHANNEL", None)
+            os.environ.pop("OPENPPX_HEARTBEAT_TARGET_CHAT_ID", None)
+            os.environ.pop("OPENPPX_HEARTBEAT_ACTIVE_HOURS_START", None)
+            os.environ.pop("OPENPPX_HEARTBEAT_ACTIVE_HOURS_END", None)
+            os.environ.pop("OPENPPX_HEARTBEAT_ACTIVE_HOURS_TIMEZONE", None)
             os.environ.pop("FEISHU_APP_ID", None)
             os.environ.pop("FEISHU_ALLOW_FROM", None)
             os.environ.pop("TELEGRAM_BOT_TOKEN", None)
@@ -336,29 +336,29 @@ class ConfigTests(unittest.TestCase):
             os.environ.pop("WECOM_SECRET", None)
             os.environ.pop("WECOM_ALLOW_FROM", None)
             os.environ.pop("WECOM_WELCOME_MESSAGE", None)
-            os.environ.pop("OPENPIPIXIA_SESSION_DB_URL", None)
+            os.environ.pop("OPENPPX_SESSION_DB_URL", None)
             os.environ.pop("GOOGLE_API_KEY", None)
             os.environ.pop("BRAVE_API_KEY", None)
-            os.environ.pop("OPENPIPIXIA_WEB_SEARCH_ENABLED", None)
-            os.environ.pop("OPENPIPIXIA_RESTRICT_TO_WORKSPACE", None)
-            os.environ.pop("OPENPIPIXIA_ALLOW_EXEC", None)
-            os.environ.pop("OPENPIPIXIA_ALLOW_NETWORK", None)
-            os.environ.pop("OPENPIPIXIA_EXEC_ALLOWLIST", None)
+            os.environ.pop("OPENPPX_WEB_SEARCH_ENABLED", None)
+            os.environ.pop("OPENPPX_RESTRICT_TO_WORKSPACE", None)
+            os.environ.pop("OPENPPX_ALLOW_EXEC", None)
+            os.environ.pop("OPENPPX_ALLOW_NETWORK", None)
+            os.environ.pop("OPENPPX_EXEC_ALLOWLIST", None)
             loaded = bootstrap_env_from_config(path)
 
         self.assertIsNotNone(loaded)
-        self.assertEqual(os.environ["OPENPIPIXIA_CHANNELS"], "feishu,telegram,whatsapp,discord,dingtalk,email,slack,qq,weixin,wecom")
-        self.assertEqual(os.environ["OPENPIPIXIA_HEARTBEAT_EVERY"], "15m")
-        self.assertEqual(os.environ["OPENPIPIXIA_HEARTBEAT_PROMPT"], "ops check")
-        self.assertEqual(os.environ["OPENPIPIXIA_HEARTBEAT_ACK_MAX_CHARS"], "120")
-        self.assertEqual(os.environ["OPENPIPIXIA_HEARTBEAT_SHOW_OK"], "1")
-        self.assertEqual(os.environ["OPENPIPIXIA_HEARTBEAT_SHOW_ALERTS"], "0")
-        self.assertEqual(os.environ["OPENPIPIXIA_HEARTBEAT_TARGET"], "channel")
-        self.assertEqual(os.environ["OPENPIPIXIA_HEARTBEAT_TARGET_CHANNEL"], "feishu")
-        self.assertEqual(os.environ["OPENPIPIXIA_HEARTBEAT_TARGET_CHAT_ID"], "ops-room")
-        self.assertEqual(os.environ["OPENPIPIXIA_HEARTBEAT_ACTIVE_HOURS_START"], "09:00")
-        self.assertEqual(os.environ["OPENPIPIXIA_HEARTBEAT_ACTIVE_HOURS_END"], "18:00")
-        self.assertEqual(os.environ["OPENPIPIXIA_HEARTBEAT_ACTIVE_HOURS_TIMEZONE"], "UTC")
+        self.assertEqual(os.environ["OPENPPX_CHANNELS"], "feishu,telegram,whatsapp,discord,dingtalk,email,slack,qq,weixin,wecom")
+        self.assertEqual(os.environ["OPENPPX_HEARTBEAT_EVERY"], "15m")
+        self.assertEqual(os.environ["OPENPPX_HEARTBEAT_PROMPT"], "ops check")
+        self.assertEqual(os.environ["OPENPPX_HEARTBEAT_ACK_MAX_CHARS"], "120")
+        self.assertEqual(os.environ["OPENPPX_HEARTBEAT_SHOW_OK"], "1")
+        self.assertEqual(os.environ["OPENPPX_HEARTBEAT_SHOW_ALERTS"], "0")
+        self.assertEqual(os.environ["OPENPPX_HEARTBEAT_TARGET"], "channel")
+        self.assertEqual(os.environ["OPENPPX_HEARTBEAT_TARGET_CHANNEL"], "feishu")
+        self.assertEqual(os.environ["OPENPPX_HEARTBEAT_TARGET_CHAT_ID"], "ops-room")
+        self.assertEqual(os.environ["OPENPPX_HEARTBEAT_ACTIVE_HOURS_START"], "09:00")
+        self.assertEqual(os.environ["OPENPPX_HEARTBEAT_ACTIVE_HOURS_END"], "18:00")
+        self.assertEqual(os.environ["OPENPPX_HEARTBEAT_ACTIVE_HOURS_TIMEZONE"], "UTC")
         self.assertEqual(os.environ["FEISHU_APP_ID"], "app-id")
         self.assertEqual(os.environ["FEISHU_ALLOW_FROM"], "ou_1,ou_2")
         self.assertEqual(os.environ["TELEGRAM_BOT_TOKEN"], "tg-token")
@@ -397,13 +397,13 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(os.environ["WECOM_SECRET"], "wecom-secret")
         self.assertEqual(os.environ["WECOM_ALLOW_FROM"], "wc_u1,wc_u2")
         self.assertEqual(os.environ["WECOM_WELCOME_MESSAGE"], "hello")
-        self.assertEqual(os.environ["OPENPIPIXIA_SESSION_DB_URL"], "sqlite+aiosqlite:////tmp/sessions.db")
+        self.assertEqual(os.environ["OPENPPX_SESSION_DB_URL"], "sqlite+aiosqlite:////tmp/sessions.db")
         self.assertEqual(os.environ["GOOGLE_API_KEY"], "google-key")
-        self.assertEqual(os.environ["OPENPIPIXIA_WEB_SEARCH_ENABLED"], "0")
-        self.assertEqual(os.environ["OPENPIPIXIA_RESTRICT_TO_WORKSPACE"], "1")
-        self.assertEqual(os.environ["OPENPIPIXIA_ALLOW_EXEC"], "0")
-        self.assertEqual(os.environ["OPENPIPIXIA_ALLOW_NETWORK"], "0")
-        self.assertEqual(os.environ["OPENPIPIXIA_EXEC_ALLOWLIST"], "python,ls")
+        self.assertEqual(os.environ["OPENPPX_WEB_SEARCH_ENABLED"], "0")
+        self.assertEqual(os.environ["OPENPPX_RESTRICT_TO_WORKSPACE"], "1")
+        self.assertEqual(os.environ["OPENPPX_ALLOW_EXEC"], "0")
+        self.assertEqual(os.environ["OPENPPX_ALLOW_NETWORK"], "0")
+        self.assertEqual(os.environ["OPENPPX_EXEC_ALLOWLIST"], "python,ls")
         self.assertNotIn("BRAVE_API_KEY", os.environ)
 
     def test_bootstrap_env_from_empty_object_falls_back_to_shell_env(self) -> None:
@@ -411,57 +411,57 @@ class ConfigTests(unittest.TestCase):
             path = Path(tmp) / "config.json"
             path.write_text("{}\n", encoding="utf-8")
 
-            os.environ["OPENPIPIXIA_PROVIDER"] = "openai"
-            os.environ["OPENPIPIXIA_MEMORY_BACKEND"] = "in_memory"
+            os.environ["OPENPPX_PROVIDER"] = "openai"
+            os.environ["OPENPPX_MEMORY_BACKEND"] = "in_memory"
             loaded = bootstrap_env_from_config(path)
 
         self.assertIsNone(loaded)
-        self.assertEqual(os.environ["OPENPIPIXIA_PROVIDER"], "openai")
-        self.assertEqual(os.environ["OPENPIPIXIA_MEMORY_BACKEND"], "in_memory")
+        self.assertEqual(os.environ["OPENPPX_PROVIDER"], "openai")
+        self.assertEqual(os.environ["OPENPPX_MEMORY_BACKEND"], "in_memory")
 
     def test_apply_config_to_env_clamps_invalid_heartbeat_ack_max_chars(self) -> None:
         cfg = default_config()
         cfg["agent"]["heartbeat"]["ackMaxChars"] = -99
         apply_config_to_env(cfg, overwrite=True)
-        self.assertEqual(os.environ["OPENPIPIXIA_HEARTBEAT_ACK_MAX_CHARS"], "0")
+        self.assertEqual(os.environ["OPENPPX_HEARTBEAT_ACK_MAX_CHARS"], "0")
 
     def test_bootstrap_env_supports_env_override_map_for_runtime_knobs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config.json"
             cfg = default_config()
             cfg["env"] = {
-                "OPENPIPIXIA_MEMORY_ENABLED": "0",
-                "OPENPIPIXIA_MEMORY_BACKEND": "in_memory",
-                "OPENPIPIXIA_MEMORY_MARKDOWN_DIR": "/tmp/custom-memory",
-                "OPENPIPIXIA_COMPACTION_INTERVAL": 12,
-                "OPENPIPIXIA_MCP_REQUIRED_SERVERS": "filesystem,notion",
-                "OPENPIPIXIA_SUBAGENT_MAX_CONCURRENCY": 4,
-                "OPENPIPIXIA_BOOTSTRAP_MAX_TOTAL_CHARS": 48000,
-                "OPENPIPIXIA_DEBUG_MAX_CHARS": 4000,
-                "OPENPIPIXIA_WHATSAPP_BRIDGE_PRECHECK": False,
+                "OPENPPX_MEMORY_ENABLED": "0",
+                "OPENPPX_MEMORY_BACKEND": "in_memory",
+                "OPENPPX_MEMORY_MARKDOWN_DIR": "/tmp/custom-memory",
+                "OPENPPX_COMPACTION_INTERVAL": 12,
+                "OPENPPX_MCP_REQUIRED_SERVERS": "filesystem,notion",
+                "OPENPPX_SUBAGENT_MAX_CONCURRENCY": 4,
+                "OPENPPX_BOOTSTRAP_MAX_TOTAL_CHARS": 48000,
+                "OPENPPX_DEBUG_MAX_CHARS": 4000,
+                "OPENPPX_WHATSAPP_BRIDGE_PRECHECK": False,
             }
             save_config(cfg, path)
 
-            os.environ.pop("OPENPIPIXIA_MEMORY_ENABLED", None)
-            os.environ.pop("OPENPIPIXIA_MEMORY_BACKEND", None)
-            os.environ.pop("OPENPIPIXIA_MEMORY_MARKDOWN_DIR", None)
-            os.environ.pop("OPENPIPIXIA_COMPACTION_INTERVAL", None)
-            os.environ.pop("OPENPIPIXIA_MCP_REQUIRED_SERVERS", None)
-            os.environ.pop("OPENPIPIXIA_SUBAGENT_MAX_CONCURRENCY", None)
-            os.environ.pop("OPENPIPIXIA_BOOTSTRAP_MAX_TOTAL_CHARS", None)
-            os.environ.pop("OPENPIPIXIA_DEBUG_MAX_CHARS", None)
-            os.environ.pop("OPENPIPIXIA_WHATSAPP_BRIDGE_PRECHECK", None)
+            os.environ.pop("OPENPPX_MEMORY_ENABLED", None)
+            os.environ.pop("OPENPPX_MEMORY_BACKEND", None)
+            os.environ.pop("OPENPPX_MEMORY_MARKDOWN_DIR", None)
+            os.environ.pop("OPENPPX_COMPACTION_INTERVAL", None)
+            os.environ.pop("OPENPPX_MCP_REQUIRED_SERVERS", None)
+            os.environ.pop("OPENPPX_SUBAGENT_MAX_CONCURRENCY", None)
+            os.environ.pop("OPENPPX_BOOTSTRAP_MAX_TOTAL_CHARS", None)
+            os.environ.pop("OPENPPX_DEBUG_MAX_CHARS", None)
+            os.environ.pop("OPENPPX_WHATSAPP_BRIDGE_PRECHECK", None)
             bootstrap_env_from_config(path)
 
-        self.assertEqual(os.environ["OPENPIPIXIA_MEMORY_ENABLED"], "0")
-        self.assertEqual(os.environ["OPENPIPIXIA_MEMORY_BACKEND"], "in_memory")
-        self.assertEqual(os.environ["OPENPIPIXIA_MEMORY_MARKDOWN_DIR"], "/tmp/custom-memory")
-        self.assertEqual(os.environ["OPENPIPIXIA_COMPACTION_INTERVAL"], "12")
-        self.assertEqual(os.environ["OPENPIPIXIA_MCP_REQUIRED_SERVERS"], "filesystem,notion")
-        self.assertEqual(os.environ["OPENPIPIXIA_SUBAGENT_MAX_CONCURRENCY"], "4")
-        self.assertEqual(os.environ["OPENPIPIXIA_BOOTSTRAP_MAX_TOTAL_CHARS"], "48000")
-        self.assertEqual(os.environ["OPENPIPIXIA_DEBUG_MAX_CHARS"], "4000")
-        self.assertEqual(os.environ["OPENPIPIXIA_WHATSAPP_BRIDGE_PRECHECK"], "0")
+        self.assertEqual(os.environ["OPENPPX_MEMORY_ENABLED"], "0")
+        self.assertEqual(os.environ["OPENPPX_MEMORY_BACKEND"], "in_memory")
+        self.assertEqual(os.environ["OPENPPX_MEMORY_MARKDOWN_DIR"], "/tmp/custom-memory")
+        self.assertEqual(os.environ["OPENPPX_COMPACTION_INTERVAL"], "12")
+        self.assertEqual(os.environ["OPENPPX_MCP_REQUIRED_SERVERS"], "filesystem,notion")
+        self.assertEqual(os.environ["OPENPPX_SUBAGENT_MAX_CONCURRENCY"], "4")
+        self.assertEqual(os.environ["OPENPPX_BOOTSTRAP_MAX_TOTAL_CHARS"], "48000")
+        self.assertEqual(os.environ["OPENPPX_DEBUG_MAX_CHARS"], "4000")
+        self.assertEqual(os.environ["OPENPPX_WHATSAPP_BRIDGE_PRECHECK"], "0")
 
     def test_save_config_migrates_legacy_env_to_runtime_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -469,8 +469,8 @@ class ConfigTests(unittest.TestCase):
             runtime_path = Path(tmp) / "runtime.json"
             cfg = default_config()
             cfg["env"] = {
-                "OPENPIPIXIA_MEMORY_BACKEND": "in_memory",
-                "OPENPIPIXIA_DEBUG_MAX_CHARS": 4096,
+                "OPENPPX_MEMORY_BACKEND": "in_memory",
+                "OPENPPX_DEBUG_MAX_CHARS": 4096,
             }
 
             save_config(cfg, config_path)
@@ -479,8 +479,8 @@ class ConfigTests(unittest.TestCase):
             saved_runtime = load_runtime_config(runtime_path)
 
         self.assertNotIn("env", saved_cfg)
-        self.assertEqual(saved_runtime["env"]["OPENPIPIXIA_MEMORY_BACKEND"], "in_memory")
-        self.assertEqual(saved_runtime["env"]["OPENPIPIXIA_DEBUG_MAX_CHARS"], 4096)
+        self.assertEqual(saved_runtime["env"]["OPENPPX_MEMORY_BACKEND"], "in_memory")
+        self.assertEqual(saved_runtime["env"]["OPENPPX_DEBUG_MAX_CHARS"], 4096)
 
     def test_bootstrap_env_prefers_runtime_file_over_legacy_config_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -499,7 +499,7 @@ class ConfigTests(unittest.TestCase):
                                 "extraHeaders": {},
                             }
                         },
-                        "env": {"OPENPIPIXIA_MEMORY_BACKEND": "in_memory"},
+                        "env": {"OPENPPX_MEMORY_BACKEND": "in_memory"},
                     },
                     ensure_ascii=False,
                     indent=2,
@@ -507,34 +507,34 @@ class ConfigTests(unittest.TestCase):
                 + "\n",
                 encoding="utf-8",
             )
-            save_runtime_config({"env": {"OPENPIPIXIA_MEMORY_BACKEND": "markdown"}}, runtime_path)
-            os.environ.pop("OPENPIPIXIA_MEMORY_BACKEND", None)
+            save_runtime_config({"env": {"OPENPPX_MEMORY_BACKEND": "markdown"}}, runtime_path)
+            os.environ.pop("OPENPPX_MEMORY_BACKEND", None)
             bootstrap_env_from_config(config_path)
 
-        self.assertEqual(os.environ["OPENPIPIXIA_MEMORY_BACKEND"], "markdown")
+        self.assertEqual(os.environ["OPENPPX_MEMORY_BACKEND"], "markdown")
 
     def test_bootstrap_default_runtime_env_values_are_visible_and_applied(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config.json"
             save_config(default_config(), path)
 
-            os.environ.pop("OPENPIPIXIA_MEMORY_ENABLED", None)
-            os.environ.pop("OPENPIPIXIA_MEMORY_BACKEND", None)
-            os.environ.pop("OPENPIPIXIA_COMPACTION_INTERVAL", None)
-            os.environ.pop("OPENPIPIXIA_MCP_DOCTOR_TIMEOUT_SECONDS", None)
-            os.environ.pop("OPENPIPIXIA_DEBUG_MAX_CHARS", None)
-            os.environ.pop("OPENPIPIXIA_COMPACTION_TOKEN_THRESHOLD", None)
-            os.environ.pop("OPENPIPIXIA_MCP_REQUIRED_SERVERS", None)
+            os.environ.pop("OPENPPX_MEMORY_ENABLED", None)
+            os.environ.pop("OPENPPX_MEMORY_BACKEND", None)
+            os.environ.pop("OPENPPX_COMPACTION_INTERVAL", None)
+            os.environ.pop("OPENPPX_MCP_DOCTOR_TIMEOUT_SECONDS", None)
+            os.environ.pop("OPENPPX_DEBUG_MAX_CHARS", None)
+            os.environ.pop("OPENPPX_COMPACTION_TOKEN_THRESHOLD", None)
+            os.environ.pop("OPENPPX_MCP_REQUIRED_SERVERS", None)
             bootstrap_env_from_config(path)
 
-        self.assertEqual(os.environ["OPENPIPIXIA_MEMORY_ENABLED"], "1")
-        self.assertEqual(os.environ["OPENPIPIXIA_MEMORY_BACKEND"], "markdown")
-        self.assertEqual(os.environ["OPENPIPIXIA_COMPACTION_INTERVAL"], "8")
-        self.assertEqual(os.environ["OPENPIPIXIA_MCP_DOCTOR_TIMEOUT_SECONDS"], "5")
-        self.assertEqual(os.environ["OPENPIPIXIA_DEBUG_MAX_CHARS"], "0")
-        self.assertNotIn("OPENPIPIXIA_MEMORY_MARKDOWN_DIR", os.environ)
-        self.assertNotIn("OPENPIPIXIA_COMPACTION_TOKEN_THRESHOLD", os.environ)
-        self.assertNotIn("OPENPIPIXIA_MCP_REQUIRED_SERVERS", os.environ)
+        self.assertEqual(os.environ["OPENPPX_MEMORY_ENABLED"], "1")
+        self.assertEqual(os.environ["OPENPPX_MEMORY_BACKEND"], "markdown")
+        self.assertEqual(os.environ["OPENPPX_COMPACTION_INTERVAL"], "8")
+        self.assertEqual(os.environ["OPENPPX_MCP_DOCTOR_TIMEOUT_SECONDS"], "5")
+        self.assertEqual(os.environ["OPENPPX_DEBUG_MAX_CHARS"], "0")
+        self.assertNotIn("OPENPPX_MEMORY_MARKDOWN_DIR", os.environ)
+        self.assertNotIn("OPENPPX_COMPACTION_TOKEN_THRESHOLD", os.environ)
+        self.assertNotIn("OPENPPX_MCP_REQUIRED_SERVERS", os.environ)
 
     def test_bootstrap_remaps_legacy_global_memory_markdown_dir_to_agent_scope(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -545,17 +545,17 @@ class ConfigTests(unittest.TestCase):
             save_runtime_config(
                 {
                     "env": {
-                        "OPENPIPIXIA_MEMORY_MARKDOWN_DIR": str(Path.home() / ".openpipixia" / "workspace" / "memory"),
+                        "OPENPPX_MEMORY_MARKDOWN_DIR": str(Path.home() / ".openpipixia" / "workspace" / "memory"),
                     }
                 },
                 runtime_path,
             )
-            os.environ.pop("OPENPIPIXIA_MEMORY_MARKDOWN_DIR", None)
+            os.environ.pop("OPENPPX_MEMORY_MARKDOWN_DIR", None)
 
             bootstrap_env_from_config(config_path)
 
         self.assertEqual(
-            os.environ["OPENPIPIXIA_MEMORY_MARKDOWN_DIR"],
+            os.environ["OPENPPX_MEMORY_MARKDOWN_DIR"],
             str((agent_dir / "memory").resolve(strict=False)),
         )
 
@@ -583,10 +583,10 @@ class ConfigTests(unittest.TestCase):
             cfg["channels"]["qq"]["enabled"] = True
             save_config(cfg, path)
 
-            os.environ.pop("OPENPIPIXIA_CHANNELS", None)
+            os.environ.pop("OPENPPX_CHANNELS", None)
             bootstrap_env_from_config(path)
 
-        self.assertEqual(os.environ["OPENPIPIXIA_CHANNELS"], "telegram,qq")
+        self.assertEqual(os.environ["OPENPPX_CHANNELS"], "telegram,qq")
 
     def test_bootstrap_env_overwrites_and_clears_managed_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -634,7 +634,7 @@ class ConfigTests(unittest.TestCase):
             os.environ["GOOGLE_API_KEY"] = "stale-google-key"
             bootstrap_env_from_config(path)
 
-        self.assertEqual(os.environ["OPENPIPIXIA_PROVIDER"], "openai")
+        self.assertEqual(os.environ["OPENPPX_PROVIDER"], "openai")
         self.assertEqual(os.environ["OPENAI_API_KEY"], "openai-key-from-shell")
         self.assertNotIn("GOOGLE_API_KEY", os.environ)
 
@@ -661,18 +661,18 @@ class ConfigTests(unittest.TestCase):
             cfg["providers"]["openai"]["model"] = "gpt-4.1-mini"
             save_config(cfg, path)
 
-            os.environ.pop("OPENPIPIXIA_PROVIDER", None)
-            os.environ.pop("OPENPIPIXIA_PROVIDER_ENABLED", None)
+            os.environ.pop("OPENPPX_PROVIDER", None)
+            os.environ.pop("OPENPPX_PROVIDER_ENABLED", None)
             os.environ.pop("GOOGLE_API_KEY", None)
             os.environ.pop("OPENAI_API_KEY", None)
-            os.environ.pop("OPENPIPIXIA_MODEL", None)
+            os.environ.pop("OPENPPX_MODEL", None)
             bootstrap_env_from_config(path)
 
-        self.assertEqual(os.environ["OPENPIPIXIA_PROVIDER"], "openai")
-        self.assertEqual(os.environ["OPENPIPIXIA_PROVIDER_ENABLED"], "1")
+        self.assertEqual(os.environ["OPENPPX_PROVIDER"], "openai")
+        self.assertEqual(os.environ["OPENPPX_PROVIDER_ENABLED"], "1")
         self.assertEqual(os.environ["OPENAI_API_KEY"], "openai-key-selected")
         self.assertNotIn("GOOGLE_API_KEY", os.environ)
-        self.assertEqual(os.environ["OPENPIPIXIA_MODEL"], "openai/gpt-4.1-mini")
+        self.assertEqual(os.environ["OPENPPX_MODEL"], "openai/gpt-4.1-mini")
 
     def test_provider_api_base_and_extra_headers_are_exported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -686,17 +686,17 @@ class ConfigTests(unittest.TestCase):
             cfg["providers"]["openrouter"]["extraHeaders"] = {"X-Trace-Id": "trace-001"}
             save_config(cfg, path)
 
-            os.environ.pop("OPENPIPIXIA_PROVIDER", None)
-            os.environ.pop("OPENPIPIXIA_PROVIDER_API_BASE", None)
-            os.environ.pop("OPENPIPIXIA_PROVIDER_EXTRA_HEADERS_JSON", None)
+            os.environ.pop("OPENPPX_PROVIDER", None)
+            os.environ.pop("OPENPPX_PROVIDER_API_BASE", None)
+            os.environ.pop("OPENPPX_PROVIDER_EXTRA_HEADERS_JSON", None)
             os.environ.pop("OPENROUTER_API_KEY", None)
             bootstrap_env_from_config(path)
 
-        self.assertEqual(os.environ["OPENPIPIXIA_PROVIDER"], "openrouter")
+        self.assertEqual(os.environ["OPENPPX_PROVIDER"], "openrouter")
         self.assertEqual(os.environ["OPENROUTER_API_KEY"], "openrouter-key")
-        self.assertEqual(os.environ["OPENPIPIXIA_PROVIDER_API_BASE"], "https://example.gateway/v1")
+        self.assertEqual(os.environ["OPENPPX_PROVIDER_API_BASE"], "https://example.gateway/v1")
         self.assertEqual(
-            os.environ["OPENPIPIXIA_PROVIDER_EXTRA_HEADERS_JSON"],
+            os.environ["OPENPPX_PROVIDER_EXTRA_HEADERS_JSON"],
             '{"X-Trace-Id":"trace-001"}',
         )
 
@@ -724,25 +724,25 @@ class ConfigTests(unittest.TestCase):
             cfg["gui"]["plannerProvider"] = "openai"
             save_config(cfg, path)
 
-            os.environ.pop("OPENPIPIXIA_GUI_MODEL", None)
-            os.environ.pop("OPENPIPIXIA_GUI_BASE_URL", None)
-            os.environ.pop("OPENPIPIXIA_GUI_PLANNER_MODEL", None)
-            os.environ.pop("OPENPIPIXIA_GUI_PLANNER_BASE_URL", None)
-            os.environ.pop("OPENPIPIXIA_GUI_GROUNDING_PROVIDER", None)
-            os.environ.pop("OPENPIPIXIA_GUI_PLANNER_PROVIDER", None)
+            os.environ.pop("OPENPPX_GUI_MODEL", None)
+            os.environ.pop("OPENPPX_GUI_BASE_URL", None)
+            os.environ.pop("OPENPPX_GUI_PLANNER_MODEL", None)
+            os.environ.pop("OPENPPX_GUI_PLANNER_BASE_URL", None)
+            os.environ.pop("OPENPPX_GUI_GROUNDING_PROVIDER", None)
+            os.environ.pop("OPENPPX_GUI_PLANNER_PROVIDER", None)
             os.environ.pop("GOOGLE_API_KEY", None)
             os.environ.pop("OPENAI_API_KEY", None)
             bootstrap_env_from_config(path)
 
-        self.assertEqual(os.environ["OPENPIPIXIA_GUI_MODEL"], "gemini-3-flash-preview")
-        self.assertEqual(os.environ["OPENPIPIXIA_GUI_BASE_URL"], "https://grounding.example/v1")
-        self.assertEqual(os.environ["OPENPIPIXIA_GUI_GROUNDING_PROVIDER"], "google")
-        self.assertEqual(os.environ["OPENPIPIXIA_GUI_PLANNER_MODEL"], "openai/gpt-4.1-mini")
-        self.assertEqual(os.environ["OPENPIPIXIA_GUI_PLANNER_BASE_URL"], "https://planner.example/v1")
-        self.assertEqual(os.environ["OPENPIPIXIA_GUI_PLANNER_PROVIDER"], "openai")
+        self.assertEqual(os.environ["OPENPPX_GUI_MODEL"], "gemini-3-flash-preview")
+        self.assertEqual(os.environ["OPENPPX_GUI_BASE_URL"], "https://grounding.example/v1")
+        self.assertEqual(os.environ["OPENPPX_GUI_GROUNDING_PROVIDER"], "google")
+        self.assertEqual(os.environ["OPENPPX_GUI_PLANNER_MODEL"], "openai/gpt-4.1-mini")
+        self.assertEqual(os.environ["OPENPPX_GUI_PLANNER_BASE_URL"], "https://planner.example/v1")
+        self.assertEqual(os.environ["OPENPPX_GUI_PLANNER_PROVIDER"], "openai")
         self.assertEqual(os.environ["GOOGLE_API_KEY"], "grounding-key")
         self.assertEqual(os.environ["OPENAI_API_KEY"], "planner-key")
-        self.assertEqual(os.environ["OPENPIPIXIA_GUI_BUILTIN_TOOLS_ENABLED"], "1")
+        self.assertEqual(os.environ["OPENPPX_GUI_BUILTIN_TOOLS_ENABLED"], "1")
 
     def test_gui_builtin_tools_flag_is_exported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -751,10 +751,10 @@ class ConfigTests(unittest.TestCase):
             cfg["gui"]["builtinGUIToolsEnabled"] = False
             save_config(cfg, path)
 
-            os.environ.pop("OPENPIPIXIA_GUI_BUILTIN_TOOLS_ENABLED", None)
+            os.environ.pop("OPENPPX_GUI_BUILTIN_TOOLS_ENABLED", None)
             bootstrap_env_from_config(path)
 
-        self.assertEqual(os.environ["OPENPIPIXIA_GUI_BUILTIN_TOOLS_ENABLED"], "0")
+        self.assertEqual(os.environ["OPENPPX_GUI_BUILTIN_TOOLS_ENABLED"], "0")
 
     def test_gui_multimodal_provider_disabled_does_not_export_gui_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -772,14 +772,14 @@ class ConfigTests(unittest.TestCase):
             cfg["gui"]["groundingProvider"] = "google"
             save_config(cfg, path)
 
-            os.environ["OPENPIPIXIA_GUI_MODEL"] = "stale-model"
-            os.environ["OPENPIPIXIA_GUI_BASE_URL"] = "https://stale.example/v1"
-            os.environ["OPENPIPIXIA_GUI_GROUNDING_PROVIDER"] = "openai"
+            os.environ["OPENPPX_GUI_MODEL"] = "stale-model"
+            os.environ["OPENPPX_GUI_BASE_URL"] = "https://stale.example/v1"
+            os.environ["OPENPPX_GUI_GROUNDING_PROVIDER"] = "openai"
             bootstrap_env_from_config(path)
 
-        self.assertNotIn("OPENPIPIXIA_GUI_MODEL", os.environ)
-        self.assertNotIn("OPENPIPIXIA_GUI_BASE_URL", os.environ)
-        self.assertEqual(os.environ.get("OPENPIPIXIA_GUI_GROUNDING_PROVIDER", ""), "google")
+        self.assertNotIn("OPENPPX_GUI_MODEL", os.environ)
+        self.assertNotIn("OPENPPX_GUI_BASE_URL", os.environ)
+        self.assertEqual(os.environ.get("OPENPPX_GUI_GROUNDING_PROVIDER", ""), "google")
 
     def test_gui_multimodal_google_provider_api_key_falls_back_to_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -801,7 +801,7 @@ class ConfigTests(unittest.TestCase):
             bootstrap_env_from_config(path)
 
         self.assertEqual(os.environ["GOOGLE_API_KEY"], "key-from-shell")
-        self.assertEqual(os.environ["OPENPIPIXIA_GUI_GROUNDING_PROVIDER"], "google")
+        self.assertEqual(os.environ["OPENPPX_GUI_GROUNDING_PROVIDER"], "google")
 
     def test_gui_multimodal_alias_with_provider_field_is_supported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -829,21 +829,21 @@ class ConfigTests(unittest.TestCase):
             cfg["gui"]["plannerProvider"] = "openai_planner_strong"
             save_config(cfg, path)
 
-            os.environ.pop("OPENPIPIXIA_GUI_MODEL", None)
-            os.environ.pop("OPENPIPIXIA_GUI_BASE_URL", None)
-            os.environ.pop("OPENPIPIXIA_GUI_PLANNER_MODEL", None)
-            os.environ.pop("OPENPIPIXIA_GUI_PLANNER_BASE_URL", None)
-            os.environ.pop("OPENPIPIXIA_GUI_GROUNDING_PROVIDER", None)
-            os.environ.pop("OPENPIPIXIA_GUI_PLANNER_PROVIDER", None)
+            os.environ.pop("OPENPPX_GUI_MODEL", None)
+            os.environ.pop("OPENPPX_GUI_BASE_URL", None)
+            os.environ.pop("OPENPPX_GUI_PLANNER_MODEL", None)
+            os.environ.pop("OPENPPX_GUI_PLANNER_BASE_URL", None)
+            os.environ.pop("OPENPPX_GUI_GROUNDING_PROVIDER", None)
+            os.environ.pop("OPENPPX_GUI_PLANNER_PROVIDER", None)
             os.environ.pop("OPENAI_API_KEY", None)
             bootstrap_env_from_config(path)
 
-        self.assertEqual(os.environ["OPENPIPIXIA_GUI_MODEL"], "openai/gpt-4.1-mini")
-        self.assertEqual(os.environ["OPENPIPIXIA_GUI_BASE_URL"], "https://openai-grounding.example/v1")
-        self.assertEqual(os.environ["OPENPIPIXIA_GUI_GROUNDING_PROVIDER"], "openai")
-        self.assertEqual(os.environ["OPENPIPIXIA_GUI_PLANNER_MODEL"], "openai/gpt-5.2")
-        self.assertEqual(os.environ["OPENPIPIXIA_GUI_PLANNER_BASE_URL"], "https://openai-planner.example/v1")
-        self.assertEqual(os.environ["OPENPIPIXIA_GUI_PLANNER_PROVIDER"], "openai")
+        self.assertEqual(os.environ["OPENPPX_GUI_MODEL"], "openai/gpt-4.1-mini")
+        self.assertEqual(os.environ["OPENPPX_GUI_BASE_URL"], "https://openai-grounding.example/v1")
+        self.assertEqual(os.environ["OPENPPX_GUI_GROUNDING_PROVIDER"], "openai")
+        self.assertEqual(os.environ["OPENPPX_GUI_PLANNER_MODEL"], "openai/gpt-5.2")
+        self.assertEqual(os.environ["OPENPPX_GUI_PLANNER_BASE_URL"], "https://openai-planner.example/v1")
+        self.assertEqual(os.environ["OPENPPX_GUI_PLANNER_PROVIDER"], "openai")
         self.assertEqual(os.environ["OPENAI_API_KEY"], "shared-openai-key")
 
     def test_gui_multimodal_alias_without_provider_keeps_backward_compatibility(self) -> None:
@@ -865,7 +865,7 @@ class ConfigTests(unittest.TestCase):
             os.environ["GOOGLE_API_KEY"] = "key-from-shell"
             bootstrap_env_from_config(path)
 
-        self.assertEqual(os.environ["OPENPIPIXIA_GUI_GROUNDING_PROVIDER"], "google")
+        self.assertEqual(os.environ["OPENPPX_GUI_GROUNDING_PROVIDER"], "google")
         self.assertEqual(os.environ["GOOGLE_API_KEY"], "key-from-shell")
 
     def test_provider_active_key_is_ignored_when_enabled_points_elsewhere(self) -> None:
@@ -879,12 +879,12 @@ class ConfigTests(unittest.TestCase):
             cfg["providers"]["active"] = "openai"
             save_config(cfg, path)
 
-            os.environ.pop("OPENPIPIXIA_PROVIDER", None)
+            os.environ.pop("OPENPPX_PROVIDER", None)
             os.environ.pop("GOOGLE_API_KEY", None)
             os.environ.pop("OPENAI_API_KEY", None)
             bootstrap_env_from_config(path)
 
-        self.assertEqual(os.environ["OPENPIPIXIA_PROVIDER"], "google")
+        self.assertEqual(os.environ["OPENPPX_PROVIDER"], "google")
         self.assertEqual(os.environ["GOOGLE_API_KEY"], "google-key-selected")
         self.assertNotIn("OPENAI_API_KEY", os.environ)
 
@@ -921,10 +921,10 @@ class ConfigTests(unittest.TestCase):
             }
             save_config(cfg, path)
 
-            os.environ.pop("OPENPIPIXIA_MCP_SERVERS_JSON", None)
+            os.environ.pop("OPENPPX_MCP_SERVERS_JSON", None)
             bootstrap_env_from_config(path)
 
-        raw = os.environ.get("OPENPIPIXIA_MCP_SERVERS_JSON")
+        raw = os.environ.get("OPENPPX_MCP_SERVERS_JSON")
         self.assertIsNotNone(raw)
         parsed = json.loads(raw or "{}")
         self.assertIn("filesystem", parsed)

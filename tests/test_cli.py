@@ -753,8 +753,8 @@ class CLITests(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "OPENPIPIXIA_PROVIDER": "google",
-                "OPENPIPIXIA_PROVIDER_ENABLED": "1",
+                "OPENPPX_PROVIDER": "google",
+                "OPENPPX_PROVIDER_ENABLED": "1",
                 "GOOGLE_API_KEY": "k",
             },
             clear=False,
@@ -1093,8 +1093,8 @@ class CLITests(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "OPENPIPIXIA_PROVIDER": "google",
-                "OPENPIPIXIA_PROVIDER_ENABLED": "1",
+                "OPENPPX_PROVIDER": "google",
+                "OPENPPX_PROVIDER_ENABLED": "1",
                 "GOOGLE_API_KEY": "k",
             },
             clear=False,
@@ -1138,8 +1138,8 @@ class CLITests(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "OPENPIPIXIA_PROVIDER": "openai_codex",
-                "OPENPIPIXIA_PROVIDER_ENABLED": "1",
+                "OPENPPX_PROVIDER": "openai_codex",
+                "OPENPPX_PROVIDER_ENABLED": "1",
             },
             clear=False,
         ):
@@ -1188,8 +1188,8 @@ class CLITests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "OPENPIPIXIA_PROVIDER": "google",
-                    "OPENPIPIXIA_PROVIDER_ENABLED": "1",
+                    "OPENPPX_PROVIDER": "google",
+                    "OPENPPX_PROVIDER_ENABLED": "1",
                     "GOOGLE_API_KEY": "k",
                 },
                 clear=False,
@@ -1225,8 +1225,8 @@ class CLITests(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "OPENPIPIXIA_PROVIDER": "google",
-                "OPENPIPIXIA_PROVIDER_ENABLED": "1",
+                "OPENPPX_PROVIDER": "google",
+                "OPENPPX_PROVIDER_ENABLED": "1",
                 "GOOGLE_API_KEY": "k",
             },
             clear=False,
@@ -1719,8 +1719,8 @@ class CLITests(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "OPENPIPIXIA_PROVIDER": "google",
-                "OPENPIPIXIA_PROVIDER_ENABLED": "1",
+                "OPENPPX_PROVIDER": "google",
+                "OPENPPX_PROVIDER_ENABLED": "1",
                 "GOOGLE_API_KEY": "k",
             },
             clear=False,
@@ -1778,8 +1778,8 @@ class CLITests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "OPENPIPIXIA_PROVIDER": "google",
-                    "OPENPIPIXIA_PROVIDER_ENABLED": "1",
+                    "OPENPPX_PROVIDER": "google",
+                    "OPENPPX_PROVIDER_ENABLED": "1",
                     "GOOGLE_API_KEY": "k",
                 },
                 clear=False,
@@ -1816,8 +1816,8 @@ class CLITests(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "OPENPIPIXIA_PROVIDER": "google",
-                "OPENPIPIXIA_PROVIDER_ENABLED": "1",
+                "OPENPPX_PROVIDER": "google",
+                "OPENPPX_PROVIDER_ENABLED": "1",
                 "GOOGLE_API_KEY": "k",
             },
             clear=False,
@@ -1855,8 +1855,8 @@ class CLITests(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "OPENPIPIXIA_PROVIDER": "openai_codex",
-                "OPENPIPIXIA_PROVIDER_ENABLED": "1",
+                "OPENPPX_PROVIDER": "openai_codex",
+                "OPENPPX_PROVIDER_ENABLED": "1",
             },
             clear=False,
         ):
@@ -2043,7 +2043,7 @@ class CLITests(unittest.TestCase):
 
         with patch.dict(
             os.environ,
-            {"OPENPIPIXIA_MCP_REQUIRED_SERVERS": "filesystem,docs"},
+            {"OPENPPX_MCP_REQUIRED_SERVERS": "filesystem,docs"},
             clear=False,
         ):
             issues = asyncio.run(cli._required_mcp_preflight([]))
@@ -2071,7 +2071,7 @@ class CLITests(unittest.TestCase):
         }
         with patch.dict(
             os.environ,
-            {"OPENPIPIXIA_MCP_REQUIRED_SERVERS": "filesystem"},
+            {"OPENPPX_MCP_REQUIRED_SERVERS": "filesystem"},
             clear=False,
         ):
             with patch.object(cli, "probe_mcp_toolsets", new=AsyncMock(return_value=[fake_result])):
@@ -2315,8 +2315,8 @@ class CLITests(unittest.TestCase):
                 code = cli._cmd_install_init_setup(force=False)
 
             self.assertEqual(code, 0)
-            config_path = Path(tmp) / ".openpipixia" / "config.json"
-            runtime_config_path = Path(tmp) / ".openpipixia" / "runtime.json"
+            config_path = Path(tmp) / ".openppx" / "config.json"
+            runtime_config_path = Path(tmp) / ".openppx" / "runtime.json"
             self.assertTrue(config_path.exists())
             self.assertTrue(runtime_config_path.exists())
             data = json.loads(config_path.read_text(encoding="utf-8"))
@@ -2591,7 +2591,7 @@ class CLITests(unittest.TestCase):
         from openpipixia import cli
 
         with tempfile.TemporaryDirectory() as tmp:
-            with patch.dict(os.environ, {"OPENPIPIXIA_WORKSPACE": tmp}, clear=False):
+            with patch.dict(os.environ, {"OPENPPX_WORKSPACE": tmp}, clear=False):
                 with patch("builtins.print") as mocked_info:
                     code = cli._cmd_cron_add(
                         name="demo",
@@ -2614,7 +2614,7 @@ class CLITests(unittest.TestCase):
         from openpipixia import cli
 
         with tempfile.TemporaryDirectory() as tmp:
-            with patch.dict(os.environ, {"OPENPIPIXIA_WORKSPACE": tmp}, clear=False):
+            with patch.dict(os.environ, {"OPENPPX_WORKSPACE": tmp}, clear=False):
                 add_code = cli._cmd_cron_add(
                     name="demo",
                     message="hello cron",
@@ -2910,8 +2910,8 @@ class CLITests(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "OPENPIPIXIA_PROVIDER": "google",
-                "OPENPIPIXIA_PROVIDER_ENABLED": "1",
+                "OPENPPX_PROVIDER": "google",
+                "OPENPPX_PROVIDER_ENABLED": "1",
                 "GOOGLE_API_KEY": "k",
             },
             clear=False,

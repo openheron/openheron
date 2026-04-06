@@ -418,7 +418,7 @@ class GatewayCronTests(unittest.IsolatedAsyncioTestCase):
             policy = pytypes.SimpleNamespace(workspace_root=workspace)
             with (
                 patch("openpipixia.app.gateway.load_security_policy", return_value=policy),
-                patch.dict(os.environ, {"OPENPIPIXIA_AGENT_HOME": str(agent_home)}, clear=False),
+                patch.dict(os.environ, {"OPENPPX_AGENT_HOME": str(agent_home)}, clear=False),
             ):
                 await gateway._run_heartbeat(req)
 
@@ -442,7 +442,7 @@ class GatewayCronTests(unittest.IsolatedAsyncioTestCase):
             gateway = Gateway(agent=fake_agent, app_name="openpipixia", bus=bus)
 
         req = HeartbeatRunRequest(reason="interval", prompt="ops check")
-        with patch.dict(os.environ, {"OPENPIPIXIA_HEARTBEAT_SHOW_OK": "0"}, clear=False):
+        with patch.dict(os.environ, {"OPENPPX_HEARTBEAT_SHOW_OK": "0"}, clear=False):
             await gateway._run_heartbeat(req)
         with self.assertRaises(asyncio.TimeoutError):
             await asyncio.wait_for(bus.consume_outbound(), timeout=0.05)
@@ -462,7 +462,7 @@ class GatewayCronTests(unittest.IsolatedAsyncioTestCase):
             gateway = Gateway(agent=fake_agent, app_name="openpipixia", bus=bus)
 
         req = HeartbeatRunRequest(reason="interval", prompt="ops check")
-        with patch.dict(os.environ, {"OPENPIPIXIA_HEARTBEAT_SHOW_OK": "1"}, clear=False):
+        with patch.dict(os.environ, {"OPENPPX_HEARTBEAT_SHOW_OK": "1"}, clear=False):
             await gateway._run_heartbeat(req)
         outbound = await asyncio.wait_for(bus.consume_outbound(), timeout=0.2)
         self.assertEqual(outbound.channel, "local")
@@ -487,9 +487,9 @@ class GatewayCronTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(
             os.environ,
             {
-                "OPENPIPIXIA_HEARTBEAT_SHOW_OK": "0",
-                "OPENPIPIXIA_HEARTBEAT_SHOW_ALERTS": "0",
-                "OPENPIPIXIA_HEARTBEAT_ACK_MAX_CHARS": "0",
+                "OPENPPX_HEARTBEAT_SHOW_OK": "0",
+                "OPENPPX_HEARTBEAT_SHOW_ALERTS": "0",
+                "OPENPPX_HEARTBEAT_ACK_MAX_CHARS": "0",
             },
             clear=False,
         ):
@@ -500,9 +500,9 @@ class GatewayCronTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(
             os.environ,
             {
-                "OPENPIPIXIA_HEARTBEAT_SHOW_OK": "0",
-                "OPENPIPIXIA_HEARTBEAT_SHOW_ALERTS": "1",
-                "OPENPIPIXIA_HEARTBEAT_ACK_MAX_CHARS": "0",
+                "OPENPPX_HEARTBEAT_SHOW_OK": "0",
+                "OPENPPX_HEARTBEAT_SHOW_ALERTS": "1",
+                "OPENPPX_HEARTBEAT_ACK_MAX_CHARS": "0",
             },
             clear=False,
         ):
@@ -526,7 +526,7 @@ class GatewayCronTests(unittest.IsolatedAsyncioTestCase):
         gateway._last_inbound_route = ("feishu", "chat-ops")
 
         req = HeartbeatRunRequest(reason="manual", prompt="ops check")
-        with patch.dict(os.environ, {"OPENPIPIXIA_HEARTBEAT_TARGET": "last"}, clear=False):
+        with patch.dict(os.environ, {"OPENPPX_HEARTBEAT_TARGET": "last"}, clear=False):
             await gateway._run_heartbeat(req)
 
         outbound = await asyncio.wait_for(bus.consume_outbound(), timeout=0.2)
@@ -549,7 +549,7 @@ class GatewayCronTests(unittest.IsolatedAsyncioTestCase):
             gateway = Gateway(agent=fake_agent, app_name="openpipixia", bus=bus)
 
         req = HeartbeatRunRequest(reason="manual", prompt="ops check")
-        with patch.dict(os.environ, {"OPENPIPIXIA_HEARTBEAT_TARGET": "none"}, clear=False):
+        with patch.dict(os.environ, {"OPENPPX_HEARTBEAT_TARGET": "none"}, clear=False):
             await gateway._run_heartbeat(req)
         with self.assertRaises(asyncio.TimeoutError):
             await asyncio.wait_for(bus.consume_outbound(), timeout=0.05)
@@ -572,10 +572,10 @@ class GatewayCronTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(
             os.environ,
             {
-                "OPENPIPIXIA_HEARTBEAT_SHOW_OK": "1",
-                "OPENPIPIXIA_HEARTBEAT_TARGET": "channel",
-                "OPENPIPIXIA_HEARTBEAT_TARGET_CHANNEL": "slack",
-                "OPENPIPIXIA_HEARTBEAT_TARGET_CHAT_ID": "C123",
+                "OPENPPX_HEARTBEAT_SHOW_OK": "1",
+                "OPENPPX_HEARTBEAT_TARGET": "channel",
+                "OPENPPX_HEARTBEAT_TARGET_CHANNEL": "slack",
+                "OPENPPX_HEARTBEAT_TARGET_CHAT_ID": "C123",
             },
             clear=False,
         ):
@@ -602,11 +602,11 @@ class GatewayCronTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(
             os.environ,
             {
-                "OPENPIPIXIA_HEARTBEAT_TARGET": "channel",
-                "OPENPIPIXIA_HEARTBEAT_TARGET_CHANNEL": "feishu",
-                "OPENPIPIXIA_HEARTBEAT_TARGET_CHAT_ID": "ops-room",
-                "OPENPIPIXIA_HEARTBEAT_SHOW_ALERTS": "1",
-                "OPENPIPIXIA_HEARTBEAT_ACK_MAX_CHARS": "0",
+                "OPENPPX_HEARTBEAT_TARGET": "channel",
+                "OPENPPX_HEARTBEAT_TARGET_CHANNEL": "feishu",
+                "OPENPPX_HEARTBEAT_TARGET_CHAT_ID": "ops-room",
+                "OPENPPX_HEARTBEAT_SHOW_ALERTS": "1",
+                "OPENPPX_HEARTBEAT_ACK_MAX_CHARS": "0",
             },
             clear=False,
         ):
@@ -636,7 +636,7 @@ class GatewayCronTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             policy = pytypes.SimpleNamespace(workspace_root=Path(tmp))
             with patch("openpipixia.app.gateway.load_security_policy", return_value=policy):
-                with patch.dict(os.environ, {"OPENPIPIXIA_HEARTBEAT_SHOW_OK": "1"}, clear=False):
+                with patch.dict(os.environ, {"OPENPPX_HEARTBEAT_SHOW_OK": "1"}, clear=False):
                     await gateway._run_heartbeat(req)
                 snapshot = read_heartbeat_status_snapshot(Path(tmp))
 

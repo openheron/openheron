@@ -127,7 +127,7 @@ def _extract_post_image_keys(content_json: dict[str, Any]) -> list[str]:
 
 
 def _workspace_root() -> Path:
-    workspace = os.getenv("OPENPIPIXIA_WORKSPACE", "").strip()
+    workspace = os.getenv("OPENPPX_WORKSPACE", "").strip()
     if workspace:
         return Path(workspace).expanduser().resolve()
     return Path.cwd().resolve()
@@ -404,7 +404,7 @@ class FeishuChannel(BaseChannel):
 
     @staticmethod
     def _stream_update_interval_seconds() -> float:
-        raw = os.getenv("OPENPIPIXIA_FEISHU_STREAM_UPDATE_INTERVAL_MS", "200").strip()
+        raw = os.getenv("OPENPPX_FEISHU_STREAM_UPDATE_INTERVAL_MS", "200").strip()
         try:
             interval_ms = int(raw)
         except ValueError:

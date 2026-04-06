@@ -17,12 +17,12 @@ from openpipixia.browser.runtime import configure_browser_runtime
 
 class BrowserServiceTests(unittest.TestCase):
     def tearDown(self) -> None:
-        os.environ.pop("OPENPIPIXIA_BROWSER_CONTROL_TOKEN", None)
-        os.environ.pop("OPENPIPIXIA_BROWSER_MUTATION_TOKEN", None)
-        os.environ.pop("OPENPIPIXIA_BROWSER_UPLOAD_ROOT", None)
-        os.environ.pop("OPENPIPIXIA_BROWSER_ENFORCE_UPLOAD_ROOT", None)
-        os.environ.pop("OPENPIPIXIA_BROWSER_ARTIFACT_ROOT", None)
-        os.environ.pop("OPENPIPIXIA_BROWSER_ENFORCE_ARTIFACT_ROOT", None)
+        os.environ.pop("OPENPPX_BROWSER_CONTROL_TOKEN", None)
+        os.environ.pop("OPENPPX_BROWSER_MUTATION_TOKEN", None)
+        os.environ.pop("OPENPPX_BROWSER_UPLOAD_ROOT", None)
+        os.environ.pop("OPENPPX_BROWSER_ENFORCE_UPLOAD_ROOT", None)
+        os.environ.pop("OPENPPX_BROWSER_ARTIFACT_ROOT", None)
+        os.environ.pop("OPENPPX_BROWSER_ENFORCE_ARTIFACT_ROOT", None)
         configure_browser_runtime(None)
         reset_browser_control_service()
 
@@ -86,7 +86,7 @@ class BrowserServiceTests(unittest.TestCase):
         self.assertIn("example.org", navigated.body["url"])
 
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_BROWSER_ARTIFACT_ROOT"] = tmp
+            os.environ["OPENPPX_BROWSER_ARTIFACT_ROOT"] = tmp
             shot_path = Path(tmp) / "shots" / "service.png"
             shot = service.dispatch(
                 BrowserDispatchRequest(
@@ -100,7 +100,7 @@ class BrowserServiceTests(unittest.TestCase):
             self.assertEqual(Path(shot.body["path"]).resolve(), shot_path.resolve())
             self.assertTrue(shot_path.exists())
 
-            os.environ["OPENPIPIXIA_BROWSER_ARTIFACT_ROOT"] = tmp
+            os.environ["OPENPPX_BROWSER_ARTIFACT_ROOT"] = tmp
             pdf_path = Path(tmp) / "pdfs" / "service.pdf"
             pdf = service.dispatch(
                 BrowserDispatchRequest(
@@ -114,7 +114,7 @@ class BrowserServiceTests(unittest.TestCase):
             self.assertTrue(pdf_path.exists())
 
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_BROWSER_ARTIFACT_ROOT"] = tmp
+            os.environ["OPENPPX_BROWSER_ARTIFACT_ROOT"] = tmp
             console_path = Path(tmp) / "console" / "service.json"
             console = service.dispatch(
                 BrowserDispatchRequest(
@@ -133,7 +133,7 @@ class BrowserServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             upload_file = Path(tmp) / "demo.txt"
             upload_file.write_text("demo", encoding="utf-8")
-            os.environ["OPENPIPIXIA_BROWSER_UPLOAD_ROOT"] = tmp
+            os.environ["OPENPPX_BROWSER_UPLOAD_ROOT"] = tmp
             uploaded = service.dispatch(
                 BrowserDispatchRequest(
                     method="POST",
@@ -258,7 +258,7 @@ class BrowserServiceTests(unittest.TestCase):
         self.assertEqual(status.body["context_owned"], status.body["contextOwned"])
 
     def test_dispatch_requires_auth_token_when_enabled(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_CONTROL_TOKEN"] = "token-1"
+        os.environ["OPENPPX_BROWSER_CONTROL_TOKEN"] = "token-1"
         reset_browser_control_service()
         service = get_browser_control_service()
 
@@ -273,8 +273,8 @@ class BrowserServiceTests(unittest.TestCase):
         self.assertIn("running", authorized.body)
 
     def test_dispatch_requires_mutation_token_for_mutating_routes(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_CONTROL_TOKEN"] = "token-2"
-        os.environ["OPENPIPIXIA_BROWSER_MUTATION_TOKEN"] = "mut-2"
+        os.environ["OPENPPX_BROWSER_CONTROL_TOKEN"] = "token-2"
+        os.environ["OPENPPX_BROWSER_MUTATION_TOKEN"] = "mut-2"
         reset_browser_control_service()
         service = get_browser_control_service()
 

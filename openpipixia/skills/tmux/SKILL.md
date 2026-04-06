@@ -11,7 +11,7 @@ Use tmux only when you need an interactive TTY. Prefer exec background mode for 
 ## Quickstart (isolated socket, exec tool)
 
 ```bash
-SOCKET_DIR="${OPENPIPIXIA_TMUX_SOCKET_DIR:-${TMPDIR:-/tmp}/openpipixia-tmux-sockets}"
+SOCKET_DIR="${OPENPPX_TMUX_SOCKET_DIR:-${TMPDIR:-/tmp}/openpipixia-tmux-sockets}"
 mkdir -p "$SOCKET_DIR"
 SOCKET="$SOCKET_DIR/openpipixia.sock"
 SESSION=openpipixia-python
@@ -31,8 +31,8 @@ To monitor:
 
 ## Socket convention
 
-- Use `OPENPIPIXIA_TMUX_SOCKET_DIR` environment variable.
-- Default socket path: `"$OPENPIPIXIA_TMUX_SOCKET_DIR/openpipixia.sock"`.
+- Use `OPENPPX_TMUX_SOCKET_DIR` environment variable.
+- Default socket path: `"$OPENPPX_TMUX_SOCKET_DIR/openpipixia.sock"`.
 
 ## Targeting panes and naming
 
@@ -43,7 +43,7 @@ To monitor:
 ## Finding sessions
 
 - List sessions on your socket: `{baseDir}/scripts/find-sessions.sh -S "$SOCKET"`.
-- Scan all sockets: `{baseDir}/scripts/find-sessions.sh --all` (uses `OPENPIPIXIA_TMUX_SOCKET_DIR`).
+- Scan all sockets: `{baseDir}/scripts/find-sessions.sh --all` (uses `OPENPPX_TMUX_SOCKET_DIR`).
 
 ## Sending input safely
 

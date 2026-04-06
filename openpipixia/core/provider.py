@@ -127,8 +127,8 @@ def validate_provider_runtime(provider: str) -> str | None:
 
 def build_adk_model_from_env() -> Any:
     """Build ADK model object/string based on selected provider."""
-    provider = normalize_provider_name(os.getenv("OPENPIPIXIA_PROVIDER"))
-    model_name = normalize_model_name(provider, os.getenv("OPENPIPIXIA_MODEL"))
+    provider = normalize_provider_name(os.getenv("OPENPPX_PROVIDER"))
+    model_name = normalize_model_name(provider, os.getenv("OPENPPX_MODEL"))
     issue = validate_provider_runtime(provider)
     if issue:
         raise RuntimeError(issue)
@@ -151,11 +151,11 @@ def build_adk_model_from_env() -> Any:
             if api_key:
                 kwargs["api_key"] = api_key
 
-        api_base = os.getenv("OPENPIPIXIA_PROVIDER_API_BASE", "").strip() or provider_default_api_base(provider)
+        api_base = os.getenv("OPENPPX_PROVIDER_API_BASE", "").strip() or provider_default_api_base(provider)
         if api_base:
             kwargs["api_base"] = api_base
 
-        raw_headers = os.getenv("OPENPIPIXIA_PROVIDER_EXTRA_HEADERS_JSON", "").strip()
+        raw_headers = os.getenv("OPENPPX_PROVIDER_EXTRA_HEADERS_JSON", "").strip()
         if raw_headers:
             try:
                 parsed = json.loads(raw_headers)
@@ -169,7 +169,7 @@ def build_adk_model_from_env() -> Any:
     if spec.runtime == RUNTIME_CODEX:
         from .openai_codex_llm import OpenAICodexLlm
 
-        codex_url = os.getenv("OPENPIPIXIA_PROVIDER_API_BASE", "").strip() or provider_default_api_base(provider)
+        codex_url = os.getenv("OPENPPX_PROVIDER_API_BASE", "").strip() or provider_default_api_base(provider)
         return OpenAICodexLlm(model=model_name, codex_url=codex_url)
 
     raise RuntimeError(f"Unsupported provider '{provider}'.")

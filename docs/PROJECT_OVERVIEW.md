@@ -46,7 +46,7 @@
 - 用户隔离：`user_id` 作为用户级作用域
 - 会话隔离：`session_id` 作为单轮/多轮上下文容器
 - 默认 session key：`{channel}:{chat_id}`（由 `InboundMessage.session_key` 生成）
-- Session 持久化：SQLite，默认 `~/.openpipixia/database/sessions.db`
+- Session 持久化：SQLite，默认 `~/.openppx/database/sessions.db`
 
 ### 3.2 `/new` 与 `/help`
 
@@ -65,15 +65,15 @@
 
 ### 3.3 Memory 后端
 
-通过 `OPENPIPIXIA_MEMORY_BACKEND` 选择：
+通过 `OPENPPX_MEMORY_BACKEND` 选择：
 
 - `markdown`（默认）
-  - 本地落盘到 `OPENPIPIXIA_MEMORY_MARKDOWN_DIR`
-  - 默认目录：`~/.openpipixia/<agent_name>/memory`
+  - 本地落盘到 `OPENPPX_MEMORY_MARKDOWN_DIR`
+  - 默认目录：`~/.openppx/<agent_name>/memory`
 - `in_memory`（调试）
   - 进程内记忆，不落盘
 
-可通过 `OPENPIPIXIA_MEMORY_ENABLED` 控制是否启用记忆（默认开启）。
+可通过 `OPENPPX_MEMORY_ENABLED` 控制是否启用记忆（默认开启）。
 
 ### 3.4 Markdown Memory 落盘结构
 
@@ -100,11 +100,11 @@
 
 可配置项：
 
-- `OPENPIPIXIA_COMPACTION_ENABLED`（默认 `1`）
-- `OPENPIPIXIA_COMPACTION_INTERVAL`（默认 `8`）
-- `OPENPIPIXIA_COMPACTION_OVERLAP`（默认 `1`）
-- `OPENPIPIXIA_COMPACTION_TOKEN_THRESHOLD`（可选，正整数）
-- `OPENPIPIXIA_COMPACTION_EVENT_RETENTION`（可选，非负整数）
+- `OPENPPX_COMPACTION_ENABLED`（默认 `1`）
+- `OPENPPX_COMPACTION_INTERVAL`（默认 `8`）
+- `OPENPPX_COMPACTION_OVERLAP`（默认 `1`）
+- `OPENPPX_COMPACTION_TOKEN_THRESHOLD`（可选，正整数）
+- `OPENPPX_COMPACTION_EVENT_RETENTION`（可选，非负整数）
 
 注意：`TOKEN_THRESHOLD` 和 `EVENT_RETENTION` 必须成对设置；只设置一个会被忽略（防止启动时报错）。
 
@@ -132,9 +132,9 @@ ppx doctor --fix
 
 会生成：
 
-- `~/.openpipixia/<agent_name>/config.json`
-- `~/.openpipixia/<agent_name>/runtime.json`
-- `~/.openpipixia/<agent_name>/AGENTS.md` 等 agent 元信息文件
+- `~/.openppx/<agent_name>/config.json`
+- `~/.openppx/<agent_name>/runtime.json`
+- `~/.openppx/<agent_name>/AGENTS.md` 等 agent 元信息文件
 - `agent.workspace` 指向的独立工作目录
 
 ### 6.1.1 Agent 配置目录核心文件约定

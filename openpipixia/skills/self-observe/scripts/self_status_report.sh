@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DATA_DIR="${HOME}/.openpipixia"
+DATA_DIR="${HOME}/.openppx"
 LOG_DIR="${DATA_DIR}/log"
 TOKEN_DB="${DATA_DIR}/token_usage.db"
 

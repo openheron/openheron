@@ -393,7 +393,7 @@ class FeishuChannelTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_send_delta_creates_then_patches_same_message(self) -> None:
-        os.environ["OPENPIPIXIA_FEISHU_STREAM_UPDATE_INTERVAL_MS"] = "0"
+        os.environ["OPENPPX_FEISHU_STREAM_UPDATE_INTERVAL_MS"] = "0"
         bus = MessageBus()
         channel = FeishuChannel(bus=bus, app_id="app-id", app_secret="app-secret")
         channel._client = object()
@@ -412,7 +412,7 @@ class FeishuChannelTests(unittest.IsolatedAsyncioTestCase):
         patch_text.assert_called_once_with("om_stream_1", "hello world")
 
     async def test_send_delta_flushes_and_clears_state_on_stream_end(self) -> None:
-        os.environ["OPENPIPIXIA_FEISHU_STREAM_UPDATE_INTERVAL_MS"] = "999999"
+        os.environ["OPENPPX_FEISHU_STREAM_UPDATE_INTERVAL_MS"] = "999999"
         bus = MessageBus()
         channel = FeishuChannel(bus=bus, app_id="app-id", app_secret="app-secret")
         channel._client = object()

@@ -22,7 +22,7 @@ ppx doctor
 ## Gateway 后台服务（进程级）
 
 ```bash
-# 启动后台 gateway（写 pid/meta/log 到 ~/.openpipixia/log）
+# 启动后台 gateway（写 pid/meta/log 到 ~/.openppx/log）
 ppx gateway start --channels local,feishu
 
 # 查看状态（可加 --json）
@@ -36,11 +36,11 @@ ppx gateway stop
 
 后台运行相关文件：
 
-- `~/.openpipixia/log/gateway.pid`
-- `~/.openpipixia/log/gateway.meta.json`
-- `~/.openpipixia/log/gateway.out.log`
-- `~/.openpipixia/log/gateway.err.log`
-- `~/.openpipixia/log/gateway.debug.log`
+- `~/.openppx/log/gateway.pid`
+- `~/.openppx/log/gateway.meta.json`
+- `~/.openppx/log/gateway.out.log`
+- `~/.openppx/log/gateway.err.log`
+- `~/.openppx/log/gateway.debug.log`
 
 一键 smoke（doctor，可选 gateway 探活）：
 
@@ -95,11 +95,11 @@ ppx gateway-service status --json
 ### 常见问题
 
 - `Missing ... API key`  
-  打开目标 Agent 的 `~/.openpipixia/<agent_name>/config.json`，给启用 provider 填 `apiKey`，再运行 `ppx doctor`。
+  打开目标 Agent 的 `~/.openppx/<agent_name>/config.json`，给启用 provider 填 `apiKey`，再运行 `ppx doctor`。
   如果本地环境变量已配置，也可先运行 `ppx doctor --fix` 让系统自动回填缺失项。
 
 - `channels....` 凭证字段缺失（例如 feishu/telegram/discord/dingtalk/slack/whatsapp/email/qq）  
-  在目标 Agent 的 `~/.openpipixia/<agent_name>/config.json` 的 `channels` 段补齐对应字段，再运行 `ppx doctor`。
+  在目标 Agent 的 `~/.openppx/<agent_name>/config.json` 的 `channels` 段补齐对应字段，再运行 `ppx doctor`。
   如果不确定具体字段，直接看 `ppx doctor --json` 的缺失项。
 
 - `MCP server ... health check failed`  
@@ -215,7 +215,7 @@ ppx gateway run --channels local,feishu --interactive-local
 也可通过环境变量指定默认通道：
 
 ```bash
-export OPENPIPIXIA_CHANNELS=feishu
+export OPENPPX_CHANNELS=feishu
 ppx gateway
 ```
 
@@ -244,7 +244,7 @@ scripts/whatsapp_bridge_e2e.sh smoke
 
 `openpipixia` 的 cron 是进程内调度器，不写系统 crontab。只有网关运行时任务才会执行。
 
-- 存储文件：`OPENPIPIXIA_WORKSPACE/.openpipixia/cron_jobs.json`
+- 存储文件：`OPENPPX_WORKSPACE/.openpipixia/cron_jobs.json`
 - 支持调度：`every`、`cron`（可配 `tz`）、`at`
 
 常用命令：
@@ -266,7 +266,7 @@ ppx cron status
 
 `openpipixia` 会在每次 LLM 调用结束后记录 token 使用信息（请求/响应、文本/图像、时间戳）。
 
-- 存储位置：`~/.openpipixia/token_usage.db`（SQLite）
+- 存储位置：`~/.openppx/token_usage.db`（SQLite）
 - 记录粒度：每次 request/response 一条事件
 - 查询命令：
 

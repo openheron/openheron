@@ -131,8 +131,8 @@ class PlaywrightBrowserRuntime:
     """Minimal Playwright runtime with optional CDP attach mode.
 
     Environment flags:
-    - ``OPENPIPIXIA_BROWSER_CDP_URL``: if set, use connect-over-CDP mode.
-    - ``OPENPIPIXIA_BROWSER_HEADLESS``: used for local launch mode (default: true).
+    - ``OPENPPX_BROWSER_CDP_URL``: if set, use connect-over-CDP mode.
+    - ``OPENPPX_BROWSER_HEADLESS``: used for local launch mode (default: true).
     """
 
     def __init__(self) -> None:
@@ -262,7 +262,7 @@ class PlaywrightBrowserRuntime:
             self._owns_browser = False
             self._owns_context = not bool(contexts)
         else:
-            headless = os.getenv("OPENPIPIXIA_BROWSER_HEADLESS", "1").strip().lower() not in {
+            headless = os.getenv("OPENPPX_BROWSER_HEADLESS", "1").strip().lower() not in {
                 "0",
                 "false",
                 "off",
@@ -347,8 +347,8 @@ class PlaywrightBrowserRuntime:
                     available=chrome_available,
                     attach_mode="cdp-required",
                     requires={
-                        "OPENPIPIXIA_BROWSER_CHROME_CDP_URL": True,
-                        "OPENPIPIXIA_BROWSER_CHROME_RELAY_URL": True,
+                        "OPENPPX_BROWSER_CHROME_CDP_URL": True,
+                        "OPENPPX_BROWSER_CHROME_RELAY_URL": True,
                     },
                     ownership_model={
                         "browser": "borrowed",
@@ -1063,16 +1063,16 @@ class PlaywrightBrowserRuntime:
     def _resolve_cdp_url_for_profile(self, profile: str) -> str:
         if profile == "chrome":
             return self._chrome_cdp_url()
-        return os.getenv("OPENPIPIXIA_BROWSER_CDP_URL", "").strip()
+        return os.getenv("OPENPPX_BROWSER_CDP_URL", "").strip()
 
     def _chrome_cdp_url(self) -> str:
-        return os.getenv("OPENPIPIXIA_BROWSER_CHROME_CDP_URL", "").strip()
+        return os.getenv("OPENPPX_BROWSER_CHROME_CDP_URL", "").strip()
 
     def _chrome_relay_url(self) -> str:
-        return os.getenv("OPENPIPIXIA_BROWSER_CHROME_RELAY_URL", "").strip()
+        return os.getenv("OPENPPX_BROWSER_CHROME_RELAY_URL", "").strip()
 
     def _resolve_chrome_relay_type_max_chars(self) -> int:
-        raw = os.getenv("OPENPIPIXIA_BROWSER_CHROME_RELAY_TYPE_MAX_CHARS", "").strip()
+        raw = os.getenv("OPENPPX_BROWSER_CHROME_RELAY_TYPE_MAX_CHARS", "").strip()
         if not raw:
             return 5000
         try:
@@ -1082,7 +1082,7 @@ class PlaywrightBrowserRuntime:
         return min(max(value, 1), 200_000)
 
     def _resolve_chrome_relay_evaluate_max_chars(self) -> int:
-        raw = os.getenv("OPENPIPIXIA_BROWSER_CHROME_RELAY_EVALUATE_MAX_CHARS", "").strip()
+        raw = os.getenv("OPENPPX_BROWSER_CHROME_RELAY_EVALUATE_MAX_CHARS", "").strip()
         if not raw:
             return 10_000
         try:
@@ -1092,7 +1092,7 @@ class PlaywrightBrowserRuntime:
         return min(max(value, 1), 200_000)
 
     def _relay_evaluate_enabled(self) -> bool:
-        return os.getenv("OPENPIPIXIA_BROWSER_CHROME_RELAY_EVALUATE_ENABLED", "").strip().lower() in {
+        return os.getenv("OPENPPX_BROWSER_CHROME_RELAY_EVALUATE_ENABLED", "").strip().lower() in {
             "1",
             "true",
             "yes",
@@ -1100,7 +1100,7 @@ class PlaywrightBrowserRuntime:
         }
 
     def _resolve_chrome_relay_max_body_bytes(self) -> int:
-        raw = os.getenv("OPENPIPIXIA_BROWSER_CHROME_RELAY_MAX_BODY_BYTES", "").strip()
+        raw = os.getenv("OPENPPX_BROWSER_CHROME_RELAY_MAX_BODY_BYTES", "").strip()
         if not raw:
             return 256 * 1024
         try:
@@ -1149,7 +1149,7 @@ class PlaywrightBrowserRuntime:
         if query_str:
             full_url = f"{full_url}?{query_str}"
         headers = {"Accept": "application/json"}
-        relay_token = os.getenv("OPENPIPIXIA_BROWSER_CHROME_RELAY_TOKEN", "").strip()
+        relay_token = os.getenv("OPENPPX_BROWSER_CHROME_RELAY_TOKEN", "").strip()
         if relay_token:
             headers["X-OpenPipixia-Browser-Relay-Token"] = relay_token
         body_bytes: bytes | None = None
@@ -1164,7 +1164,7 @@ class PlaywrightBrowserRuntime:
                     code="relay_body_too_large",
                 )
         timeout_seconds = 10.0
-        timeout_raw = os.getenv("OPENPIPIXIA_BROWSER_CHROME_RELAY_TIMEOUT_MS", "").strip()
+        timeout_raw = os.getenv("OPENPPX_BROWSER_CHROME_RELAY_TIMEOUT_MS", "").strip()
         if timeout_raw:
             try:
                 timeout_seconds = max(0.1, min(int(timeout_raw) / 1000.0, 120.0))
@@ -1467,7 +1467,7 @@ class PlaywrightBrowserRuntime:
         if kind == "evaluate":
             if not self._relay_evaluate_enabled():
                 raise BrowserRuntimeError(
-                    "chrome relay evaluate is disabled; set OPENPIPIXIA_BROWSER_CHROME_RELAY_EVALUATE_ENABLED=1 to enable",
+                    "chrome relay evaluate is disabled; set OPENPPX_BROWSER_CHROME_RELAY_EVALUATE_ENABLED=1 to enable",
                     status=501,
                 )
             fn = relay_request.get("fn")

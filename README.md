@@ -33,13 +33,13 @@ ppx create --name "assistant-main"
 
 - the role is `Assistant` (low-privilege)
 - the workspace is a new directory under the system temp directory
-- the new agent is added to and enabled in `~/.openpipixia/global_config.json`
+- the new agent is added to and enabled in `~/.openppx/global_config.json`
 
 Example agent files:
 
-- `~/.openpipixia/assistant-main/config.json`
-- `~/.openpipixia/assistant-main/runtime.json`
-- `~/.openpipixia/global_config.json`
+- `~/.openppx/assistant-main/config.json`
+- `~/.openppx/assistant-main/runtime.json`
+- `~/.openppx/global_config.json`
 
 You can also create higher-privilege agents explicitly:
 
@@ -48,7 +48,7 @@ ppx create --name "operator-main" --role operator
 ppx create --name "manager-main" --role manager --workspace ~/work/openppx-manager
 ```
 
-Each agent has a per-agent config home under `~/.openpipixia/<agent_name>/` that includes:
+Each agent has a per-agent config home under `~/.openppx/<agent_name>/` that includes:
 
 - `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `IDENTITY.md`, `USER.md`
 - `HEARTBEAT.md`
@@ -63,7 +63,7 @@ Review and edit your configuration files:
 
 - `global_config.json`
 - Each agent's config/runtime/agent-home files, for example:
-  `~/.openpipixia/assistant-main/config.json`
+  `~/.openppx/assistant-main/config.json`
 
 Fill in required provider keys and assign per-agent security settings.
 You can leave channel-specific keys (for example Telegram, Feishu, Weixin, or WeCom) empty at this stage.
@@ -78,14 +78,14 @@ Important:
 ### 💬 3. Try Local Interactive Mode
 
 ```bash
-ppx --config-path ~/.openpipixia/assistant-main/config.json gateway run --channels local --interactive-local
+ppx --config-path ~/.openppx/assistant-main/config.json gateway run --channels local --interactive-local
 ```
 
 ### 🛰️ 4. Enable Channel Chat and Start Background Service
 
 For channel keys and secrets, see [`docs/CHANNELS.md`](./docs/CHANNELS.md). After filling in channel keys, start the background gateway for regular usage:
 
-Example for Feishu: if `assistant-main` is the agent you want to connect to Feishu, edit `~/.openpipixia/assistant-main/config.json` and set:
+Example for Feishu: if `assistant-main` is the agent you want to connect to Feishu, edit `~/.openppx/assistant-main/config.json` and set:
 
 ```json
 {
@@ -208,12 +208,12 @@ macOS permission reminder (required for GUI automation):
 
 Background runtime/log files:
 
-- `~/.openpipixia/log/gateway.pid`
-- `~/.openpipixia/log/gateway.meta.json`
-- `~/.openpipixia/log/gateway.out.log`
-- `~/.openpipixia/log/gateway.err.log`
-- `~/.openpipixia/log/gateway.debug.log`
-- `~/.openpipixia/token_usage.db` (LLM token usage events)
+- `~/.openppx/log/gateway.pid`
+- `~/.openppx/log/gateway.meta.json`
+- `~/.openppx/log/gateway.out.log`
+- `~/.openppx/log/gateway.err.log`
+- `~/.openppx/log/gateway.debug.log`
+- `~/.openppx/token_usage.db` (LLM token usage events)
 
 Workspace-level runtime state lives under `<workspace>/.openpipixia/`
 (for example cron and heartbeat runtime snapshots).
@@ -329,12 +329,12 @@ pip uninstall openpipixia
 ```
 
 This removes only the Python package and CLI entrypoint.
-It does **not** remove user data under `~/.openpipixia/`.
+It does **not** remove user data under `~/.openppx/`.
 
 To remove local runtime data as well:
 
 ```bash
-rm -rf ~/.openpipixia
+rm -rf ~/.openppx
 ```
 
 Only run this cleanup if you no longer need existing config, agent-home files, workspaces, logs, or local runtime records.

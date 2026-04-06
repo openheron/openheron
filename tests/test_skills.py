@@ -34,7 +34,7 @@ class SkillRegistryTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            os.environ["OPENPIPIXIA_AGENT_HOME"] = str(agent_home)
+            os.environ["OPENPPX_AGENT_HOME"] = str(agent_home)
             skills = json.loads(list_skills())
             names = {item["name"] for item in skills}
             self.assertIn("workspace-demo", names)
@@ -92,7 +92,7 @@ class SkillRegistryTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            os.environ["OPENPIPIXIA_AGENT_HOME"] = str(workspace)
+            os.environ["OPENPPX_AGENT_HOME"] = str(workspace)
             content = read_skill("demo")
             self.assertIn("# Demo Skill", content)
 
@@ -105,8 +105,8 @@ class SkillRegistryTests(unittest.TestCase):
                 "---\nname: custom-skill\ndescription: custom builtin\n---\n\n# Custom Builtin\n",
                 encoding="utf-8",
             )
-            os.environ["OPENPIPIXIA_AGENT_HOME"] = "/tmp/nonexistent-openpipixia-agent-home"
-            os.environ["OPENPIPIXIA_BUILTIN_SKILLS_DIR"] = str(builtin_dir)
+            os.environ["OPENPPX_AGENT_HOME"] = "/tmp/nonexistent-openpipixia-agent-home"
+            os.environ["OPENPPX_BUILTIN_SKILLS_DIR"] = str(builtin_dir)
 
             skills = json.loads(list_skills())
             names = {item["name"] for item in skills}
@@ -133,7 +133,7 @@ class SkillRegistryTests(unittest.TestCase):
     def test_default_user_global_skills_use_openpipixia_dir_not_codex_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
-            openpipixia_skill = home / ".openpipixia" / "skills" / "openpipixia-global-demo" / "SKILL.md"
+            openpipixia_skill = home / ".openppx" / "skills" / "openpipixia-global-demo" / "SKILL.md"
             openpipixia_skill.parent.mkdir(parents=True, exist_ok=True)
             openpipixia_skill.write_text(
                 "---\nname: openpipixia-global-demo\ndescription: openpipixia global skill\n---\n\n# Openpipixia Global\n",

@@ -28,7 +28,7 @@ _REQUEST_META_BY_INVOCATION_ID: dict[str, dict[str, Any]] = {}
 
 
 def _max_chars() -> int:
-    raw = os.getenv("OPENPIPIXIA_DEBUG_MAX_CHARS", str(_DEFAULT_MAX_TEXT_CHARS)).strip()
+    raw = os.getenv("OPENPPX_DEBUG_MAX_CHARS", str(_DEFAULT_MAX_TEXT_CHARS)).strip()
     try:
         value = int(raw)
     except ValueError:
@@ -201,7 +201,7 @@ def _request_meta_from_context(callback_context: CallbackContext, llm_request: L
     request_at_ms = int(time.time() * 1000)
     request_at = datetime.fromtimestamp(request_at_ms / 1000, tz=timezone.utc).isoformat()
     model = str(getattr(llm_request, "model", "") or "")
-    provider = str(os.getenv("OPENPIPIXIA_PROVIDER", "") or "").strip().lower()
+    provider = str(os.getenv("OPENPPX_PROVIDER", "") or "").strip().lower()
     if not provider:
         model_l = model.lower()
         if model_l.startswith("gemini") or model_l.startswith("google/"):

@@ -52,7 +52,7 @@ class WorkspaceBootstrapTests(unittest.TestCase):
                 config=types.SimpleNamespace(system_instruction="base-system-instruction"),
             )
 
-            with patch.dict(os.environ, {"OPENPIPIXIA_AGENT_HOME": str(root)}, clear=False):
+            with patch.dict(os.environ, {"OPENPPX_AGENT_HOME": str(root)}, clear=False):
                 asyncio.run(before_model_workspace_bootstrap_callback(types.SimpleNamespace(), llm_request))
 
         system_instruction = llm_request.config.system_instruction
@@ -78,7 +78,7 @@ class WorkspaceBootstrapTests(unittest.TestCase):
             llm_request = types.SimpleNamespace(
                 config=types.SimpleNamespace(system_instruction="base-system-instruction"),
             )
-            with patch.dict(os.environ, {"OPENPIPIXIA_AGENT_HOME": str(root)}, clear=False):
+            with patch.dict(os.environ, {"OPENPPX_AGENT_HOME": str(root)}, clear=False):
                 asyncio.run(before_model_workspace_bootstrap_callback(types.SimpleNamespace(), llm_request))
 
         self.assertEqual(llm_request.config.system_instruction, "base-system-instruction")
@@ -90,7 +90,7 @@ class WorkspaceBootstrapTests(unittest.TestCase):
             llm_request = types.SimpleNamespace(
                 config=types.SimpleNamespace(system_instruction="base-system-instruction"),
             )
-            with patch.dict(os.environ, {"OPENPIPIXIA_AGENT_HOME": str(root)}, clear=False):
+            with patch.dict(os.environ, {"OPENPPX_AGENT_HOME": str(root)}, clear=False):
                 asyncio.run(
                     before_model_workspace_bootstrap_callback(
                         callback_context=types.SimpleNamespace(),

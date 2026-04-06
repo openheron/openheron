@@ -29,27 +29,27 @@ class BrowserRuntimeTests(unittest.TestCase):
         configure_browser_runtime(InMemoryBrowserRuntime())
 
     def test_default_runtime_is_in_memory(self) -> None:
-        os.environ.pop("OPENPIPIXIA_BROWSER_RUNTIME", None)
+        os.environ.pop("OPENPPX_BROWSER_RUNTIME", None)
         configure_browser_runtime(None)
         runtime = get_browser_runtime()
         self.assertIsInstance(runtime, InMemoryBrowserRuntime)
 
     def test_playwright_mode_falls_back_to_memory_when_adapter_fails(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_RUNTIME"] = "playwright"
+        os.environ["OPENPPX_BROWSER_RUNTIME"] = "playwright"
         with patch("openpipixia.browser.runtime._create_playwright_runtime", side_effect=RuntimeError("boom")):
             configure_browser_runtime(None)
             runtime = get_browser_runtime()
         self.assertIsInstance(runtime, InMemoryBrowserRuntime)
 
     def test_playwright_mode_strict_raises_when_adapter_fails(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_RUNTIME"] = "playwright"
-        os.environ["OPENPIPIXIA_BROWSER_RUNTIME_STRICT"] = "1"
+        os.environ["OPENPPX_BROWSER_RUNTIME"] = "playwright"
+        os.environ["OPENPPX_BROWSER_RUNTIME_STRICT"] = "1"
         with patch("openpipixia.browser.runtime._create_playwright_runtime", side_effect=RuntimeError("boom")):
             with self.assertRaises(RuntimeError):
                 configure_browser_runtime(None)
 
     def test_playwright_mode_uses_adapter_when_available(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_RUNTIME"] = "playwright"
+        os.environ["OPENPPX_BROWSER_RUNTIME"] = "playwright"
         sentinel = InMemoryBrowserRuntime()
         with patch("openpipixia.browser.runtime._create_playwright_runtime", return_value=sentinel):
             configure_browser_runtime(None)
@@ -64,7 +64,7 @@ class BrowserRuntimeTests(unittest.TestCase):
             validate_browser_url("http://localhost:8080")
 
     def test_validate_browser_url_allows_private_hosts_when_policy_disabled(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_BLOCK_PRIVATE_NETWORKS"] = "0"
+        os.environ["OPENPPX_BROWSER_BLOCK_PRIVATE_NETWORKS"] = "0"
         validate_browser_url("http://127.0.0.1:3000")
 
     def test_validate_browser_upload_paths_enforces_root(self) -> None:
@@ -76,7 +76,7 @@ class BrowserRuntimeTests(unittest.TestCase):
             with open(outside, "w", encoding="utf-8") as f:
                 f.write("outside")
 
-            os.environ["OPENPIPIXIA_BROWSER_UPLOAD_ROOT"] = root_tmp
+            os.environ["OPENPPX_BROWSER_UPLOAD_ROOT"] = root_tmp
             resolved = validate_browser_upload_paths([inside])
             self.assertEqual(resolved, [os.path.realpath(inside)])
 
@@ -100,7 +100,7 @@ class BrowserRuntimeTests(unittest.TestCase):
 
     def test_resolve_browser_artifact_path_enforces_root(self) -> None:
         with tempfile.TemporaryDirectory() as root_tmp, tempfile.TemporaryDirectory() as outside_tmp:
-            os.environ["OPENPIPIXIA_BROWSER_ARTIFACT_ROOT"] = root_tmp
+            os.environ["OPENPPX_BROWSER_ARTIFACT_ROOT"] = root_tmp
             inside = resolve_browser_artifact_path(str(Path(root_tmp) / "a.pdf"), default_filename="x.pdf")
             self.assertEqual(inside, str((Path(root_tmp) / "a.pdf").resolve()))
             with self.assertRaises(BrowserRuntimeError):

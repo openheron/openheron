@@ -86,8 +86,8 @@ def cmd_gateway_start_single(
         chat_id,
     ]
     env = dict(os.environ)
-    env["OPENPIPIXIA_GATEWAY_BG"] = "1"
-    env["OPENPIPIXIA_DEBUG_LOG_PATH"] = str(gateway_debug_log_path())
+    env["OPENPPX_GATEWAY_BG"] = "1"
+    env["OPENPPX_DEBUG_LOG_PATH"] = str(gateway_debug_log_path())
 
     stdout_path = gateway_stdout_log_path()
     stderr_path = gateway_stderr_log_path()
@@ -172,8 +172,8 @@ def cmd_gateway_start_multi(
             cmd.extend(["--channels", channels_override])
         stdout_path, stderr_path, debug_path = agent_gateway_log_paths(agent_name, config_path)
         env = dict(os.environ)
-        env["OPENPIPIXIA_GATEWAY_BG"] = "1"
-        env["OPENPIPIXIA_DEBUG_LOG_PATH"] = str(debug_path)
+        env["OPENPPX_GATEWAY_BG"] = "1"
+        env["OPENPPX_DEBUG_LOG_PATH"] = str(debug_path)
 
         with stdout_path.open("a", encoding="utf-8") as stdout_fh, stderr_path.open("a", encoding="utf-8") as stderr_fh:
             try:

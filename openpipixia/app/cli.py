@@ -113,7 +113,7 @@ def _parse_csv_list(raw: str) -> list[str]:
 
 def _doctor_parse_enabled_channels() -> list[str]:
     """Parse enabled channels for doctor checks without importing channel factory."""
-    raw = os.getenv("OPENPIPIXIA_CHANNELS", "local")
+    raw = os.getenv("OPENPPX_CHANNELS", "local")
     names = [item.strip().lower() for item in raw.split(",") if item.strip()]
     if not names:
         return ["local"]
@@ -122,7 +122,7 @@ def _doctor_parse_enabled_channels() -> list[str]:
 
 def _doctor_session_db_url() -> str:
     """Resolve doctor session DB URL without importing runtime session service stack."""
-    value = os.getenv("OPENPIPIXIA_SESSION_DB_URL", "").strip()
+    value = os.getenv("OPENPPX_SESSION_DB_URL", "").strip()
     if value:
         return value
     return load_session_config().db_url
@@ -354,13 +354,13 @@ def _load_mcp_probe_policy(*, timeout_env_name: str, timeout_default: float) -> 
             maximum=30.0,
         ),
         retry_attempts=_read_env_int(
-            "OPENPIPIXIA_MCP_PROBE_RETRY_ATTEMPTS",
+            "OPENPPX_MCP_PROBE_RETRY_ATTEMPTS",
             2,
             minimum=1,
             maximum=5,
         ),
         retry_backoff_seconds=_read_env_float(
-            "OPENPIPIXIA_MCP_PROBE_RETRY_BACKOFF_SECONDS",
+            "OPENPPX_MCP_PROBE_RETRY_BACKOFF_SECONDS",
             0.3,
             minimum=0.0,
             maximum=5.0,
@@ -1233,9 +1233,9 @@ def _cmd_doctor(
     issues: list[str] = []
     if shutil.which("adk") is None:
         issues.append("Missing `adk` CLI. Install with: pip install google-adk")
-    provider_name = normalize_provider_name(os.getenv("OPENPIPIXIA_PROVIDER"))
-    provider_model = normalize_model_name(provider_name, os.getenv("OPENPIPIXIA_MODEL"))
-    provider_enabled = env_enabled("OPENPIPIXIA_PROVIDER_ENABLED", default=True)
+    provider_name = normalize_provider_name(os.getenv("OPENPPX_PROVIDER"))
+    provider_model = normalize_model_name(provider_name, os.getenv("OPENPPX_MODEL"))
+    provider_enabled = env_enabled("OPENPPX_PROVIDER_ENABLED", default=True)
     provider_key_env = provider_api_key_env(provider_name)
     provider_oauth: dict[str, Any] = {"required": False, "authenticated": None, "message": ""}
     if not provider_enabled:
@@ -1247,7 +1247,7 @@ def _cmd_doctor(
         if provider_key_env and not os.getenv(provider_key_env, "").strip():
             issues.append(
                 f"Missing {provider_name} API key. Set `providers.{provider_name}.apiKey` "
-                f"in ~/.openpipixia/config.json or export {provider_key_env}."
+                f"in ~/.openppx/config.json or export {provider_key_env}."
             )
         oauth_issue, provider_oauth = _provider_oauth_health(provider_name)
         if oauth_issue:
@@ -1270,14 +1270,14 @@ def _cmd_doctor(
             issues.append(bridge_issue)
     heartbeat_snapshot = read_heartbeat_status_snapshot(registry.workspace)
     install_prereqs = _install_prereq_lines()
-    web_enabled = env_enabled("OPENPIPIXIA_WEB_ENABLED", default=True)
-    web_search_enabled = env_enabled("OPENPIPIXIA_WEB_SEARCH_ENABLED", default=True)
-    web_search_provider = os.getenv("OPENPIPIXIA_WEB_SEARCH_PROVIDER", "brave").strip().lower() or "brave"
+    web_enabled = env_enabled("OPENPPX_WEB_ENABLED", default=True)
+    web_search_enabled = env_enabled("OPENPPX_WEB_SEARCH_ENABLED", default=True)
+    web_search_provider = os.getenv("OPENPPX_WEB_SEARCH_PROVIDER", "brave").strip().lower() or "brave"
     web_search_key_configured = bool(os.getenv("BRAVE_API_KEY", "").strip())
     security_policy = load_security_policy()
     mcp_toolsets = build_mcp_toolsets_from_env(log_registered=False)
     mcp_summaries = summarize_mcp_toolsets(mcp_toolsets)
-    gui_builtin_tools_enabled = env_enabled("OPENPIPIXIA_GUI_BUILTIN_TOOLS_ENABLED", default=True)
+    gui_builtin_tools_enabled = env_enabled("OPENPPX_GUI_BUILTIN_TOOLS_ENABLED", default=True)
     gui_mcp = resolve_gui_mcp_from_env() or resolve_gui_mcp_from_summaries(mcp_summaries)
     gui_task_tool = gui_mcp.task_tool_name if gui_mcp else None
     gui_action_tool = gui_mcp.action_tool_name if gui_mcp else None
@@ -1287,7 +1287,7 @@ def _cmd_doctor(
         gui_action_tool=gui_action_tool,
     )
     mcp_probe_policy = _load_mcp_probe_policy(
-        timeout_env_name="OPENPIPIXIA_MCP_DOCTOR_TIMEOUT_SECONDS",
+        timeout_env_name="OPENPPX_MCP_DOCTOR_TIMEOUT_SECONDS",
         timeout_default=5.0,
     )
     mcp_probe_results: list[dict[str, object]] = []
@@ -1593,9 +1593,9 @@ def _cmd_provider_list(*, verbose: bool = False) -> int:
 
 def _cmd_provider_status(*, output_json: bool = False) -> int:
     """Show runtime status for currently selected provider."""
-    provider_name = normalize_provider_name(os.getenv("OPENPIPIXIA_PROVIDER"))
-    provider_model = normalize_model_name(provider_name, os.getenv("OPENPIPIXIA_MODEL"))
-    provider_enabled = env_enabled("OPENPIPIXIA_PROVIDER_ENABLED", default=True)
+    provider_name = normalize_provider_name(os.getenv("OPENPPX_PROVIDER"))
+    provider_model = normalize_model_name(provider_name, os.getenv("OPENPPX_MODEL"))
+    provider_enabled = env_enabled("OPENPPX_PROVIDER_ENABLED", default=True)
     provider_key_env = provider_api_key_env(provider_name)
     provider_key_configured = bool(provider_key_env is None or os.getenv(provider_key_env, "").strip())
 
@@ -1763,7 +1763,7 @@ def _is_pid_running(pid: int) -> bool:
 
 def _resolve_bridge_source_dir() -> Path:
     """Resolve WhatsApp bridge source directory containing package.json."""
-    override = os.getenv("OPENPIPIXIA_WHATSAPP_BRIDGE_SOURCE", "").strip()
+    override = os.getenv("OPENPPX_WHATSAPP_BRIDGE_SOURCE", "").strip()
     candidates: list[Path] = []
     if override:
         candidates.append(Path(override).expanduser())
@@ -1777,7 +1777,7 @@ def _resolve_bridge_source_dir() -> Path:
             return candidate
     raise RuntimeError(
         "WhatsApp bridge source not found. "
-        "Set OPENPIPIXIA_WHATSAPP_BRIDGE_SOURCE or include openpipixia/bridge resources."
+        "Set OPENPPX_WHATSAPP_BRIDGE_SOURCE or include openpipixia/bridge resources."
     )
 
 
@@ -2042,7 +2042,7 @@ def _cmd_channels_bridge_stop(*, channel_name: str) -> int:
 
 def _whatsapp_bridge_precheck_enabled() -> bool:
     """Return whether WhatsApp bridge precheck is enabled."""
-    return env_enabled("OPENPIPIXIA_WHATSAPP_BRIDGE_PRECHECK", default=True)
+    return env_enabled("OPENPPX_WHATSAPP_BRIDGE_PRECHECK", default=True)
 
 
 def _check_whatsapp_bridge_ready() -> str | None:
@@ -2512,7 +2512,7 @@ def _cmd_init(*, force: bool) -> int:
     _stdout_line(f"Global config updated: {global_config_path}")
     _stdout_line(f"Enabled agent in global_config.json: {_INIT_DEFAULT_AGENT_NAMES[0]}")
     _stdout_line("You can edit global_config.json to enable/disable agents.")
-    _stdout_line("You can edit each agent config/runtime/workspace file under ~/.openpipixia/<agent_name>/.")
+    _stdout_line("You can edit each agent config/runtime/workspace file under ~/.openppx/<agent_name>/.")
     _stdout_line("Bootstrap file purposes:")
     _stdout_line("- AGENTS.md: agent engineering rules and execution constraints.")
     _stdout_line("- SOUL.md: personality and behavior style guidance.")
@@ -2789,7 +2789,7 @@ def _cmd_install(
 
 
 def _gateway_log_dir() -> Path:
-    """Return gateway runtime/log directory under ~/.openpipixia/log."""
+    """Return gateway runtime/log directory under ~/.openppx/log."""
     path = get_data_dir() / "log"
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -2963,7 +2963,7 @@ def _global_config_path() -> Path:
 
 
 def _global_enabled_agent_names() -> list[str]:
-    """Read enabled agent names from ~/.openpipixia/global_config.json."""
+    """Read enabled agent names from ~/.openppx/global_config.json."""
     path = _global_config_path()
     if not path.exists():
         return []
@@ -3001,7 +3001,7 @@ def _global_enabled_agent_names() -> list[str]:
 
 
 def _agent_config_path(agent_name: str) -> Path:
-    """Resolve one per-agent config path under ~/.openpipixia/<agent>/config.json."""
+    """Resolve one per-agent config path under ~/.openppx/<agent>/config.json."""
     return get_data_dir() / agent_name / "config.json"
 
 
@@ -3379,7 +3379,7 @@ def _cmd_gateway_restart(*, channels: str | None, sender_id: str, chat_id: str) 
 
 def _required_mcp_servers_from_env() -> list[str]:
     """Read strong-dependency MCP server names from environment."""
-    return _parse_csv_list(os.getenv("OPENPIPIXIA_MCP_REQUIRED_SERVERS", ""))
+    return _parse_csv_list(os.getenv("OPENPPX_MCP_REQUIRED_SERVERS", ""))
 
 
 def _is_non_blocking_mcp_issue(issue: str) -> bool:
@@ -3415,7 +3415,7 @@ async def _required_mcp_preflight(agent_tools: list[object]) -> list[str]:
         return issues
 
     mcp_probe_policy = _load_mcp_probe_policy(
-        timeout_env_name="OPENPIPIXIA_MCP_GATEWAY_TIMEOUT_SECONDS",
+        timeout_env_name="OPENPPX_MCP_GATEWAY_TIMEOUT_SECONDS",
         timeout_default=5.0,
     )
     results = await probe_mcp_toolsets(
@@ -3842,7 +3842,7 @@ def _cmd_gateway_service_install(*, force: bool, channels: str, enable: bool) ->
             program=program,
             args=args,
             working_directory=workspace,
-            env={"OPENPIPIXIA_CHANNELS": channels_value},
+            env={"OPENPPX_CHANNELS": channels_value},
             stdout_path=stdout_log,
             stderr_path=stderr_log,
         )
@@ -3854,7 +3854,7 @@ def _cmd_gateway_service_install(*, force: bool, channels: str, enable: bool) ->
             description="Openpipixia Gateway Service",
             exec_start=exec_start,
             working_directory=workspace,
-            env={"OPENPIPIXIA_CHANNELS": channels_value},
+            env={"OPENPPX_CHANNELS": channels_value},
         )
         enable_hint = f"systemctl --user daemon-reload && systemctl --user enable --now {service_name}.service"
         disable_hint = f"systemctl --user disable --now {service_name}.service"
@@ -4046,7 +4046,7 @@ def main(argv: list[str] | None = None) -> None:
     gateway_parser.add_argument(
         "--channels",
         default=None,
-        help="Comma-separated channels. Defaults to OPENPIPIXIA_CHANNELS or 'local'.",
+        help="Comma-separated channels. Defaults to OPENPPX_CHANNELS or 'local'.",
     )
     gateway_parser.add_argument("--sender-id", default="local-user", help="Sender id for local interactive mode.")
     gateway_parser.add_argument("--chat-id", default="terminal", help="Chat id for local interactive mode.")

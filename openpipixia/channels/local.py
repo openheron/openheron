@@ -80,7 +80,7 @@ class LocalChannel(BaseChannel):
 
 
 def _local_json_output_enabled() -> bool:
-    raw = os.getenv("OPENPIPIXIA_LOCAL_JSON_OUTPUT", "").strip().lower()
+    raw = os.getenv("OPENPPX_LOCAL_JSON_OUTPUT", "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
 

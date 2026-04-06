@@ -80,13 +80,13 @@ class HeartbeatRunner:
         self._on_run = on_run
         self._is_busy = is_busy or (lambda: False)
         self._now_ms_fn = now_ms_fn or (lambda: int(time.time() * 1000))
-        self._every_raw = every if every is not None else os.getenv("OPENPIPIXIA_HEARTBEAT_EVERY", "30m")
+        self._every_raw = every if every is not None else os.getenv("OPENPPX_HEARTBEAT_EVERY", "30m")
         self._interval_ms = parse_heartbeat_every_ms(self._every_raw)
-        self._prompt = resolve_heartbeat_prompt(prompt if prompt is not None else os.getenv("OPENPIPIXIA_HEARTBEAT_PROMPT"))
+        self._prompt = resolve_heartbeat_prompt(prompt if prompt is not None else os.getenv("OPENPPX_HEARTBEAT_PROMPT"))
         raw_active_hours = active_hours if active_hours is not None else {
-            "start": os.getenv("OPENPIPIXIA_HEARTBEAT_ACTIVE_HOURS_START", "").strip(),
-            "end": os.getenv("OPENPIPIXIA_HEARTBEAT_ACTIVE_HOURS_END", "").strip(),
-            "timezone": os.getenv("OPENPIPIXIA_HEARTBEAT_ACTIVE_HOURS_TIMEZONE", "user").strip() or "user",
+            "start": os.getenv("OPENPPX_HEARTBEAT_ACTIVE_HOURS_START", "").strip(),
+            "end": os.getenv("OPENPPX_HEARTBEAT_ACTIVE_HOURS_END", "").strip(),
+            "timezone": os.getenv("OPENPPX_HEARTBEAT_ACTIVE_HOURS_TIMEZONE", "user").strip() or "user",
         }
         self._active_hours_start = str(raw_active_hours.get("start", "")).strip()
         self._active_hours_end = str(raw_active_hours.get("end", "")).strip()

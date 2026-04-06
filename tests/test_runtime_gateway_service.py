@@ -28,7 +28,7 @@ def test_render_launchd_plist_contains_required_sections() -> None:
         program="/usr/local/bin/ppx",
         args=["gateway", "run", "--channels", "local,feishu"],
         working_directory="/tmp/openpipixia",
-        env={"OPENPIPIXIA_CHANNELS": "local,feishu"},
+        env={"OPENPPX_CHANNELS": "local,feishu"},
         stdout_path="/tmp/openpipixia/stdout.log",
         stderr_path="/tmp/openpipixia/stderr.log",
     )
@@ -39,7 +39,7 @@ def test_render_launchd_plist_contains_required_sections() -> None:
     assert "<string>/usr/local/bin/ppx</string>" in content
     assert "<string>gateway</string>" in content
     assert "<key>EnvironmentVariables</key>" in content
-    assert "<key>OPENPIPIXIA_CHANNELS</key><string>local,feishu</string>" in content
+    assert "<key>OPENPPX_CHANNELS</key><string>local,feishu</string>" in content
     assert "<key>StandardOutPath</key>" in content
     assert "<true/>" in content
 
@@ -49,7 +49,7 @@ def test_render_systemd_unit_contains_required_sections() -> None:
         description="Openpipixia Gateway",
         exec_start="/usr/local/bin/ppx gateway run --channels local",
         working_directory="/tmp/openpipixia",
-        env={"OPENPIPIXIA_CHANNELS": "local", "OPENPIPIXIA_DEBUG": "1"},
+        env={"OPENPPX_CHANNELS": "local", "OPENPPX_DEBUG": "1"},
     )
 
     assert "[Unit]" in content
@@ -57,6 +57,6 @@ def test_render_systemd_unit_contains_required_sections() -> None:
     assert "After=network-online.target" in content
     assert "[Service]" in content
     assert "ExecStart=/usr/local/bin/ppx gateway run --channels local" in content
-    assert 'Environment="OPENPIPIXIA_CHANNELS=local"' in content
-    assert 'Environment="OPENPIPIXIA_DEBUG=1"' in content
+    assert 'Environment="OPENPPX_CHANNELS=local"' in content
+    assert 'Environment="OPENPPX_DEBUG=1"' in content
     assert "WantedBy=default.target" in content

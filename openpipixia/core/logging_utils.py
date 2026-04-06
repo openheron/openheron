@@ -13,7 +13,7 @@ from .env_utils import env_enabled
 
 def debug_logging_enabled() -> bool:
     """Return whether debug logging is enabled globally."""
-    return env_enabled("OPENPIPIXIA_DEBUG", default=False)
+    return env_enabled("OPENPPX_DEBUG", default=False)
 
 
 def debug_body(payload: Any) -> str:
@@ -34,7 +34,7 @@ def emit_debug(tag: str, payload: Any, *, depth: int = 2) -> None:
 
     # Default `depth=2` points to the original caller above local `_debug` wrappers.
     logger.opt(depth=depth).debug("[DEBUG] {}: {}", tag, body)
-    debug_log_path = os.getenv("OPENPIPIXIA_DEBUG_LOG_PATH", "").strip()
+    debug_log_path = os.getenv("OPENPPX_DEBUG_LOG_PATH", "").strip()
     if debug_log_path:
         try:
             with open(debug_log_path, "a", encoding="utf-8") as fh:

@@ -47,7 +47,7 @@ class SkillRegistry:
             self.builtin_skills_dirs = [builtin_skills_dir.resolve()]
         else:
             dirs: list[Path] = [package_builtin_dir.resolve()]
-            openpipixia_builtin_dir = Path.home() / ".openpipixia" / "skills"
+            openpipixia_builtin_dir = Path.home() / ".openppx" / "skills"
             if openpipixia_builtin_dir.resolve() not in dirs:
                 dirs.append(openpipixia_builtin_dir.resolve())
             self.builtin_skills_dirs = dirs
@@ -172,7 +172,7 @@ class SkillRegistry:
 
 def get_registry() -> SkillRegistry:
     """Build registry from configured agent home or current directory."""
-    builtin_env = os.getenv("OPENPIPIXIA_BUILTIN_SKILLS_DIR")
+    builtin_env = os.getenv("OPENPPX_BUILTIN_SKILLS_DIR")
     builtin_skills_dir = Path(builtin_env).expanduser() if builtin_env else None
     return SkillRegistry(agent_home=get_agent_home_dir(), builtin_skills_dir=builtin_skills_dir)
 
@@ -212,7 +212,7 @@ def _xml_escape(text: str) -> str:
 
 
 def _debug_enabled() -> bool:
-    return env_enabled("OPENPIPIXIA_DEBUG", default=False)
+    return env_enabled("OPENPPX_DEBUG", default=False)
 
 
 def _debug_body(payload: Any) -> str:

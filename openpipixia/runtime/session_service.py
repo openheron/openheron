@@ -25,7 +25,7 @@ def _default_sqlite_db_url() -> str:
 
 
 def load_session_config() -> SessionConfig:
-    db_url = os.getenv("OPENPIPIXIA_SESSION_DB_URL", "").strip() or _default_sqlite_db_url()
+    db_url = os.getenv("OPENPPX_SESSION_DB_URL", "").strip() or _default_sqlite_db_url()
     return SessionConfig(db_url=db_url)
 
 

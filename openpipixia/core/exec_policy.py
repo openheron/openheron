@@ -152,7 +152,7 @@ def _normalize_exec_name(name: str) -> str:
 
 
 def _parse_exec_safe_bins() -> set[str]:
-    raw = os.getenv("OPENPIPIXIA_EXEC_SAFE_BINS", "")
+    raw = os.getenv("OPENPPX_EXEC_SAFE_BINS", "")
     safe_bins: set[str] = set()
     for token in raw.split(","):
         name = _normalize_exec_name(token)
@@ -162,20 +162,20 @@ def _parse_exec_safe_bins() -> set[str]:
 
 
 def _resolve_exec_security_mode(policy: SecurityPolicy) -> tuple[str | None, str]:
-    raw = os.getenv("OPENPIPIXIA_EXEC_SECURITY", "").strip().lower()
+    raw = os.getenv("OPENPPX_EXEC_SECURITY", "").strip().lower()
     if not raw:
         return None, "allowlist" if policy.exec_allowlist else "full"
     if raw not in _EXEC_SECURITY_MODES:
-        return f"Error: invalid OPENPIPIXIA_EXEC_SECURITY '{raw}' (expected deny|allowlist|full)", ""
+        return f"Error: invalid OPENPPX_EXEC_SECURITY '{raw}' (expected deny|allowlist|full)", ""
     return None, raw
 
 
 def _resolve_exec_ask_mode() -> tuple[str | None, str]:
-    raw = os.getenv("OPENPIPIXIA_EXEC_ASK", "").strip().lower()
+    raw = os.getenv("OPENPPX_EXEC_ASK", "").strip().lower()
     if not raw:
         return None, "off"
     if raw not in _EXEC_ASK_MODES:
-        return f"Error: invalid OPENPIPIXIA_EXEC_ASK '{raw}' (expected off|on-miss|always)", ""
+        return f"Error: invalid OPENPPX_EXEC_ASK '{raw}' (expected off|on-miss|always)", ""
     return None, raw
 
 

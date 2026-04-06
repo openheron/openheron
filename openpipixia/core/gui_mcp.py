@@ -9,7 +9,7 @@ from typing import Any
 
 from .env_utils import is_enabled
 
-_MCP_SERVERS_ENV = "OPENPIPIXIA_MCP_SERVERS_JSON"
+_MCP_SERVERS_ENV = "OPENPPX_MCP_SERVERS_JSON"
 _DEFAULT_GUI_SERVER_NAME = "openpipixia_gui"
 
 

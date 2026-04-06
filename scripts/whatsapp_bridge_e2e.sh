@@ -9,7 +9,7 @@ set -euo pipefail
 #
 # Environment:
 #   PYTHON_BIN                     Python executable (default: ./.venv/bin/python)
-#   OPENPIPIXIA_CHANNELS      Defaults to "whatsapp" for this script
+#   OPENPPX_CHANNELS      Defaults to "whatsapp" for this script
 #   WHATSAPP_BRIDGE_URL            Defaults to ws://127.0.0.1:3001 if unset
 #   WHATSAPP_BRIDGE_TOKEN          Optional token; should match bridge config
 #   RUN_DOCTOR                     1/0, whether smoke/full runs doctor --json (default: 1)
@@ -29,7 +29,7 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
-export OPENPIPIXIA_CHANNELS="${OPENPIPIXIA_CHANNELS:-whatsapp}"
+export OPENPPX_CHANNELS="${OPENPPX_CHANNELS:-whatsapp}"
 export WHATSAPP_BRIDGE_URL="${WHATSAPP_BRIDGE_URL:-ws://127.0.0.1:3001}"
 
 run_cli() {

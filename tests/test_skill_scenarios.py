@@ -52,7 +52,7 @@ class ScenarioTests(unittest.TestCase):
 
     def test_saas_ui_page_generation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             skill_text = read_skill("ui-ux-pro-max")
             self.assertIn("UI/UX", skill_text)
 
@@ -115,7 +115,7 @@ class ScenarioTests(unittest.TestCase):
 
     def test_birthday_wish_written_to_word_doc(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             skill_text = read_skill("docx")
             self.assertIn("docx", skill_text.lower())
 

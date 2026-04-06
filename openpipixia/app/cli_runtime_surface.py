@@ -193,7 +193,7 @@ def cmd_mcps(
 
     async def _run_mcps() -> tuple[int, list[dict[str, Any]], dict[str, list[dict[str, str]]]]:
         probe_policy = load_mcp_probe_policy(
-            timeout_env_name="OPENPIPIXIA_MCP_LIST_TIMEOUT_SECONDS",
+            timeout_env_name="OPENPPX_MCP_LIST_TIMEOUT_SECONDS",
             timeout_default=5.0,
         )
         toolsets_by_name = {toolset.meta.name: toolset for toolset in toolsets}

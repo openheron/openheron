@@ -57,7 +57,7 @@ class ToolsTests(unittest.TestCase):
 
     def test_file_tools_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             out = write_file("tmp/demo.txt", "hello world")
             self.assertIn("Successfully wrote", out)
             content = read_file("tmp/demo.txt")
@@ -68,8 +68,8 @@ class ToolsTests(unittest.TestCase):
 
     def test_file_write_tools_are_blocked_when_filesystem_is_read_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
-            os.environ["OPENPIPIXIA_FILESYSTEM_ACCESS"] = "read_only"
+            os.environ["OPENPPX_WORKSPACE"] = tmp
+            os.environ["OPENPPX_FILESYSTEM_ACCESS"] = "read_only"
 
             out = write_file("tmp/demo.txt", "hello world")
             self.assertIn("filesystem write is disabled by security policy", out)
@@ -82,23 +82,23 @@ class ToolsTests(unittest.TestCase):
 
     def test_high_risk_tools_are_blocked_without_access(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
-            os.environ["OPENPIPIXIA_HIGH_RISK_ACTION_ACCESS"] = "false"
+            os.environ["OPENPPX_WORKSPACE"] = tmp
+            os.environ["OPENPPX_HIGH_RISK_ACTION_ACCESS"] = "false"
 
             self.assertIn("high-risk action 'message.send' is disabled", message("hello"))
             self.assertIn("high-risk action 'cron.add' is disabled", cron(action="add", message="say hi", every_seconds=60))
 
     def test_high_risk_tools_require_approval_in_conditional_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
-            os.environ["OPENPIPIXIA_HIGH_RISK_ACTION_ACCESS"] = "conditional"
+            os.environ["OPENPPX_WORKSPACE"] = tmp
+            os.environ["OPENPPX_HIGH_RISK_ACTION_ACCESS"] = "conditional"
 
             self.assertIn("approval required", message("hello"))
 
     def test_spawn_subagent_respects_delegation_policy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
-            os.environ["OPENPIPIXIA_CAN_DELEGATE"] = "0"
+            os.environ["OPENPPX_WORKSPACE"] = tmp
+            os.environ["OPENPPX_CAN_DELEGATE"] = "0"
             ctx = pytypes.SimpleNamespace(
                 user_id="user-1",
                 session=pytypes.SimpleNamespace(id="session-1"),
@@ -111,13 +111,13 @@ class ToolsTests(unittest.TestCase):
 
     def test_read_file_supports_file_path_alias(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             write_file("tmp/alias.txt", "alias-ok")
             self.assertEqual(read_file(file_path="tmp/alias.txt"), "alias-ok")
 
     def test_read_file_supports_offset_and_limit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             content = "\n".join(f"line-{idx}" for idx in range(1, 7))
             write_file("tmp/lines.txt", content)
 
@@ -133,7 +133,7 @@ class ToolsTests(unittest.TestCase):
 
     def test_read_file_optionally_shows_line_numbers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             write_file("tmp/lines.txt", "alpha\nbeta\ngamma\ndelta\n")
 
             numbered = read_file(path="tmp/lines.txt", offset=2, limit=2, show_line_numbers=True)
@@ -146,7 +146,7 @@ class ToolsTests(unittest.TestCase):
 
     def test_read_file_limit_appends_continuation_hint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             content = "\n".join(f"line-{idx}" for idx in range(1, 7))
             write_file("tmp/lines.txt", content)
 
@@ -157,8 +157,8 @@ class ToolsTests(unittest.TestCase):
 
     def test_read_file_caps_output_without_explicit_limit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
-            os.environ["OPENPIPIXIA_READ_FILE_MAX_BYTES"] = "1024"
+            os.environ["OPENPPX_WORKSPACE"] = tmp
+            os.environ["OPENPPX_READ_FILE_MAX_BYTES"] = "1024"
             big = "\n".join(f"line-{idx}-{'x' * 80}" for idx in range(1, 400))
             write_file("tmp/big.txt", big)
 
@@ -169,7 +169,7 @@ class ToolsTests(unittest.TestCase):
 
     def test_list_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             Path(tmp, "a").mkdir()
             Path(tmp, "b.txt").write_text("x", encoding="utf-8")
             listing = list_dir(".")
@@ -178,7 +178,7 @@ class ToolsTests(unittest.TestCase):
 
     def test_list_dir_supports_recursive_and_cap(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             Path(tmp, "a").mkdir()
             Path(tmp, "a", "nested.txt").write_text("x", encoding="utf-8")
             Path(tmp, "b.txt").write_text("x", encoding="utf-8")
@@ -190,7 +190,7 @@ class ToolsTests(unittest.TestCase):
 
     def test_glob_finds_matching_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             Path(tmp, "src").mkdir()
             Path(tmp, "src", "main.py").write_text("print('x')", encoding="utf-8")
             Path(tmp, "src", "util.txt").write_text("demo", encoding="utf-8")
@@ -201,7 +201,7 @@ class ToolsTests(unittest.TestCase):
 
     def test_grep_supports_content_mode_with_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             Path(tmp, "src").mkdir()
             Path(tmp, "src", "main.py").write_text("one\ntwo target\nthree\n", encoding="utf-8")
 
@@ -219,7 +219,7 @@ class ToolsTests(unittest.TestCase):
 
     def test_edit_file_supports_trimmed_line_matching(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             write_file("tmp/demo.txt", "alpha\n  beta  \ngamma\n")
 
             edited = edit_file("tmp/demo.txt", "beta", "delta")
@@ -317,7 +317,7 @@ class ToolsTests(unittest.TestCase):
 
     def test_exec_background_records_feedback_events(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             out = exec_command('python -c "import time; time.sleep(0.2)"', background=True)
             self.assertIn("session", out.lower())
 
@@ -367,7 +367,7 @@ class ToolsTests(unittest.TestCase):
 
     def test_process_poll_records_feedback_output_event(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             cmd = (
                 'python -c "import sys,time;print(\'hello\');sys.stdout.flush();'
                 'time.sleep(0.3)"'
@@ -594,112 +594,112 @@ class ToolsTests(unittest.TestCase):
 
     def test_exec_tool_supports_shell_compound_command(self) -> None:
         if os.name == "nt":
-            cmd = "set OPENPIPIXIA_EXEC_TEST=hello && echo %OPENPIPIXIA_EXEC_TEST%"
+            cmd = "set OPENPPX_EXEC_TEST=hello && echo %OPENPPX_EXEC_TEST%"
         else:
-            cmd = "export OPENPIPIXIA_EXEC_TEST=hello && echo $OPENPIPIXIA_EXEC_TEST"
+            cmd = "export OPENPPX_EXEC_TEST=hello && echo $OPENPPX_EXEC_TEST"
         out = exec_command(cmd)
         self.assertIn("hello", out.lower())
 
     def test_exec_tool_respects_allowlist(self) -> None:
-        os.environ["OPENPIPIXIA_EXEC_ALLOWLIST"] = "python"
+        os.environ["OPENPPX_EXEC_ALLOWLIST"] = "python"
         out = exec_command("echo hello")
         self.assertIn("allowlist", out.lower())
 
     def test_exec_tool_allowlist_checks_all_chain_segments(self) -> None:
-        os.environ["OPENPIPIXIA_EXEC_ALLOWLIST"] = "echo"
+        os.environ["OPENPPX_EXEC_ALLOWLIST"] = "echo"
         out = exec_command("echo ok && python -V")
         self.assertIn("allowlist", out.lower())
         self.assertIn("python", out.lower())
 
     def test_exec_tool_allowlist_allows_builtin_plus_allowed_command(self) -> None:
-        os.environ["OPENPIPIXIA_EXEC_ALLOWLIST"] = "echo"
+        os.environ["OPENPPX_EXEC_ALLOWLIST"] = "echo"
         if os.name == "nt":
-            cmd = "set OPENPIPIXIA_EXEC_TEST=hello && echo %OPENPIPIXIA_EXEC_TEST%"
+            cmd = "set OPENPPX_EXEC_TEST=hello && echo %OPENPPX_EXEC_TEST%"
         else:
-            cmd = "export OPENPIPIXIA_EXEC_TEST=hello && echo $OPENPIPIXIA_EXEC_TEST"
+            cmd = "export OPENPPX_EXEC_TEST=hello && echo $OPENPPX_EXEC_TEST"
         out = exec_command(cmd)
         self.assertIn("hello", out.lower())
 
     def test_exec_tool_allowlist_handles_env_assignment_prefix(self) -> None:
-        os.environ["OPENPIPIXIA_EXEC_ALLOWLIST"] = "echo"
+        os.environ["OPENPPX_EXEC_ALLOWLIST"] = "echo"
         if os.name == "nt":
-            cmd = "set OPENPIPIXIA_EXEC_TEST=hello && echo %OPENPIPIXIA_EXEC_TEST%"
+            cmd = "set OPENPPX_EXEC_TEST=hello && echo %OPENPPX_EXEC_TEST%"
         else:
-            cmd = "OPENPIPIXIA_EXEC_TEST=hello echo hello"
+            cmd = "OPENPPX_EXEC_TEST=hello echo hello"
         out = exec_command(cmd)
         self.assertIn("hello", out.lower())
 
     def test_exec_tool_security_mode_deny_blocks_execution(self) -> None:
-        os.environ["OPENPIPIXIA_EXEC_SECURITY"] = "deny"
+        os.environ["OPENPPX_EXEC_SECURITY"] = "deny"
         out = exec_command("echo hello")
         self.assertIn("mode=deny", out.lower())
 
     def test_exec_tool_security_mode_full_ignores_allowlist(self) -> None:
-        os.environ["OPENPIPIXIA_EXEC_ALLOWLIST"] = "python"
-        os.environ["OPENPIPIXIA_EXEC_SECURITY"] = "full"
+        os.environ["OPENPPX_EXEC_ALLOWLIST"] = "python"
+        os.environ["OPENPPX_EXEC_SECURITY"] = "full"
         out = exec_command("echo hello")
         self.assertIn("hello", out.lower())
 
     def test_exec_tool_allowlist_mode_allows_safe_bins(self) -> None:
-        os.environ["OPENPIPIXIA_EXEC_ALLOWLIST"] = ""
-        os.environ["OPENPIPIXIA_EXEC_SECURITY"] = "allowlist"
-        os.environ["OPENPIPIXIA_EXEC_SAFE_BINS"] = "echo"
+        os.environ["OPENPPX_EXEC_ALLOWLIST"] = ""
+        os.environ["OPENPPX_EXEC_SECURITY"] = "allowlist"
+        os.environ["OPENPPX_EXEC_SAFE_BINS"] = "echo"
         out = exec_command("echo hello")
         self.assertIn("hello", out.lower())
 
     def test_exec_tool_rejects_invalid_security_mode(self) -> None:
-        os.environ["OPENPIPIXIA_EXEC_SECURITY"] = "invalid"
+        os.environ["OPENPPX_EXEC_SECURITY"] = "invalid"
         out = exec_command("echo hello")
-        self.assertIn("invalid openpipixia_exec_security", out.lower())
+        self.assertIn("invalid openppx_exec_security", out.lower())
 
     def test_exec_tool_rejects_invalid_ask_mode(self) -> None:
-        os.environ["OPENPIPIXIA_EXEC_ASK"] = "invalid"
+        os.environ["OPENPPX_EXEC_ASK"] = "invalid"
         out = exec_command("echo hello")
-        self.assertIn("invalid openpipixia_exec_ask", out.lower())
+        self.assertIn("invalid openppx_exec_ask", out.lower())
 
     def test_exec_tool_ask_always_requires_approval(self) -> None:
-        os.environ["OPENPIPIXIA_EXEC_ASK"] = "always"
+        os.environ["OPENPPX_EXEC_ASK"] = "always"
         out = exec_command("echo hello")
         self.assertIn("approval required", out.lower())
         self.assertIn("ask=always", out.lower())
 
     def test_exec_tool_ask_on_miss_requires_approval_for_allowlist_miss(self) -> None:
-        os.environ["OPENPIPIXIA_EXEC_SECURITY"] = "allowlist"
-        os.environ["OPENPIPIXIA_EXEC_ALLOWLIST"] = "python"
-        os.environ["OPENPIPIXIA_EXEC_ASK"] = "on-miss"
+        os.environ["OPENPPX_EXEC_SECURITY"] = "allowlist"
+        os.environ["OPENPPX_EXEC_ALLOWLIST"] = "python"
+        os.environ["OPENPPX_EXEC_ASK"] = "on-miss"
         out = exec_command("echo hello")
         self.assertIn("approval required", out.lower())
         self.assertIn("ask=on-miss", out.lower())
 
     def test_exec_tool_ask_on_miss_allows_allowlist_hit(self) -> None:
-        os.environ["OPENPIPIXIA_EXEC_SECURITY"] = "allowlist"
-        os.environ["OPENPIPIXIA_EXEC_ALLOWLIST"] = "echo"
-        os.environ["OPENPIPIXIA_EXEC_ASK"] = "on-miss"
+        os.environ["OPENPPX_EXEC_SECURITY"] = "allowlist"
+        os.environ["OPENPPX_EXEC_ALLOWLIST"] = "echo"
+        os.environ["OPENPPX_EXEC_ASK"] = "on-miss"
         out = exec_command("echo hello")
         self.assertIn("hello", out.lower())
 
     def test_exec_tool_is_disabled_when_allow_exec_is_off(self) -> None:
-        os.environ["OPENPIPIXIA_ALLOW_EXEC"] = "0"
+        os.environ["OPENPPX_ALLOW_EXEC"] = "0"
         out = exec_command("echo hello")
         self.assertIn("disabled by security policy", out.lower())
 
     def test_file_tools_respect_workspace_restriction(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
-            os.environ["OPENPIPIXIA_RESTRICT_TO_WORKSPACE"] = "1"
+            os.environ["OPENPPX_WORKSPACE"] = tmp
+            os.environ["OPENPPX_RESTRICT_TO_WORKSPACE"] = "1"
             out = write_file("../outside.txt", "nope")
             self.assertIn("outside workspace", out.lower())
 
     def test_exec_tool_chain_path_guard_blocks_outside_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
-            os.environ["OPENPIPIXIA_RESTRICT_TO_WORKSPACE"] = "1"
+            os.environ["OPENPPX_WORKSPACE"] = tmp
+            os.environ["OPENPPX_RESTRICT_TO_WORKSPACE"] = "1"
             out = exec_command("echo ok;../outside.sh")
             self.assertIn("outside workspace", out.lower())
 
     def test_message_tool_writes_outbox(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             response = message("hi", channel="local", chat_id="u1")
             self.assertIn("Message recorded", response)
             outbox = Path(tmp) / "messages" / "outbox.log"
@@ -707,7 +707,7 @@ class ToolsTests(unittest.TestCase):
 
     def test_message_tool_uses_route_context_when_target_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             with route_context("telegram", "u2"):
                 response = message("hi-context", channel=None, chat_id=None)
             self.assertIn("Message recorded", response)
@@ -718,7 +718,7 @@ class ToolsTests(unittest.TestCase):
 
     def test_message_image_tool_writes_image_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             image_path = Path(tmp) / "tmp" / "demo.png"
             image_path.parent.mkdir(parents=True, exist_ok=True)
             image_path.write_bytes(b"\x89PNG\r\n\x1a\n")
@@ -735,7 +735,7 @@ class ToolsTests(unittest.TestCase):
 
     def test_message_file_tool_writes_file_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             file_path = Path(tmp) / "tmp" / "report.txt"
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text("done", encoding="utf-8")
@@ -753,13 +753,13 @@ class ToolsTests(unittest.TestCase):
 
     def test_message_file_tool_rejects_missing_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             response = message_file("tmp/missing.txt", channel="feishu", chat_id="oc_2")
             self.assertIn("Error: File not found", response)
 
     def test_cron_tool_add_list_remove(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             with route_context("telegram", "u2"):
                 create = cron(action="add", message="remind me", every_seconds=30)
             self.assertIn("Created job", create)
@@ -810,7 +810,7 @@ class ToolsTests(unittest.TestCase):
         self.assertIn("example.org", navigated["url"])
 
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_BROWSER_ARTIFACT_ROOT"] = tmp
+            os.environ["OPENPPX_BROWSER_ARTIFACT_ROOT"] = tmp
             shot_path = Path(tmp) / "shots" / "shot.png"
             screenshot = json.loads(
                 browser(
@@ -828,7 +828,7 @@ class ToolsTests(unittest.TestCase):
             self.assertEqual(Path(screenshot["path"]).resolve(), shot_path.resolve())
             self.assertTrue(shot_path.exists())
 
-            os.environ["OPENPIPIXIA_BROWSER_ARTIFACT_ROOT"] = tmp
+            os.environ["OPENPPX_BROWSER_ARTIFACT_ROOT"] = tmp
             pdf_path = Path(tmp) / "pdfs" / "shot.pdf"
             pdf = json.loads(
                 browser(
@@ -842,7 +842,7 @@ class ToolsTests(unittest.TestCase):
             self.assertTrue(pdf_path.exists())
 
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_BROWSER_ARTIFACT_ROOT"] = tmp
+            os.environ["OPENPPX_BROWSER_ARTIFACT_ROOT"] = tmp
             console_path = Path(tmp) / "console" / "tool.json"
             console = json.loads(
                 browser(
@@ -861,7 +861,7 @@ class ToolsTests(unittest.TestCase):
 
     def test_browser_tool_blocks_pdf_outside_artifact_root(self) -> None:
         with tempfile.TemporaryDirectory() as root_tmp, tempfile.TemporaryDirectory() as outside_tmp:
-            os.environ["OPENPIPIXIA_BROWSER_ARTIFACT_ROOT"] = root_tmp
+            os.environ["OPENPPX_BROWSER_ARTIFACT_ROOT"] = root_tmp
             json.loads(browser(action="start"))
             opened = json.loads(browser(action="open", target_url="https://example.com"))
             target_id = opened["targetId"]
@@ -878,7 +878,7 @@ class ToolsTests(unittest.TestCase):
 
     def test_browser_tool_blocks_screenshot_outside_artifact_root(self) -> None:
         with tempfile.TemporaryDirectory() as root_tmp, tempfile.TemporaryDirectory() as outside_tmp:
-            os.environ["OPENPIPIXIA_BROWSER_ARTIFACT_ROOT"] = root_tmp
+            os.environ["OPENPPX_BROWSER_ARTIFACT_ROOT"] = root_tmp
             json.loads(browser(action="start"))
             opened = json.loads(browser(action="open", target_url="https://example.com"))
             target_id = opened["targetId"]
@@ -895,7 +895,7 @@ class ToolsTests(unittest.TestCase):
 
     def test_browser_tool_blocks_console_export_outside_artifact_root(self) -> None:
         with tempfile.TemporaryDirectory() as root_tmp, tempfile.TemporaryDirectory() as outside_tmp:
-            os.environ["OPENPIPIXIA_BROWSER_ARTIFACT_ROOT"] = root_tmp
+            os.environ["OPENPPX_BROWSER_ARTIFACT_ROOT"] = root_tmp
             json.loads(browser(action="start"))
             opened = json.loads(browser(action="open", target_url="https://example.com"))
             target_id = opened["targetId"]
@@ -914,7 +914,7 @@ class ToolsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             upload_file = Path(tmp) / "upload.txt"
             upload_file.write_text("demo", encoding="utf-8")
-            os.environ["OPENPIPIXIA_BROWSER_UPLOAD_ROOT"] = tmp
+            os.environ["OPENPPX_BROWSER_UPLOAD_ROOT"] = tmp
             uploaded = json.loads(
                 browser(
                     action="upload",
@@ -1120,7 +1120,7 @@ class ToolsTests(unittest.TestCase):
                                 "name": "openpipixia",
                                 "attachMode": "launch-or-cdp",
                                 "ownershipModel": {"browser": "owned"},
-                                "requires": {"OPENPIPIXIA_BROWSER_CDP_URL": False},
+                                "requires": {"OPENPPX_BROWSER_CDP_URL": False},
                                 "capability": {
                                     "backend": "playwright",
                                     "attachMode": "launch-or-cdp",
@@ -1146,8 +1146,8 @@ class ToolsTests(unittest.TestCase):
         self.assertIn("not implemented", unsupported["error"])
 
     def test_browser_tool_auto_includes_browser_service_tokens(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_CONTROL_TOKEN"] = "token-3"
-        os.environ["OPENPIPIXIA_BROWSER_MUTATION_TOKEN"] = "mut-3"
+        os.environ["OPENPPX_BROWSER_CONTROL_TOKEN"] = "token-3"
+        os.environ["OPENPPX_BROWSER_MUTATION_TOKEN"] = "mut-3"
         configure_browser_runtime(None)
 
         started = json.loads(browser(action="start"))
@@ -1181,8 +1181,8 @@ class ToolsTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_TOKEN"] = "node-token"
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_TOKEN"] = "node-token"
 
         captured: dict[str, str] = {}
 
@@ -1216,8 +1216,8 @@ class ToolsTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_SANDBOX_PROXY_URL"] = "http://sandbox-proxy.local:9797"
-        os.environ["OPENPIPIXIA_BROWSER_PROXY_TOKEN"] = "shared-token"
+        os.environ["OPENPPX_BROWSER_SANDBOX_PROXY_URL"] = "http://sandbox-proxy.local:9797"
+        os.environ["OPENPPX_BROWSER_PROXY_TOKEN"] = "shared-token"
 
         captured: dict[str, str] = {}
 
@@ -1234,8 +1234,8 @@ class ToolsTests(unittest.TestCase):
         self.assertEqual(captured["token"], "shared-token")
 
     def test_browser_tool_blocks_unsupported_action_by_proxy_capability(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
-        os.environ["OPENPIPIXIA_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
             {"capability": {"supportedActions": ["status", "snapshot"]}}
         )
         with patch("openpipixia.tooling.registry.urlopen") as mocked_urlopen:
@@ -1248,8 +1248,8 @@ class ToolsTests(unittest.TestCase):
         mocked_urlopen.assert_not_called()
 
     def test_browser_tool_unsupported_action_includes_capability_warnings(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
-        os.environ["OPENPIPIXIA_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
             {
                 "capability": {
                     "supportedActions": ["status"],
@@ -1279,8 +1279,8 @@ class ToolsTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
-        os.environ["OPENPIPIXIA_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
             {"supportedActions": ["status", "snapshot"]}
         )
         with patch("openpipixia.tooling.registry.urlopen", return_value=_DummyResponse('{"ok":true}')) as mocked_urlopen:
@@ -1302,8 +1302,8 @@ class ToolsTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
-        os.environ["OPENPIPIXIA_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
             {"capability": {"backend": "node-proxy", "attachMode": "remote", "supportedActions": ["status"]}}
         )
         with patch("openpipixia.tooling.registry.urlopen", return_value=_DummyResponse('{"ok":true}')):
@@ -1327,8 +1327,8 @@ class ToolsTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
-        os.environ["OPENPIPIXIA_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
             {"capability": {"backend": "node-proxy", "supportedActions": ["status"]}}
         )
         with patch(
@@ -1354,7 +1354,7 @@ class ToolsTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
         with patch("openpipixia.tooling.registry.urlopen", return_value=_DummyResponse('{"ok":true}')):
             payload = json.loads(browser(action="status", target="node"))
         self.assertTrue(payload["ok"])
@@ -1377,8 +1377,8 @@ class ToolsTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
-        os.environ["OPENPIPIXIA_BROWSER_NODE_CAPABILITY_JSON"] = '{"capability":'
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_NODE_CAPABILITY_JSON"] = '{"capability":'
         with patch("openpipixia.tooling.registry.urlopen", return_value=_DummyResponse('{"ok":true}')):
             payload = json.loads(browser(action="status", target="node"))
         self.assertTrue(payload["ok"])
@@ -1400,8 +1400,8 @@ class ToolsTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
-        os.environ["OPENPIPIXIA_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
             {"capability": {"backend": "node-proxy", "supportedActions": ["status"], "errorCodes": "bad-shape"}}
         )
         with patch("openpipixia.tooling.registry.urlopen", return_value=_DummyResponse('{"ok":true}')):
@@ -1425,8 +1425,8 @@ class ToolsTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
-        os.environ["OPENPIPIXIA_BROWSER_NODE_CAPABILITY_JSON"] = '{"capability":'
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_NODE_CAPABILITY_JSON"] = '{"capability":'
         with patch("openpipixia.tooling.registry.urlopen", return_value=_DummyResponse('{"ok":true}')):
             payload = json.loads(browser(action="profiles", target="node"))
         self.assertTrue(payload["ok"])
@@ -1448,8 +1448,8 @@ class ToolsTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
-        os.environ["OPENPIPIXIA_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
             {"capability": {"supportedActions": ["status", "snapshot", "tabs"]}}
         )
         with patch("openpipixia.tooling.registry.urlopen", return_value=_DummyResponse('{"ok":true}')):
@@ -1472,8 +1472,8 @@ class ToolsTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
-        os.environ["OPENPIPIXIA_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
             {
                 "capability": {
                     "supportedActions": [
@@ -1512,9 +1512,9 @@ class ToolsTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
-        os.environ["OPENPIPIXIA_BROWSER_RECOMMENDED_ACTIONS_LIMIT"] = "2"
-        os.environ["OPENPIPIXIA_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_RECOMMENDED_ACTIONS_LIMIT"] = "2"
+        os.environ["OPENPPX_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
             {"capability": {"supportedActions": ["status", "profiles", "tabs", "snapshot"]}}
         )
         with patch("openpipixia.tooling.registry.urlopen", return_value=_DummyResponse('{"ok":true}')):
@@ -1536,9 +1536,9 @@ class ToolsTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
-        os.environ["OPENPIPIXIA_BROWSER_RECOMMENDED_ACTIONS_LIMIT"] = "bad-value"
-        os.environ["OPENPIPIXIA_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_RECOMMENDED_ACTIONS_LIMIT"] = "bad-value"
+        os.environ["OPENPPX_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
             {"capability": {"supportedActions": ["status", "profiles", "tabs", "snapshot", "open", "pdf"]}}
         )
         with patch("openpipixia.tooling.registry.urlopen", return_value=_DummyResponse('{"ok":true}')):
@@ -1560,11 +1560,11 @@ class ToolsTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
-        os.environ["OPENPIPIXIA_BROWSER_RECOMMENDED_ACTIONS_ORDER_JSON"] = json.dumps(
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_RECOMMENDED_ACTIONS_ORDER_JSON"] = json.dumps(
             ["pdf", "snapshot", "status"]
         )
-        os.environ["OPENPIPIXIA_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
+        os.environ["OPENPPX_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
             {"capability": {"supportedActions": ["status", "profiles", "snapshot", "pdf"]}}
         )
         with patch("openpipixia.tooling.registry.urlopen", return_value=_DummyResponse('{"ok":true}')):
@@ -1588,9 +1588,9 @@ class ToolsTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
-        os.environ["OPENPIPIXIA_BROWSER_RECOMMENDED_ACTIONS_ORDER_JSON"] = '{"bad":"shape"}'
-        os.environ["OPENPIPIXIA_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_RECOMMENDED_ACTIONS_ORDER_JSON"] = '{"bad":"shape"}'
+        os.environ["OPENPPX_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
             {"capability": {"supportedActions": ["status", "profiles", "snapshot"]}}
         )
         with patch("openpipixia.tooling.registry.urlopen", return_value=_DummyResponse('{"ok":true}')):
@@ -1612,7 +1612,7 @@ class ToolsTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_SANDBOX_PROXY_URL"] = "http://sandbox-proxy.local:9797"
+        os.environ["OPENPPX_BROWSER_SANDBOX_PROXY_URL"] = "http://sandbox-proxy.local:9797"
         with patch("openpipixia.tooling.registry.urlopen", return_value=_DummyResponse('{"ok":true}')):
             payload = json.loads(browser(action="profiles", target="sandbox"))
         self.assertTrue(payload["ok"])
@@ -1679,7 +1679,7 @@ class ToolsTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
         with patch("openpipixia.tooling.registry.urlopen", return_value=_DummyResponse()):
             payload = json.loads(browser(action="status", target="node"))
         self.assertFalse(payload["ok"])
@@ -1688,7 +1688,7 @@ class ToolsTests(unittest.TestCase):
         self.assertIn("invalid proxy response", payload["error"])
 
     def test_browser_tool_uses_structured_proxy_error_payload(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
         http_error = HTTPError(
             url="http://proxy.local:8787/",
             code=502,
@@ -1704,7 +1704,7 @@ class ToolsTests(unittest.TestCase):
         self.assertEqual(payload["errorCode"], "proxy_http_error")
 
     def test_browser_tool_maps_proxy_timeout_error(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
         with patch("openpipixia.tooling.registry.urlopen", side_effect=URLError(TimeoutError("timed out"))):
             payload = json.loads(browser(action="status", target="node"))
         self.assertFalse(payload["ok"])
@@ -1713,7 +1713,7 @@ class ToolsTests(unittest.TestCase):
         self.assertIn("timeout", payload["error"])
 
     def test_browser_tool_maps_proxy_direct_timeout_error(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
         with patch("openpipixia.tooling.registry.urlopen", side_effect=TimeoutError("timed out")):
             payload = json.loads(browser(action="status", target="node"))
         self.assertFalse(payload["ok"])
@@ -1721,7 +1721,7 @@ class ToolsTests(unittest.TestCase):
         self.assertEqual(payload["errorCode"], "proxy_timeout")
 
     def test_browser_tool_maps_proxy_connection_refused_error(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
         with patch("openpipixia.tooling.registry.urlopen", side_effect=URLError(ConnectionRefusedError("refused"))):
             payload = json.loads(browser(action="status", target="node"))
         self.assertFalse(payload["ok"])
@@ -1730,8 +1730,8 @@ class ToolsTests(unittest.TestCase):
         self.assertIn("connection refused", payload["error"])
 
     def test_browser_tool_proxy_http_error_includes_target_capability(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
-        os.environ["OPENPIPIXIA_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
+        os.environ["OPENPPX_BROWSER_NODE_PROXY_URL"] = "http://proxy.local:8787"
+        os.environ["OPENPPX_BROWSER_NODE_CAPABILITY_JSON"] = json.dumps(
             {"capability": {"backend": "node-proxy", "supportedActions": ["status"]}}
         )
         http_error = HTTPError(
@@ -1748,7 +1748,7 @@ class ToolsTests(unittest.TestCase):
         self.assertEqual(payload["capability"]["backend"], "node-proxy")
 
     def test_browser_tool_proxy_url_error_includes_default_target_capability(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_SANDBOX_PROXY_URL"] = "http://sandbox-proxy.local:9797"
+        os.environ["OPENPPX_BROWSER_SANDBOX_PROXY_URL"] = "http://sandbox-proxy.local:9797"
         with patch("openpipixia.tooling.registry.urlopen", side_effect=URLError(TimeoutError("timed out"))):
             payload = json.loads(browser(action="status", target="sandbox"))
         self.assertFalse(payload["ok"])
@@ -1763,7 +1763,7 @@ class ToolsTests(unittest.TestCase):
         self.assertIn("blocked by policy", blocked["error"])
 
     def test_browser_tool_allows_private_navigation_when_disabled(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_BLOCK_PRIVATE_NETWORKS"] = "0"
+        os.environ["OPENPPX_BROWSER_BLOCK_PRIVATE_NETWORKS"] = "0"
         configure_browser_runtime(None)
         json.loads(browser(action="start"))
         opened = json.loads(browser(action="open", target_url="http://127.0.0.1:9222"))
@@ -1773,7 +1773,7 @@ class ToolsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root_tmp, tempfile.TemporaryDirectory() as outside_tmp:
             outside_file = Path(outside_tmp) / "upload.txt"
             outside_file.write_text("demo", encoding="utf-8")
-            os.environ["OPENPIPIXIA_BROWSER_UPLOAD_ROOT"] = root_tmp
+            os.environ["OPENPPX_BROWSER_UPLOAD_ROOT"] = root_tmp
             configure_browser_runtime(None)
             json.loads(browser(action="start"))
             json.loads(browser(action="open", target_url="https://example.com"))
@@ -1860,28 +1860,28 @@ class ToolsTests(unittest.TestCase):
         self.assertTrue(result["untrusted"])
 
     def test_web_tools_respect_security_network_flag(self) -> None:
-        os.environ["OPENPIPIXIA_ALLOW_NETWORK"] = "0"
+        os.environ["OPENPPX_ALLOW_NETWORK"] = "0"
         search_out = web_search("adk")
         fetch_payload = json.loads(web_fetch("https://example.com"))
         self.assertIn("disabled by security policy", search_out.lower())
         self.assertIn("disabled by security policy", fetch_payload["error"].lower())
 
     def test_web_search_respects_disabled_flag(self) -> None:
-        os.environ["OPENPIPIXIA_WEB_ENABLED"] = "0"
+        os.environ["OPENPPX_WEB_ENABLED"] = "0"
         out = web_search("adk")
         self.assertIn("disabled", out.lower())
 
     def test_web_search_respects_provider_config(self) -> None:
-        os.environ["OPENPIPIXIA_WEB_ENABLED"] = "1"
-        os.environ["OPENPIPIXIA_WEB_SEARCH_ENABLED"] = "1"
-        os.environ["OPENPIPIXIA_WEB_SEARCH_PROVIDER"] = "dummy"
+        os.environ["OPENPPX_WEB_ENABLED"] = "1"
+        os.environ["OPENPPX_WEB_SEARCH_ENABLED"] = "1"
+        os.environ["OPENPPX_WEB_SEARCH_PROVIDER"] = "dummy"
         out = web_search("adk")
         self.assertIn("not supported", out.lower())
 
     def test_web_search_falls_back_to_duckduckgo_when_brave_key_missing(self) -> None:
-        os.environ["OPENPIPIXIA_WEB_ENABLED"] = "1"
-        os.environ["OPENPIPIXIA_WEB_SEARCH_ENABLED"] = "1"
-        os.environ["OPENPIPIXIA_WEB_SEARCH_PROVIDER"] = "brave"
+        os.environ["OPENPPX_WEB_ENABLED"] = "1"
+        os.environ["OPENPPX_WEB_SEARCH_ENABLED"] = "1"
+        os.environ["OPENPPX_WEB_SEARCH_PROVIDER"] = "brave"
         os.environ.pop("BRAVE_API_KEY", None)
         html_body = (
             '<a class="result__a" href="https://example.com">Example Title</a>'
@@ -1950,7 +1950,7 @@ class ToolsTests(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             with route_context("feishu", "oc_123"):
                 out = spawn_subagent(prompt="summarize logs", tool_context=ctx)
 
@@ -1976,7 +1976,7 @@ class ToolsTests(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["OPENPIPIXIA_WORKSPACE"] = tmp
+            os.environ["OPENPPX_WORKSPACE"] = tmp
             with route_context("feishu", "oc_123"):
                 out = spawn_subagent(prompt="summarize logs", tool_context=ctx)
 

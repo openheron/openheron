@@ -121,11 +121,11 @@ _CHANNEL_DEFAULT_VALUE_FIELDS: tuple[tuple[str, str, str, Any], ...] = (
 )
 
 _EXTENSIBLE_MAP_KEYS: frozenset[str] = frozenset({"env", "multimodalProviders"})
-_CONFIG_PATH_ENV = "OPENPIPIXIA_CONFIG_FILE"
-_RUNTIME_CONFIG_PATH_ENV = "OPENPIPIXIA_RUNTIME_CONFIG_FILE"
-_DATA_DIR_ENV = "OPENPIPIXIA_DATA_DIR"
-_AGENT_HOME_ENV = "OPENPIPIXIA_AGENT_HOME"
-_MEMORY_MARKDOWN_DIR_ENV = "OPENPIPIXIA_MEMORY_MARKDOWN_DIR"
+_CONFIG_PATH_ENV = "OPENPPX_CONFIG_FILE"
+_RUNTIME_CONFIG_PATH_ENV = "OPENPPX_RUNTIME_CONFIG_FILE"
+_DATA_DIR_ENV = "OPENPPX_DATA_DIR"
+_AGENT_HOME_ENV = "OPENPPX_AGENT_HOME"
+_MEMORY_MARKDOWN_DIR_ENV = "OPENPPX_MEMORY_MARKDOWN_DIR"
 _AGENT_ROLE_CANONICAL: dict[str, str] = {
     "assistant": "Assistant",
     "operator": "Operator",
@@ -133,7 +133,7 @@ _AGENT_ROLE_CANONICAL: dict[str, str] = {
 }
 _FILESYSTEM_ACCESS_VALUES: frozenset[str] = frozenset({"read_only", "read_write"})
 _SHELL_DEBUG_ENV_KEYS: frozenset[str] = frozenset(
-    {"OPENPIPIXIA_DEBUG", "OPENPIPIXIA_DEBUG_LOG_PATH"}
+    {"OPENPPX_DEBUG", "OPENPPX_DEBUG_LOG_PATH"}
 )
 
 
@@ -142,7 +142,7 @@ def get_data_dir() -> Path:
     explicit = os.getenv(_DATA_DIR_ENV, "").strip()
     if explicit:
         return Path(explicit).expanduser()
-    return Path.home() / ".openpipixia"
+    return Path.home() / ".openppx"
 
 
 def get_agent_home_dir() -> Path:
@@ -313,26 +313,26 @@ def _default_runtime_env_overrides() -> dict[str, Any]:
     easy to edit.
     """
     return {
-        "OPENPIPIXIA_MEMORY_ENABLED": True,
-        "OPENPIPIXIA_MEMORY_BACKEND": "markdown",
+        "OPENPPX_MEMORY_ENABLED": True,
+        "OPENPPX_MEMORY_BACKEND": "markdown",
         # Keep empty by default so memory path follows the active agent home.
         _MEMORY_MARKDOWN_DIR_ENV: "",
-        "OPENPIPIXIA_COMPACTION_ENABLED": True,
-        "OPENPIPIXIA_COMPACTION_INTERVAL": 8,
-        "OPENPIPIXIA_COMPACTION_OVERLAP": 1,
-        "OPENPIPIXIA_COMPACTION_TOKEN_THRESHOLD": "",
-        "OPENPIPIXIA_COMPACTION_EVENT_RETENTION": "",
-        "OPENPIPIXIA_BOOTSTRAP_MAX_CHARS_PER_FILE": 12000,
-        "OPENPIPIXIA_BOOTSTRAP_MAX_TOTAL_CHARS": 30000,
-        "OPENPIPIXIA_SUBAGENT_MAX_CONCURRENCY": 2,
-        "OPENPIPIXIA_MCP_REQUIRED_SERVERS": "",
-        "OPENPIPIXIA_MCP_PROBE_RETRY_ATTEMPTS": 2,
-        "OPENPIPIXIA_MCP_PROBE_RETRY_BACKOFF_SECONDS": 0.3,
-        "OPENPIPIXIA_MCP_DOCTOR_TIMEOUT_SECONDS": 5,
-        "OPENPIPIXIA_MCP_GATEWAY_TIMEOUT_SECONDS": 5,
-        "OPENPIPIXIA_WHATSAPP_BRIDGE_PRECHECK": True,
-        "OPENPIPIXIA_WHATSAPP_BRIDGE_SOURCE": "",
-        "OPENPIPIXIA_DEBUG_MAX_CHARS": 0,
+        "OPENPPX_COMPACTION_ENABLED": True,
+        "OPENPPX_COMPACTION_INTERVAL": 8,
+        "OPENPPX_COMPACTION_OVERLAP": 1,
+        "OPENPPX_COMPACTION_TOKEN_THRESHOLD": "",
+        "OPENPPX_COMPACTION_EVENT_RETENTION": "",
+        "OPENPPX_BOOTSTRAP_MAX_CHARS_PER_FILE": 12000,
+        "OPENPPX_BOOTSTRAP_MAX_TOTAL_CHARS": 30000,
+        "OPENPPX_SUBAGENT_MAX_CONCURRENCY": 2,
+        "OPENPPX_MCP_REQUIRED_SERVERS": "",
+        "OPENPPX_MCP_PROBE_RETRY_ATTEMPTS": 2,
+        "OPENPPX_MCP_PROBE_RETRY_BACKOFF_SECONDS": 0.3,
+        "OPENPPX_MCP_DOCTOR_TIMEOUT_SECONDS": 5,
+        "OPENPPX_MCP_GATEWAY_TIMEOUT_SECONDS": 5,
+        "OPENPPX_WHATSAPP_BRIDGE_PRECHECK": True,
+        "OPENPPX_WHATSAPP_BRIDGE_SOURCE": "",
+        "OPENPPX_DEBUG_MAX_CHARS": 0,
     }
 
 
@@ -343,7 +343,7 @@ def _normalize_runtime_memory_dir_override(
 ) -> dict[str, str]:
     """Rewrite legacy global memory dir override to per-agent memory dir.
 
-    Historical runtime defaults wrote `OPENPIPIXIA_MEMORY_MARKDOWN_DIR` as the
+    Historical runtime defaults wrote `OPENPPX_MEMORY_MARKDOWN_DIR` as the
     global `~/.openpipixia/workspace/memory`, which breaks per-agent isolation.
     During bootstrap we remap only this exact legacy value to the current
     agent-scoped default (`<agent_data_dir>/memory`).
@@ -860,12 +860,12 @@ def _resolve_gui_multimodal_env(cfg: dict[str, Any]) -> dict[str, str]:
     )
 
     return {
-        "OPENPIPIXIA_GUI_MODEL": grounding_model,
-        "OPENPIPIXIA_GUI_BASE_URL": grounding_api_base,
-        "OPENPIPIXIA_GUI_PLANNER_MODEL": planner_model,
-        "OPENPIPIXIA_GUI_PLANNER_BASE_URL": planner_api_base,
-        "OPENPIPIXIA_GUI_GROUNDING_PROVIDER": grounding_provider,
-        "OPENPIPIXIA_GUI_PLANNER_PROVIDER": planner_provider,
+        "OPENPPX_GUI_MODEL": grounding_model,
+        "OPENPPX_GUI_BASE_URL": grounding_api_base,
+        "OPENPPX_GUI_PLANNER_MODEL": planner_model,
+        "OPENPPX_GUI_PLANNER_BASE_URL": planner_api_base,
+        "OPENPPX_GUI_GROUNDING_PROVIDER": grounding_provider,
+        "OPENPPX_GUI_PLANNER_PROVIDER": planner_provider,
     }
 
 
@@ -1006,58 +1006,58 @@ def config_to_env(
     provider_key_env = provider_api_key_env(provider_name) if provider_enabled else None
     env = {
         **{env_key: "" for env_key in provider_api_key_env_keys()},
-        "OPENPIPIXIA_MODEL": model,
-        "OPENPIPIXIA_PROVIDER": provider_name,
-        "OPENPIPIXIA_PROVIDER_ENABLED": "1" if provider_enabled else "0",
-        "OPENPIPIXIA_PROVIDER_API_BASE": provider_api_base,
-        "OPENPIPIXIA_PROVIDER_EXTRA_HEADERS_JSON": provider_extra_headers,
-        "OPENPIPIXIA_AGENT_NAME": str(agent.get("name", "")).strip(),
-        "OPENPIPIXIA_AGENT_HOME": os.getenv(_AGENT_HOME_ENV, "").strip(),
-        "OPENPIPIXIA_AGENT_ROLE": normalize_agent_role(agent.get("role", ""), default=""),
-        "OPENPIPIXIA_CAN_DELEGATE": "1"
+        "OPENPPX_MODEL": model,
+        "OPENPPX_PROVIDER": provider_name,
+        "OPENPPX_PROVIDER_ENABLED": "1" if provider_enabled else "0",
+        "OPENPPX_PROVIDER_API_BASE": provider_api_base,
+        "OPENPPX_PROVIDER_EXTRA_HEADERS_JSON": provider_extra_headers,
+        "OPENPPX_AGENT_NAME": str(agent.get("name", "")).strip(),
+        "OPENPPX_AGENT_HOME": os.getenv(_AGENT_HOME_ENV, "").strip(),
+        "OPENPPX_AGENT_ROLE": normalize_agent_role(agent.get("role", ""), default=""),
+        "OPENPPX_CAN_DELEGATE": "1"
         if bool(_as_dict(agent.get("permissions")).get("canDelegate", False))
         else "0",
-        "OPENPIPIXIA_CAN_APPROVE_PRIVILEGE_ESCALATION": "1"
+        "OPENPPX_CAN_APPROVE_PRIVILEGE_ESCALATION": "1"
         if bool(_as_dict(agent.get("permissions")).get("canApprovePrivilegeEscalation", False))
         else "0",
-        "OPENPIPIXIA_HIGH_RISK_ACTION_ACCESS": str(
+        "OPENPPX_HIGH_RISK_ACTION_ACCESS": str(
             _as_dict(agent.get("permissions")).get("highRiskActionAccess", "false")
         ).strip()
         or "false",
-        "OPENPIPIXIA_WORKSPACE": str(agent.get("workspace", "")).strip(),
-        "OPENPIPIXIA_BUILTIN_SKILLS_DIR": str(agent.get("builtinSkillsDir", "")).strip(),
-        "OPENPIPIXIA_HEARTBEAT_EVERY": str(heartbeat.get("every", "30m")).strip() or "30m",
-        "OPENPIPIXIA_HEARTBEAT_PROMPT": str(heartbeat.get("prompt", "")).strip(),
-        "OPENPIPIXIA_HEARTBEAT_ACK_MAX_CHARS": str(
+        "OPENPPX_WORKSPACE": str(agent.get("workspace", "")).strip(),
+        "OPENPPX_BUILTIN_SKILLS_DIR": str(agent.get("builtinSkillsDir", "")).strip(),
+        "OPENPPX_HEARTBEAT_EVERY": str(heartbeat.get("every", "30m")).strip() or "30m",
+        "OPENPPX_HEARTBEAT_PROMPT": str(heartbeat.get("prompt", "")).strip(),
+        "OPENPPX_HEARTBEAT_ACK_MAX_CHARS": str(
             _coerce_nonnegative_int(heartbeat.get("ackMaxChars", 300), default=300)
         ),
-        "OPENPIPIXIA_HEARTBEAT_SHOW_OK": "1" if is_enabled(heartbeat.get("showOk"), default=False) else "0",
-        "OPENPIPIXIA_HEARTBEAT_SHOW_ALERTS": "1"
+        "OPENPPX_HEARTBEAT_SHOW_OK": "1" if is_enabled(heartbeat.get("showOk"), default=False) else "0",
+        "OPENPPX_HEARTBEAT_SHOW_ALERTS": "1"
         if is_enabled(heartbeat.get("showAlerts"), default=True)
         else "0",
-        "OPENPIPIXIA_HEARTBEAT_TARGET": str(heartbeat.get("target", "last")).strip() or "last",
-        "OPENPIPIXIA_HEARTBEAT_TARGET_CHANNEL": str(heartbeat.get("targetChannel", "")).strip(),
-        "OPENPIPIXIA_HEARTBEAT_TARGET_CHAT_ID": str(heartbeat.get("targetChatId", "")).strip(),
-        "OPENPIPIXIA_HEARTBEAT_ACTIVE_HOURS_START": str(active_hours.get("start", "")).strip(),
-        "OPENPIPIXIA_HEARTBEAT_ACTIVE_HOURS_END": str(active_hours.get("end", "")).strip(),
-        "OPENPIPIXIA_HEARTBEAT_ACTIVE_HOURS_TIMEZONE": str(active_hours.get("timezone", "user")).strip() or "user",
-        "OPENPIPIXIA_SESSION_DB_URL": str(session.get("dbUrl", "")).strip(),
-        "OPENPIPIXIA_CHANNELS": _resolve_enabled_channels(channels),
+        "OPENPPX_HEARTBEAT_TARGET": str(heartbeat.get("target", "last")).strip() or "last",
+        "OPENPPX_HEARTBEAT_TARGET_CHANNEL": str(heartbeat.get("targetChannel", "")).strip(),
+        "OPENPPX_HEARTBEAT_TARGET_CHAT_ID": str(heartbeat.get("targetChatId", "")).strip(),
+        "OPENPPX_HEARTBEAT_ACTIVE_HOURS_START": str(active_hours.get("start", "")).strip(),
+        "OPENPPX_HEARTBEAT_ACTIVE_HOURS_END": str(active_hours.get("end", "")).strip(),
+        "OPENPPX_HEARTBEAT_ACTIVE_HOURS_TIMEZONE": str(active_hours.get("timezone", "user")).strip() or "user",
+        "OPENPPX_SESSION_DB_URL": str(session.get("dbUrl", "")).strip(),
+        "OPENPPX_CHANNELS": _resolve_enabled_channels(channels),
         "BRAVE_API_KEY": web_search_api_key,
-        "OPENPIPIXIA_WEB_ENABLED": "1" if web_enabled else "0",
-        "OPENPIPIXIA_WEB_SEARCH_ENABLED": "1" if web_search_enabled else "0",
-        "OPENPIPIXIA_WEB_SEARCH_PROVIDER": web_search_provider,
-        "OPENPIPIXIA_WEB_SEARCH_MAX_RESULTS": str(web_search_max_results),
-        "OPENPIPIXIA_RESTRICT_TO_WORKSPACE": "1" if restrict_workspace else "0",
-        "OPENPIPIXIA_FILESYSTEM_ACCESS": filesystem_access,
-        "OPENPIPIXIA_ALLOW_EXEC": "1" if allow_exec else "0",
-        "OPENPIPIXIA_ALLOW_NETWORK": "1" if allow_network else "0",
-        "OPENPIPIXIA_EXEC_ALLOWLIST": exec_allowlist,
-        "OPENPIPIXIA_MCP_SERVERS_JSON": mcp_servers_json,
-        "OPENPIPIXIA_GUI_BUILTIN_TOOLS_ENABLED": "1"
+        "OPENPPX_WEB_ENABLED": "1" if web_enabled else "0",
+        "OPENPPX_WEB_SEARCH_ENABLED": "1" if web_search_enabled else "0",
+        "OPENPPX_WEB_SEARCH_PROVIDER": web_search_provider,
+        "OPENPPX_WEB_SEARCH_MAX_RESULTS": str(web_search_max_results),
+        "OPENPPX_RESTRICT_TO_WORKSPACE": "1" if restrict_workspace else "0",
+        "OPENPPX_FILESYSTEM_ACCESS": filesystem_access,
+        "OPENPPX_ALLOW_EXEC": "1" if allow_exec else "0",
+        "OPENPPX_ALLOW_NETWORK": "1" if allow_network else "0",
+        "OPENPPX_EXEC_ALLOWLIST": exec_allowlist,
+        "OPENPPX_MCP_SERVERS_JSON": mcp_servers_json,
+        "OPENPPX_GUI_BUILTIN_TOOLS_ENABLED": "1"
         if is_enabled(gui.get("builtinGUIToolsEnabled"), default=True)
         else "0",
-        "OPENPIPIXIA_DEBUG": "1" if bool(debug) else "0",
+        "OPENPPX_DEBUG": "1" if bool(debug) else "0",
     }
     env.update(gui_multimodal_env)
     env.update(gui_provider_api_env)
@@ -1111,7 +1111,7 @@ def apply_config_to_env(
                 os.environ.pop(key, None)
 
     for key, value in mapped.items():
-        if not value and key != "OPENPIPIXIA_DEBUG":
+        if not value and key != "OPENPPX_DEBUG":
             if clear_missing:
                 if key == fallback_api_key_env and os.getenv(key, "").strip():
                     # Preserve shell key as fallback when config omits active key.

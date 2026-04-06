@@ -76,22 +76,22 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
         self.assertIn("ownershipModel", openpipixia)
         self.assertFalse(chrome["available"])
         self.assertEqual(chrome["attachMode"], "cdp-required")
-        self.assertTrue(chrome["requires"]["OPENPIPIXIA_BROWSER_CHROME_CDP_URL"])
-        self.assertTrue(chrome["requires"]["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"])
+        self.assertTrue(chrome["requires"]["OPENPPX_BROWSER_CHROME_CDP_URL"])
+        self.assertTrue(chrome["requires"]["OPENPPX_BROWSER_CHROME_RELAY_URL"])
         self.assertIn("ownershipModel", chrome)
         chrome_status = runtime.status(profile="chrome")
         self.assertFalse(chrome_status["browserOwned"])
         self.assertFalse(chrome_status["contextOwned"])
         self.assertEqual(chrome_status["transport"], "unsupported")
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_CDP_URL"] = "http://127.0.0.1:9222"
+        os.environ["OPENPPX_BROWSER_CHROME_CDP_URL"] = "http://127.0.0.1:9222"
         runtime2 = PlaywrightBrowserRuntime()
         profiles2 = runtime2.profiles()
         chrome2 = next(entry for entry in profiles2["profiles"] if entry["name"] == "chrome")
         self.assertTrue(chrome2["available"])
 
-        os.environ.pop("OPENPIPIXIA_BROWSER_CHROME_CDP_URL", None)
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://127.0.0.1:9800"
+        os.environ.pop("OPENPPX_BROWSER_CHROME_CDP_URL", None)
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://127.0.0.1:9800"
         runtime3 = PlaywrightBrowserRuntime()
         profiles3 = runtime3.profiles()
         chrome3 = next(entry for entry in profiles3["profiles"] if entry["name"] == "chrome")
@@ -103,13 +103,13 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
         with self.assertRaises(BrowserRuntimeError):
             runtime._ensure_profile_supported("chrome")  # type: ignore[attr-defined]
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_CDP_URL"] = "http://127.0.0.1:9222"
+        os.environ["OPENPPX_BROWSER_CHROME_CDP_URL"] = "http://127.0.0.1:9222"
         runtime2 = PlaywrightBrowserRuntime()
         runtime2._ensure_profile_supported("chrome")  # type: ignore[attr-defined]
 
     def test_resolve_cdp_url_for_profiles(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_CDP_URL"] = "http://127.0.0.1:9333"
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_CDP_URL"] = "http://127.0.0.1:9222"
+        os.environ["OPENPPX_BROWSER_CDP_URL"] = "http://127.0.0.1:9333"
+        os.environ["OPENPPX_BROWSER_CHROME_CDP_URL"] = "http://127.0.0.1:9222"
         runtime = PlaywrightBrowserRuntime()
         self.assertEqual(
             runtime._resolve_cdp_url_for_profile("openpipixia"),  # type: ignore[attr-defined]
@@ -119,8 +119,8 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             runtime._resolve_cdp_url_for_profile("chrome"),  # type: ignore[attr-defined]
             "http://127.0.0.1:9222",
         )
-        os.environ.pop("OPENPIPIXIA_BROWSER_CHROME_CDP_URL", None)
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://127.0.0.1:9800"
+        os.environ.pop("OPENPPX_BROWSER_CHROME_CDP_URL", None)
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://127.0.0.1:9800"
         self.assertEqual(runtime._resolve_chrome_transport(), "relay")  # type: ignore[attr-defined]
 
     def test_stop_closes_browser_and_context_when_owned(self) -> None:
@@ -207,7 +207,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         responses = [
             _DummyResponse('{"running":true,"tabCount":2,"lastTargetId":"tab-2"}'),
@@ -258,7 +258,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         image_base64 = "aGVsbG8="
         with patch(
@@ -268,7 +268,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             ),
         ):
             with tempfile.TemporaryDirectory() as tmpdir:
-                os.environ["OPENPIPIXIA_BROWSER_ARTIFACT_ROOT"] = tmpdir
+                os.environ["OPENPPX_BROWSER_ARTIFACT_ROOT"] = tmpdir
                 out = runtime.screenshot(profile="chrome", target_id="tab-2", out_path=f"{tmpdir}/shot.png")
                 self.assertTrue(out["ok"])
                 self.assertEqual(out["backend"], "extension-relay")
@@ -291,7 +291,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         pdf_base64 = "aGVsbG8="
         with patch(
@@ -301,7 +301,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             ),
         ):
             with tempfile.TemporaryDirectory() as tmpdir:
-                os.environ["OPENPIPIXIA_BROWSER_ARTIFACT_ROOT"] = tmpdir
+                os.environ["OPENPPX_BROWSER_ARTIFACT_ROOT"] = tmpdir
                 out = runtime.pdf_save(profile="chrome", target_id="tab-2", out_path=f"{tmpdir}/tab-2.pdf")
                 self.assertTrue(out["ok"])
                 self.assertEqual(out["backend"], "extension-relay")
@@ -325,7 +325,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with patch(
             "openpipixia.browser.playwright_runtime.urlopen",
@@ -334,7 +334,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             ),
         ):
             with tempfile.TemporaryDirectory() as tmpdir:
-                os.environ["OPENPIPIXIA_BROWSER_ARTIFACT_ROOT"] = tmpdir
+                os.environ["OPENPPX_BROWSER_ARTIFACT_ROOT"] = tmpdir
                 out = runtime.console_messages(
                     profile="chrome",
                     target_id="tab-2",
@@ -374,13 +374,13 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             captured["body"] = request_obj.data.decode("utf-8", errors="replace") if request_obj.data else ""
             return _DummyResponse('{"ok":true,"uploaded":true}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with tempfile.TemporaryDirectory() as tmpdir:
             file_path = os.path.join(tmpdir, "photo.png")
             with open(file_path, "wb") as f:
                 f.write(b"img")
-            os.environ["OPENPIPIXIA_BROWSER_UPLOAD_ROOT"] = tmpdir
+            os.environ["OPENPPX_BROWSER_UPLOAD_ROOT"] = tmpdir
             with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
                 runtime.snapshot(profile="chrome", target_id="tab-2", snapshot_format="ai")
                 out = runtime.upload(profile="chrome", target_id="tab-2", paths=[file_path], ref="e1")
@@ -420,13 +420,13 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
                 )
             return _DummyResponse('{"ok":true,"uploaded":true}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with tempfile.TemporaryDirectory() as tmpdir:
             file_path = os.path.join(tmpdir, "photo.png")
             with open(file_path, "wb") as f:
                 f.write(b"img")
-            os.environ["OPENPIPIXIA_BROWSER_UPLOAD_ROOT"] = tmpdir
+            os.environ["OPENPPX_BROWSER_UPLOAD_ROOT"] = tmpdir
             with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
                 out = runtime.upload(profile="chrome", target_id="tab-2", paths=[file_path], ref="#fileInput")
         self.assertTrue(out["ok"])
@@ -453,7 +453,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             captured["body"] = request_obj.data.decode("utf-8", errors="replace") if request_obj.data else ""
             return _DummyResponse('{"ok":true,"armed":true}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
             out = runtime.dialog(
@@ -498,7 +498,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
                 )
             return _DummyResponse('{"ok":true,"armed":true}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
             out = runtime.dialog(profile="chrome", target_id="tab-2", accept=False)
@@ -532,7 +532,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
                 return _DummyResponse('{"ok":true,"targetId":"tab-3","focused":true}')
             return _DummyResponse('{"ok":true,"targetId":"tab-3","closed":true}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
             opened = runtime.open_tab(profile="chrome", url="https://example.com")
@@ -546,7 +546,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
         self.assertIn("/tabs/close", captured[2][0])
 
     def test_chrome_relay_rejects_unsupported_act_kind(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with self.assertRaises(BrowserRuntimeError):
             runtime.act(profile="chrome", request={"kind": "custom-op"})
@@ -575,7 +575,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             )
             return _DummyResponse('{"ok":true,"kind":"hover"}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
             out = runtime.act(profile="chrome", target_id="tab-1", request={"kind": "hover", "selector": "#menu"})
@@ -608,7 +608,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             )
             return _DummyResponse('{"ok":true,"kind":"select"}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
             out = runtime.act(
@@ -646,7 +646,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             )
             return _DummyResponse('{"ok":true,"kind":"drag"}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         runtime._snapshot_ref_selectors_by_tab["tab-1"] = {"e1": "#from"}  # type: ignore[attr-defined]
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
@@ -685,7 +685,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             )
             return _DummyResponse('{"ok":true,"kind":"fill"}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         runtime._snapshot_ref_selectors_by_tab["tab-1"] = {"e2": "#email"}  # type: ignore[attr-defined]
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
@@ -732,7 +732,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             )
             return _DummyResponse('{"ok":true,"kind":"resize"}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
             out = runtime.act(profile="chrome", target_id="tab-1", request={"kind": "resize", "width": 1280, "height": 720})
@@ -766,7 +766,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             )
             return _DummyResponse('{"ok":true,"kind":"close","closed":true}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
             out = runtime.act(profile="chrome", target_id="tab-1", request={"kind": "close"})
@@ -799,8 +799,8 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             )
             return _DummyResponse('{"ok":true,"kind":"evaluate"}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_EVALUATE_ENABLED"] = "1"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_EVALUATE_ENABLED"] = "1"
         runtime = PlaywrightBrowserRuntime()
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
             out = runtime.act(profile="chrome", target_id="tab-1", request={"kind": "evaluate", "fn": "() => 1"})
@@ -833,7 +833,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             )
             return _DummyResponse('{"ok":true,"kind":"open","targetId":"tab-2"}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
             out = runtime.act(profile="chrome", request={"kind": "open", "url": "https://example.com"})
@@ -843,7 +843,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
         self.assertEqual(body["request"]["url"], "https://example.com")
 
     def test_chrome_relay_validates_type_and_press_requests(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with self.assertRaises(BrowserRuntimeError):
             runtime.act(profile="chrome", request={"kind": "type"})
@@ -886,7 +886,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             )
             return _DummyResponse('{"ok":true,"kind":"click"}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
             out = runtime.act(
@@ -901,7 +901,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
         self.assertEqual(body["request"]["selector"], "#submit")
 
     def test_chrome_relay_act_click_requires_selector_or_ref(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with self.assertRaises(BrowserRuntimeError):
             runtime.act(profile="chrome", request={"kind": "click"})
@@ -935,7 +935,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             )
             return _DummyResponse('{"ok":true,"kind":"click"}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
             runtime.snapshot(profile="chrome", target_id="tab-1", snapshot_format="ai")
@@ -946,7 +946,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
         self.assertEqual(body["request"]["ref"], "e1")
 
     def test_chrome_relay_act_unknown_snapshot_ref_fails(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with self.assertRaises(BrowserRuntimeError):
             runtime.act(profile="chrome", target_id="tab-1", request={"kind": "click", "ref": "e9"})
@@ -978,7 +978,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             )
             return _DummyResponse('{"ok":true,"kind":"type"}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
             runtime.snapshot(profile="chrome", target_id="tab-1", snapshot_format="ai")
@@ -1016,7 +1016,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             )
             return _DummyResponse('{"ok":true,"kind":"click"}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
             out = runtime.act(
@@ -1052,7 +1052,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             )
             return _DummyResponse('{"ok":true,"kind":"wait"}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
             runtime.act(profile="chrome", target_id="tab-1", request={"kind": "wait", "timeMs": 999999})
@@ -1088,7 +1088,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             )
             return _DummyResponse('{"ok":true,"kind":"press"}')
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=_fake_urlopen):
             out = runtime.act(profile="chrome", target_id="tab-1", request={"kind": "press", "key": "  Enter  "})
@@ -1097,7 +1097,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
         self.assertEqual(body["request"]["key"], "Enter")
 
     def test_chrome_relay_maps_timeout_error(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=URLError(TimeoutError("timed out"))):
             with self.assertRaises(BrowserRuntimeError) as ctx:
@@ -1109,7 +1109,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
     def test_chrome_relay_maps_direct_socket_timeout_error(self) -> None:
         import socket
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with patch("openpipixia.browser.playwright_runtime.urlopen", side_effect=socket.timeout("timed out")):
             with self.assertRaises(BrowserRuntimeError) as ctx:
@@ -1118,7 +1118,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "relay_timeout")
 
     def test_chrome_relay_maps_structured_http_error(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         http_error = HTTPError(
             url="http://relay.local:9800/status",
@@ -1135,7 +1135,7 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
         self.assertIn("rate limited", str(ctx.exception).lower())
 
     def test_chrome_relay_act_type_enforces_text_length_limit(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         too_long = "x" * 5001
         with self.assertRaises(BrowserRuntimeError):
@@ -1155,8 +1155,8 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_TYPE_MAX_CHARS"] = "3"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_TYPE_MAX_CHARS"] = "3"
         runtime = PlaywrightBrowserRuntime()
         with self.assertRaises(BrowserRuntimeError):
             runtime.act(profile="chrome", request={"kind": "type", "selector": "#q", "text": "abcd"})
@@ -1166,8 +1166,8 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
         self.assertTrue(out["ok"])
 
     def test_chrome_relay_body_size_limit_blocks_large_payload(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_MAX_BODY_BYTES"] = "300"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_MAX_BODY_BYTES"] = "300"
         runtime = PlaywrightBrowserRuntime()
         with self.assertRaises(BrowserRuntimeError) as ctx:
             runtime.navigate(profile="chrome", target_id="tab-1", url="https://example.com/" + ("a" * 400))
@@ -1187,15 +1187,15 @@ class PlaywrightRuntimeHelperTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_MAX_BODY_BYTES"] = "300"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_MAX_BODY_BYTES"] = "300"
         runtime = PlaywrightBrowserRuntime()
         with patch("openpipixia.browser.playwright_runtime.urlopen", return_value=_DummyResponse('{"ok":true}')):
             out = runtime.navigate(profile="chrome", target_id="tab-1", url="https://example.com/a")
         self.assertTrue(out["ok"])
 
     def test_chrome_relay_navigate_validates_url_policy(self) -> None:
-        os.environ["OPENPIPIXIA_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
+        os.environ["OPENPPX_BROWSER_CHROME_RELAY_URL"] = "http://relay.local:9800"
         runtime = PlaywrightBrowserRuntime()
         with self.assertRaises(BrowserRuntimeError):
             runtime.navigate(profile="chrome", url="file:///tmp/a.html")

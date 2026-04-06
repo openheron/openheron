@@ -20,7 +20,7 @@ from mcp import StdioServerParameters
 
 from .env_utils import is_enabled
 
-_MCP_SERVERS_ENV = "OPENPIPIXIA_MCP_SERVERS_JSON"
+_MCP_SERVERS_ENV = "OPENPPX_MCP_SERVERS_JSON"
 _TRANSIENT_ERROR_HINTS = (
     "timeout",
     "timed out",
@@ -380,5 +380,5 @@ def build_mcp_toolsets(mcp_servers: dict[str, Any], *, log_registered: bool = Tr
 
 
 def build_mcp_toolsets_from_env(*, log_registered: bool = True) -> list[ManagedMcpToolset]:
-    """Build MCP toolsets from `OPENPIPIXIA_MCP_SERVERS_JSON`."""
+    """Build MCP toolsets from `OPENPPX_MCP_SERVERS_JSON`."""
     return build_mcp_toolsets(_load_servers_from_env(), log_registered=log_registered)

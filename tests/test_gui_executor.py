@@ -304,8 +304,8 @@ class GuiExecutorTests(unittest.TestCase):
             with unittest.mock.patch.dict(
                 "os.environ",
                 {
-                    "OPENPIPIXIA_GUI_MODEL": "test-model",
-                    "OPENPIPIXIA_GUI_GROUNDING_PROVIDER": "openai",
+                    "OPENPPX_GUI_MODEL": "test-model",
+                    "OPENPPX_GUI_GROUNDING_PROVIDER": "openai",
                     "OPENAI_API_KEY": "test-key",
                 },
                 clear=False,

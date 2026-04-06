@@ -51,18 +51,18 @@ def _parse_positive_int(raw: str | None) -> int | None:
 def _build_events_compaction_config() -> EventsCompactionConfig | None:
     """Build ADK events compaction config from environment variables."""
     enabled = _parse_enabled(
-        os.getenv("OPENPIPIXIA_COMPACTION_ENABLED"),
+        os.getenv("OPENPPX_COMPACTION_ENABLED"),
         default=True,
     )
     if not enabled:
         return None
 
     interval = _parse_non_negative_int(
-        os.getenv("OPENPIPIXIA_COMPACTION_INTERVAL"),
+        os.getenv("OPENPPX_COMPACTION_INTERVAL"),
         default=8,
     )
     overlap = _parse_non_negative_int(
-        os.getenv("OPENPIPIXIA_COMPACTION_OVERLAP"),
+        os.getenv("OPENPPX_COMPACTION_OVERLAP"),
         default=1,
     )
 
@@ -71,9 +71,9 @@ def _build_events_compaction_config() -> EventsCompactionConfig | None:
         "overlap_size": overlap,
     }
 
-    token_threshold = _parse_positive_int(os.getenv("OPENPIPIXIA_COMPACTION_TOKEN_THRESHOLD"))
+    token_threshold = _parse_positive_int(os.getenv("OPENPPX_COMPACTION_TOKEN_THRESHOLD"))
     event_retention_size = _parse_non_negative_int(
-        os.getenv("OPENPIPIXIA_COMPACTION_EVENT_RETENTION"),
+        os.getenv("OPENPPX_COMPACTION_EVENT_RETENTION"),
         default=-1,
     )
     if event_retention_size < 0:

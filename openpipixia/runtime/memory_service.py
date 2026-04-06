@@ -53,18 +53,18 @@ def load_memory_config() -> MemoryConfig:
     """Load memory configuration from environment variables.
 
     Environment variables:
-        - ``OPENPIPIXIA_MEMORY_ENABLED`` (default: ``1``)
-        - ``OPENPIPIXIA_MEMORY_BACKEND`` (default: ``markdown``)
-        - ``OPENPIPIXIA_MEMORY_MARKDOWN_DIR`` (optional)
+        - ``OPENPPX_MEMORY_ENABLED`` (default: ``1``)
+        - ``OPENPPX_MEMORY_BACKEND`` (default: ``markdown``)
+        - ``OPENPPX_MEMORY_MARKDOWN_DIR`` (optional)
     """
     enabled = _parse_enabled(
-        os.getenv("OPENPIPIXIA_MEMORY_ENABLED"),
+        os.getenv("OPENPPX_MEMORY_ENABLED"),
         default=True,
     )
     backend = (
-        os.getenv("OPENPIPIXIA_MEMORY_BACKEND", "markdown").strip().lower() or "markdown"
+        os.getenv("OPENPPX_MEMORY_BACKEND", "markdown").strip().lower() or "markdown"
     )
-    markdown_dir = os.getenv("OPENPIPIXIA_MEMORY_MARKDOWN_DIR", "").strip() or str(_default_markdown_dir())
+    markdown_dir = os.getenv("OPENPPX_MEMORY_MARKDOWN_DIR", "").strip() or str(_default_markdown_dir())
     return MemoryConfig(
         enabled=enabled,
         backend=backend,

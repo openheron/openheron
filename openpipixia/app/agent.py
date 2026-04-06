@@ -38,7 +38,7 @@ from ..tooling.registry import (
     write_file,
 )
 
-_GUI_BUILTIN_TOOLS_ENABLED_ENV = "OPENPIPIXIA_GUI_BUILTIN_TOOLS_ENABLED"
+_GUI_BUILTIN_TOOLS_ENABLED_ENV = "OPENPPX_GUI_BUILTIN_TOOLS_ENABLED"
 
 
 async def _after_agent_memory_callback(callback_context: Any) -> None:
@@ -61,12 +61,12 @@ def _gui_builtin_tools_enabled() -> bool:
 
 def _agent_role() -> str:
     """Return the current agent role from environment."""
-    return os.getenv("OPENPIPIXIA_AGENT_ROLE", "").strip()
+    return os.getenv("OPENPPX_AGENT_ROLE", "").strip()
 
 
 def _can_delegate() -> bool:
     """Return whether the current agent may delegate to sub-agents."""
-    return env_enabled("OPENPIPIXIA_CAN_DELEGATE", default=True)
+    return env_enabled("OPENPPX_CAN_DELEGATE", default=True)
 
 
 def _tool_name(tool: Any) -> str:
@@ -81,7 +81,7 @@ def _tool_name(tool: Any) -> str:
 
 def _build_instruction() -> str:
     runtime = f"{platform.system()} {platform.machine()} / Python"
-    workspace = os.getenv("OPENPIPIXIA_WORKSPACE", os.getcwd())
+    workspace = os.getenv("OPENPPX_WORKSPACE", os.getcwd())
     skills_summary = get_registry().build_summary()
     gui_builtin_enabled = _gui_builtin_tools_enabled()
     gui_mcp_routing = resolve_gui_mcp_from_env()

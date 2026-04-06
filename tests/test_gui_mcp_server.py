@@ -69,7 +69,7 @@ class GuiMcpServerTests(unittest.TestCase):
         self.assertIn("gui_task", names)
 
     def test_main_raises_for_invalid_transport(self) -> None:
-        with patch.dict(os.environ, {"OPENPIPIXIA_GUI_MCP_TRANSPORT": "bad"}, clear=False):
+        with patch.dict(os.environ, {"OPENPPX_GUI_MCP_TRANSPORT": "bad"}, clear=False):
             with self.assertRaises(ValueError):
                 main()
 
@@ -77,8 +77,8 @@ class GuiMcpServerTests(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "OPENPIPIXIA_GUI_MCP_NAME": "gui-server",
-                "OPENPIPIXIA_GUI_MCP_TRANSPORT": "stdio",
+                "OPENPPX_GUI_MCP_NAME": "gui-server",
+                "OPENPPX_GUI_MCP_TRANSPORT": "stdio",
             },
             clear=False,
         ):

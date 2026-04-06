@@ -111,7 +111,7 @@ class Gateway:
     @staticmethod
     def _subagent_max_concurrency() -> int:
         """Read background sub-agent concurrency from env with safe bounds."""
-        raw = os.getenv("OPENPIPIXIA_SUBAGENT_MAX_CONCURRENCY", "2").strip()
+        raw = os.getenv("OPENPPX_SUBAGENT_MAX_CONCURRENCY", "2").strip()
         try:
             value = int(raw)
         except ValueError:
@@ -133,7 +133,7 @@ class Gateway:
 
     @staticmethod
     def _heartbeat_ack_max_chars() -> int:
-        raw = os.getenv("OPENPIPIXIA_HEARTBEAT_ACK_MAX_CHARS", "300").strip()
+        raw = os.getenv("OPENPPX_HEARTBEAT_ACK_MAX_CHARS", "300").strip()
         try:
             value = int(raw)
         except ValueError:
@@ -142,28 +142,28 @@ class Gateway:
 
     @staticmethod
     def _heartbeat_show_ok() -> bool:
-        raw = os.getenv("OPENPIPIXIA_HEARTBEAT_SHOW_OK", "0").strip().lower()
+        raw = os.getenv("OPENPPX_HEARTBEAT_SHOW_OK", "0").strip().lower()
         return raw in {"1", "true", "yes", "on", "enabled"}
 
     @staticmethod
     def _heartbeat_show_alerts() -> bool:
-        raw = os.getenv("OPENPIPIXIA_HEARTBEAT_SHOW_ALERTS", "1").strip().lower()
+        raw = os.getenv("OPENPPX_HEARTBEAT_SHOW_ALERTS", "1").strip().lower()
         return raw in {"1", "true", "yes", "on", "enabled"}
 
     @staticmethod
     def _heartbeat_target_mode() -> str:
-        raw = os.getenv("OPENPIPIXIA_HEARTBEAT_TARGET", "last").strip().lower()
+        raw = os.getenv("OPENPPX_HEARTBEAT_TARGET", "last").strip().lower()
         if raw in {"none", "channel", "last"}:
             return raw
         return "last"
 
     @staticmethod
     def _heartbeat_target_channel() -> str:
-        return os.getenv("OPENPIPIXIA_HEARTBEAT_TARGET_CHANNEL", "").strip() or "local"
+        return os.getenv("OPENPPX_HEARTBEAT_TARGET_CHANNEL", "").strip() or "local"
 
     @staticmethod
     def _heartbeat_target_chat_id() -> str:
-        return os.getenv("OPENPIPIXIA_HEARTBEAT_TARGET_CHAT_ID", "").strip() or "heartbeat"
+        return os.getenv("OPENPPX_HEARTBEAT_TARGET_CHAT_ID", "").strip() or "heartbeat"
 
     def _resolve_heartbeat_target(self) -> tuple[str, str] | None:
         mode = self._heartbeat_target_mode()

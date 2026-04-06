@@ -57,7 +57,7 @@ def _parse_positive_int(raw: str | None, *, default: int) -> int:
 def _max_chars_per_file() -> int:
     """Return per-file character cap for injected bootstrap content."""
     return _parse_positive_int(
-        os.getenv("OPENPIPIXIA_BOOTSTRAP_MAX_CHARS_PER_FILE"),
+        os.getenv("OPENPPX_BOOTSTRAP_MAX_CHARS_PER_FILE"),
         default=_DEFAULT_MAX_CHARS_PER_FILE,
     )
 
@@ -65,7 +65,7 @@ def _max_chars_per_file() -> int:
 def _max_total_chars() -> int:
     """Return total character cap across all injected bootstrap files."""
     return _parse_positive_int(
-        os.getenv("OPENPIPIXIA_BOOTSTRAP_MAX_TOTAL_CHARS"),
+        os.getenv("OPENPPX_BOOTSTRAP_MAX_TOTAL_CHARS"),
         default=_DEFAULT_MAX_TOTAL_CHARS,
     )
 

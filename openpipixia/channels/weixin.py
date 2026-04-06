@@ -131,7 +131,7 @@ class WeixinChannel(BaseChannel):
         if self._config_state_dir:
             d = Path(self._config_state_dir).expanduser()
         else:
-            d = Path.home() / ".openpipixia" / "weixin"
+            d = Path.home() / ".openppx" / "weixin"
         d.mkdir(parents=True, exist_ok=True)
         self._state_dir_path = d
         return d

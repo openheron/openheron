@@ -26,14 +26,14 @@ ppx provider status --json
 
 3. Error logs (read-only):
 ```bash
-tail -n 200 ~/.openpipixia/log/gateway.err.log
-rg -n "ERROR|Error|Traceback|Exception|failed|timeout" ~/.openpipixia/log/gateway.err.log ~/.openpipixia/log/gateway.out.log ~/.openpipixia/log/gateway.debug.log
+tail -n 200 ~/.openppx/log/gateway.err.log
+rg -n "ERROR|Error|Traceback|Exception|failed|timeout" ~/.openppx/log/gateway.err.log ~/.openppx/log/gateway.out.log ~/.openppx/log/gateway.debug.log
 ```
 
 4. SQLite quick verification (if `sqlite3` exists):
 ```bash
-sqlite3 ~/.openpipixia/token_usage.db "SELECT provider, COUNT(*) AS requests, SUM(total_tokens) AS total_tokens FROM llm_token_usage_events GROUP BY provider ORDER BY total_tokens DESC;"
-sqlite3 ~/.openpipixia/token_usage.db "SELECT response_at, provider, model, request_tokens, response_tokens, total_tokens FROM llm_token_usage_events ORDER BY response_at_ms DESC LIMIT 20;"
+sqlite3 ~/.openppx/token_usage.db "SELECT provider, COUNT(*) AS requests, SUM(total_tokens) AS total_tokens FROM llm_token_usage_events GROUP BY provider ORDER BY total_tokens DESC;"
+sqlite3 ~/.openppx/token_usage.db "SELECT response_at, provider, model, request_tokens, response_tokens, total_tokens FROM llm_token_usage_events ORDER BY response_at_ms DESC LIMIT 20;"
 ```
 
 ## Fast Path

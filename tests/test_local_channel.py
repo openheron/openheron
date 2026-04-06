@@ -75,7 +75,7 @@ class LocalChannelTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("    line-2", lines[0])
 
     async def test_send_can_fallback_to_json_output(self) -> None:
-        os.environ["OPENPIPIXIA_LOCAL_JSON_OUTPUT"] = "1"
+        os.environ["OPENPPX_LOCAL_JSON_OUTPUT"] = "1"
         lines: list[str] = []
         channel = LocalChannel(bus=MessageBus(), writer=lines.append)
 

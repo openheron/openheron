@@ -22,7 +22,7 @@ from ..core.env_utils import env_enabled
 
 _SUPPORTED_SCHEMES = {"http", "https", "about"}
 _SUPPORTED_PROFILES = {"openpipixia", "chrome"}
-_OPENPIPIXIA_ACTIONS = [
+_OPENPPX_ACTIONS = [
     "status",
     "start",
     "stop",
@@ -177,9 +177,9 @@ def validate_browser_url(url: str) -> None:
             url,
             allowed_schemes=("http", "https", "about"),
             require_host=True,
-            block_private_env="OPENPIPIXIA_BROWSER_BLOCK_PRIVATE_NETWORKS",
+            block_private_env="OPENPPX_BROWSER_BLOCK_PRIVATE_NETWORKS",
             block_private_default=True,
-            block_dns_env="OPENPIPIXIA_BROWSER_BLOCK_PRIVATE_DNS",
+            block_dns_env="OPENPPX_BROWSER_BLOCK_PRIVATE_DNS",
             block_dns_default=False,
         )
         if error:
@@ -187,10 +187,10 @@ def validate_browser_url(url: str) -> None:
 
 
 def _resolve_upload_root() -> str:
-    configured = os.getenv("OPENPIPIXIA_BROWSER_UPLOAD_ROOT", "").strip()
+    configured = os.getenv("OPENPPX_BROWSER_UPLOAD_ROOT", "").strip()
     if configured:
         return os.path.realpath(os.path.abspath(os.path.expanduser(configured)))
-    workspace = os.getenv("OPENPIPIXIA_WORKSPACE", "").strip()
+    workspace = os.getenv("OPENPPX_WORKSPACE", "").strip()
     base = workspace or os.getcwd()
     return os.path.realpath(os.path.abspath(base))
 
@@ -203,10 +203,10 @@ def _is_within_root(path: str, root: str) -> bool:
 
 
 def _resolve_artifact_root() -> str:
-    configured = os.getenv("OPENPIPIXIA_BROWSER_ARTIFACT_ROOT", "").strip()
+    configured = os.getenv("OPENPPX_BROWSER_ARTIFACT_ROOT", "").strip()
     if configured:
         return os.path.realpath(os.path.abspath(os.path.expanduser(configured)))
-    workspace = os.getenv("OPENPIPIXIA_WORKSPACE", "").strip()
+    workspace = os.getenv("OPENPPX_WORKSPACE", "").strip()
     base = workspace or os.getcwd()
     return os.path.realpath(os.path.abspath(os.path.join(base, ".openpipixia", "browser_artifacts")))
 
@@ -214,7 +214,7 @@ def _resolve_artifact_root() -> str:
 def resolve_browser_artifact_path(out_path: str | None, *, default_filename: str) -> str:
     """Resolve artifact output path with optional root restriction."""
 
-    enforce_root = env_enabled("OPENPIPIXIA_BROWSER_ENFORCE_ARTIFACT_ROOT", default=True)
+    enforce_root = env_enabled("OPENPPX_BROWSER_ENFORCE_ARTIFACT_ROOT", default=True)
     artifact_root = _resolve_artifact_root()
     target_raw = out_path.strip() if out_path else ""
     if not target_raw:
@@ -230,7 +230,7 @@ def resolve_browser_artifact_path(out_path: str | None, *, default_filename: str
 def validate_browser_upload_paths(paths: list[str]) -> list[str]:
     """Validate and normalize upload paths with optional root restriction."""
 
-    enforce_root = env_enabled("OPENPIPIXIA_BROWSER_ENFORCE_UPLOAD_ROOT", default=True)
+    enforce_root = env_enabled("OPENPPX_BROWSER_ENFORCE_UPLOAD_ROOT", default=True)
     upload_root = _resolve_upload_root() if enforce_root else ""
 
     if not paths:
@@ -303,7 +303,7 @@ class InMemoryBrowserRuntime:
                     driver="memory",
                     mode="simulated",
                     attach_mode="memory-simulated",
-                    supported_actions=_OPENPIPIXIA_ACTIONS,
+                    supported_actions=_OPENPPX_ACTIONS,
                 ),
             },
             attach_mode="memory-simulated",
@@ -344,7 +344,7 @@ class InMemoryBrowserRuntime:
                         driver="memory",
                         mode="simulated",
                         attach_mode="memory-simulated",
-                        supported_actions=_OPENPIPIXIA_ACTIONS,
+                        supported_actions=_OPENPPX_ACTIONS,
                     ),
                 ),
                 make_profile_entry(
@@ -353,7 +353,7 @@ class InMemoryBrowserRuntime:
                     description="Chrome extension relay profile (not implemented yet)",
                     available=False,
                     attach_mode="cdp-required",
-                    requires={"OPENPIPIXIA_BROWSER_CHROME_CDP_URL": True},
+                    requires={"OPENPPX_BROWSER_CHROME_CDP_URL": True},
                     ownership_model={
                         "browser": "borrowed",
                         "context": "borrowed-or-owned-if-created",
@@ -765,16 +765,16 @@ def _create_playwright_runtime() -> BrowserRuntime:
 def _create_runtime_from_env() -> BrowserRuntime:
     """Resolve runtime implementation from environment with safe fallback.
 
-    `OPENPIPIXIA_BROWSER_RUNTIME=playwright` enables Playwright backend. If
+    `OPENPPX_BROWSER_RUNTIME=playwright` enables Playwright backend. If
     Playwright backend cannot be created, we gracefully fallback to in-memory.
     """
 
-    mode = os.getenv("OPENPIPIXIA_BROWSER_RUNTIME", "").strip().lower()
+    mode = os.getenv("OPENPPX_BROWSER_RUNTIME", "").strip().lower()
     if mode == "playwright":
         try:
             return _create_playwright_runtime()
         except Exception:
-            if env_enabled("OPENPIPIXIA_BROWSER_RUNTIME_STRICT", default=False):
+            if env_enabled("OPENPPX_BROWSER_RUNTIME_STRICT", default=False):
                 raise
             return InMemoryBrowserRuntime()
     return InMemoryBrowserRuntime()

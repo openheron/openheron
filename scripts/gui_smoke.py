@@ -86,8 +86,8 @@ def _enable_debug_log(explicit_path: str = "") -> str:
     if not path:
         stamp = time.strftime("%Y%m%d-%H%M%S")
         path = os.path.join(tempfile.gettempdir(), f"openpipixia-gui-smoke-{stamp}.debug.log")
-    os.environ["OPENPIPIXIA_DEBUG"] = "1"
-    os.environ["OPENPIPIXIA_DEBUG_LOG_PATH"] = path
+    os.environ["OPENPPX_DEBUG"] = "1"
+    os.environ["OPENPPX_DEBUG_LOG_PATH"] = path
     return path
 
 

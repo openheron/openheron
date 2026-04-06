@@ -22,9 +22,9 @@ class RunnerFactoryTests(unittest.TestCase):
         os.environ.update(self._env_backup)
 
     def test_build_events_compaction_config_defaults(self) -> None:
-        os.environ.pop("OPENPIPIXIA_COMPACTION_ENABLED", None)
-        os.environ.pop("OPENPIPIXIA_COMPACTION_INTERVAL", None)
-        os.environ.pop("OPENPIPIXIA_COMPACTION_OVERLAP", None)
+        os.environ.pop("OPENPPX_COMPACTION_ENABLED", None)
+        os.environ.pop("OPENPPX_COMPACTION_INTERVAL", None)
+        os.environ.pop("OPENPPX_COMPACTION_OVERLAP", None)
 
         cfg = _build_events_compaction_config()
 
@@ -35,8 +35,8 @@ class RunnerFactoryTests(unittest.TestCase):
         self.assertIsNone(cfg.event_retention_size)
 
     def test_build_events_compaction_config_allows_token_threshold_pair(self) -> None:
-        os.environ["OPENPIPIXIA_COMPACTION_TOKEN_THRESHOLD"] = "12000"
-        os.environ["OPENPIPIXIA_COMPACTION_EVENT_RETENTION"] = "6"
+        os.environ["OPENPPX_COMPACTION_TOKEN_THRESHOLD"] = "12000"
+        os.environ["OPENPPX_COMPACTION_EVENT_RETENTION"] = "6"
 
         cfg = _build_events_compaction_config()
 
@@ -45,8 +45,8 @@ class RunnerFactoryTests(unittest.TestCase):
         self.assertEqual(cfg.event_retention_size, 6)
 
     def test_build_events_compaction_config_ignores_partial_token_input(self) -> None:
-        os.environ["OPENPIPIXIA_COMPACTION_TOKEN_THRESHOLD"] = "12000"
-        os.environ.pop("OPENPIPIXIA_COMPACTION_EVENT_RETENTION", None)
+        os.environ["OPENPPX_COMPACTION_TOKEN_THRESHOLD"] = "12000"
+        os.environ.pop("OPENPPX_COMPACTION_EVENT_RETENTION", None)
 
         cfg = _build_events_compaction_config()
 

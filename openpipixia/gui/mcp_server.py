@@ -122,12 +122,12 @@ def build_gui_mcp_server(name: str = "openpipixia-gui") -> FastMCP:
 
 def main() -> None:
     """Run the built-in GUI MCP server."""
-    server_name = (os.getenv("OPENPIPIXIA_GUI_MCP_NAME", "") or "openpipixia-gui").strip()
-    transport = (os.getenv("OPENPIPIXIA_GUI_MCP_TRANSPORT", "") or "stdio").strip().lower()
+    server_name = (os.getenv("OPENPPX_GUI_MCP_NAME", "") or "openpipixia-gui").strip()
+    transport = (os.getenv("OPENPPX_GUI_MCP_TRANSPORT", "") or "stdio").strip().lower()
     if transport not in _SUPPORTED_TRANSPORTS:
         allowed = ", ".join(sorted(_SUPPORTED_TRANSPORTS))
         raise ValueError(
-            f"Invalid OPENPIPIXIA_GUI_MCP_TRANSPORT='{transport}'. Supported values: {allowed}."
+            f"Invalid OPENPPX_GUI_MCP_TRANSPORT='{transport}'. Supported values: {allowed}."
         )
     build_gui_mcp_server(name=server_name).run(transport=transport)
 

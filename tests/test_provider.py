@@ -59,9 +59,9 @@ class ProviderTests(unittest.TestCase):
 
     def test_build_openai_codex_model_from_env(self) -> None:
         env = {
-            "OPENPIPIXIA_PROVIDER": "openai_codex",
-            "OPENPIPIXIA_MODEL": "openai-codex/gpt-5.1-codex",
-            "OPENPIPIXIA_PROVIDER_API_BASE": "https://chatgpt.com/backend-api/codex/responses",
+            "OPENPPX_PROVIDER": "openai_codex",
+            "OPENPPX_MODEL": "openai-codex/gpt-5.1-codex",
+            "OPENPPX_PROVIDER_API_BASE": "https://chatgpt.com/backend-api/codex/responses",
         }
         with patch("openpipixia.core.provider.importlib.util.find_spec", return_value=object()):
             with patch.dict(os.environ, env, clear=False):

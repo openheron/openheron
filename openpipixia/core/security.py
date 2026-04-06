@@ -81,7 +81,7 @@ def _parse_allowlist(raw_value: str) -> tuple[str, ...]:
 
 
 def _workspace_from_env() -> Path:
-    workspace_env = os.getenv("OPENPIPIXIA_WORKSPACE", "").strip()
+    workspace_env = os.getenv("OPENPPX_WORKSPACE", "").strip()
     if workspace_env:
         return Path(workspace_env).expanduser().resolve()
     return Path.cwd().resolve()
@@ -89,13 +89,13 @@ def _workspace_from_env() -> Path:
 
 def load_security_policy() -> SecurityPolicy:
     """Load security policy from runtime environment."""
-    restrict_to_workspace = env_enabled("OPENPIPIXIA_RESTRICT_TO_WORKSPACE", default=False)
-    filesystem_access = os.getenv("OPENPIPIXIA_FILESYSTEM_ACCESS", "read_write").strip().lower() or "read_write"
+    restrict_to_workspace = env_enabled("OPENPPX_RESTRICT_TO_WORKSPACE", default=False)
+    filesystem_access = os.getenv("OPENPPX_FILESYSTEM_ACCESS", "read_write").strip().lower() or "read_write"
     if filesystem_access not in {"read_only", "read_write"}:
         filesystem_access = "read_write"
-    allow_exec = env_enabled("OPENPIPIXIA_ALLOW_EXEC", default=True)
-    allow_network = env_enabled("OPENPIPIXIA_ALLOW_NETWORK", default=True)
-    exec_allowlist = _parse_allowlist(os.getenv("OPENPIPIXIA_EXEC_ALLOWLIST", ""))
+    allow_exec = env_enabled("OPENPPX_ALLOW_EXEC", default=True)
+    allow_network = env_enabled("OPENPPX_ALLOW_NETWORK", default=True)
+    exec_allowlist = _parse_allowlist(os.getenv("OPENPPX_EXEC_ALLOWLIST", ""))
 
     return SecurityPolicy(
         workspace_root=_workspace_from_env(),
@@ -138,9 +138,9 @@ def is_private_or_local_ip(raw_ip: str) -> bool:
 def validate_network_hostname(
     hostname: str,
     *,
-    block_private_env: str = "OPENPIPIXIA_BROWSER_BLOCK_PRIVATE_NETWORKS",
+    block_private_env: str = "OPENPPX_BROWSER_BLOCK_PRIVATE_NETWORKS",
     block_private_default: bool = True,
-    block_dns_env: str = "OPENPIPIXIA_BROWSER_BLOCK_PRIVATE_DNS",
+    block_dns_env: str = "OPENPPX_BROWSER_BLOCK_PRIVATE_DNS",
     block_dns_default: bool = False,
 ) -> str | None:
     """Validate one host against private-network policy.
@@ -179,9 +179,9 @@ def validate_network_url(
     *,
     allowed_schemes: tuple[str, ...] = ("http", "https"),
     require_host: bool = True,
-    block_private_env: str = "OPENPIPIXIA_BROWSER_BLOCK_PRIVATE_NETWORKS",
+    block_private_env: str = "OPENPPX_BROWSER_BLOCK_PRIVATE_NETWORKS",
     block_private_default: bool = True,
-    block_dns_env: str = "OPENPIPIXIA_BROWSER_BLOCK_PRIVATE_DNS",
+    block_dns_env: str = "OPENPPX_BROWSER_BLOCK_PRIVATE_DNS",
     block_dns_default: bool = False,
 ) -> str | None:
     """Validate one outbound network URL including private-network policy."""

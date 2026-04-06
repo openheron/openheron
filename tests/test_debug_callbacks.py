@@ -31,7 +31,7 @@ class DebugCallbacksTests(unittest.TestCase):
             tools_dict={"web_search": object(), "exec": object()},
         )
 
-        with patch.dict(os.environ, {"OPENPIPIXIA_DEBUG": "1"}, clear=False):
+        with patch.dict(os.environ, {"OPENPPX_DEBUG": "1"}, clear=False):
             with patch("openpipixia.runtime.debug_callbacks._write_debug") as mocked_emit:
                 result = before_model_debug_callback(callback_context, llm_request)
 
@@ -59,7 +59,7 @@ class DebugCallbacksTests(unittest.TestCase):
             content=pytypes.SimpleNamespace(parts=[pytypes.SimpleNamespace(text="Tomorrow is cloudy.")]),
         )
 
-        with patch.dict(os.environ, {"OPENPIPIXIA_DEBUG": "1"}, clear=False):
+        with patch.dict(os.environ, {"OPENPPX_DEBUG": "1"}, clear=False):
             with patch("openpipixia.runtime.debug_callbacks._write_debug") as mocked_emit:
                 result = after_model_debug_callback(callback_context, llm_response)
 
@@ -89,7 +89,7 @@ class DebugCallbacksTests(unittest.TestCase):
 
         with patch.dict(
             os.environ,
-            {"OPENPIPIXIA_DEBUG": "1", "OPENPIPIXIA_DEBUG_MAX_CHARS": "0"},
+            {"OPENPPX_DEBUG": "1", "OPENPPX_DEBUG_MAX_CHARS": "0"},
             clear=False,
         ):
             with patch("openpipixia.runtime.debug_callbacks._write_debug") as mocked_emit:
@@ -118,7 +118,7 @@ class DebugCallbacksTests(unittest.TestCase):
             content=pytypes.SimpleNamespace(parts=[pytypes.SimpleNamespace(text="ok")]),
         )
 
-        with patch.dict(os.environ, {"OPENPIPIXIA_DEBUG": "0"}, clear=False):
+        with patch.dict(os.environ, {"OPENPPX_DEBUG": "0"}, clear=False):
             with patch("openpipixia.runtime.debug_callbacks._write_debug") as mocked_emit:
                 before_model_debug_callback(callback_context, llm_request)
                 after_model_debug_callback(callback_context, llm_response)
@@ -146,7 +146,7 @@ class DebugCallbacksTests(unittest.TestCase):
             tools_dict={},
         )
 
-        with patch.dict(os.environ, {"OPENPIPIXIA_DEBUG": "0"}, clear=False):
+        with patch.dict(os.environ, {"OPENPPX_DEBUG": "0"}, clear=False):
             before_model_debug_callback(callback_context, llm_request)
 
         self.assertIsInstance(function_call.id, str)
@@ -185,7 +185,7 @@ class DebugCallbacksTests(unittest.TestCase):
             tools_dict={},
         )
 
-        with patch.dict(os.environ, {"OPENPIPIXIA_DEBUG": "0"}, clear=False):
+        with patch.dict(os.environ, {"OPENPPX_DEBUG": "0"}, clear=False):
             before_model_debug_callback(callback_context, llm_request)
 
         self.assertIsInstance(function_call.id, str)
@@ -225,7 +225,7 @@ class DebugCallbacksTests(unittest.TestCase):
             tools_dict={},
         )
 
-        with patch.dict(os.environ, {"OPENPIPIXIA_DEBUG": "0"}, clear=False):
+        with patch.dict(os.environ, {"OPENPPX_DEBUG": "0"}, clear=False):
             before_model_debug_callback(callback_context, llm_request)
 
         self.assertLessEqual(len(function_call.id), 40)
@@ -268,7 +268,7 @@ class DebugCallbacksTests(unittest.TestCase):
             content=pytypes.SimpleNamespace(parts=[pytypes.SimpleNamespace(text="ok")]),
         )
 
-        with patch.dict(os.environ, {"OPENPIPIXIA_DEBUG": "0", "OPENPIPIXIA_PROVIDER": "google"}, clear=False):
+        with patch.dict(os.environ, {"OPENPPX_DEBUG": "0", "OPENPPX_PROVIDER": "google"}, clear=False):
             before_model_debug_callback(callback_context, llm_request)
             with patch("openpipixia.runtime.debug_callbacks.write_token_usage_event") as mocked_write:
                 after_model_debug_callback(callback_context, llm_response)
