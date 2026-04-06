@@ -130,8 +130,6 @@ _AGENT_ROLE_CANONICAL: dict[str, str] = {
     "assistant": "assistant",
     "operator": "operator",
     "root": "root",
-    # Keep one legacy alias so older configs/CLI calls still map cleanly.
-    "manager": "root",
 }
 _FILESYSTEM_ACCESS_VALUES: frozenset[str] = frozenset({"read_only", "read_write"})
 _SHELL_DEBUG_ENV_KEYS: frozenset[str] = frozenset(

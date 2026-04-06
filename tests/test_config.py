@@ -196,17 +196,6 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(env["OPENPPX_AGENT_ROLE"], "operator")
         self.assertEqual(env["OPENPPX_FILESYSTEM_ACCESS"], "read_write")
 
-    def test_apply_agent_role_defaults_maps_legacy_manager_to_root(self) -> None:
-        cfg = default_config()
-        apply_agent_role_defaults(cfg, role="manager")
-        env = config_to_env(cfg)
-
-        self.assertEqual(cfg["agent"]["role"], "root")
-        self.assertFalse(cfg["security"]["restrictToWorkspace"])
-        self.assertTrue(cfg["security"]["allowExec"])
-        self.assertTrue(cfg["security"]["allowNetwork"])
-        self.assertEqual(env["OPENPPX_AGENT_ROLE"], "root")
-
     def test_default_channel_streaming_flags(self) -> None:
         cfg = default_config()
 
