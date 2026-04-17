@@ -38,6 +38,8 @@ messages/
 .picobot/
 .adk/
 .openheron/
+.openppx/
+.openpipixia/
 
 # Node
 node_modules/
