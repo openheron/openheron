@@ -11,6 +11,7 @@ from openpipixia.gui.mcp_server import (
     add_agent_participant,
     build_gui_mcp_server,
     get_agent_access,
+    list_agent_access_audit,
     list_agent_memory_audit,
     main,
     remove_agent_participant,
@@ -101,6 +102,16 @@ class GuiMcpServerTests(unittest.TestCase):
         self.assertEqual(result, expected)
         mocked_coordinator.get_memory_audit.assert_called_once_with("writer", user_id="owner", limit=25)
 
+    def test_list_agent_access_audit_delegates(self) -> None:
+        expected = {"ok": True, "data": {"items": []}}
+        mocked_coordinator = unittest.mock.Mock()
+        mocked_coordinator.get_access_audit.return_value = expected
+        with patch("openpipixia.gui.mcp_server._coordinator_for_data_dir", return_value=mocked_coordinator):
+            result = list_agent_access_audit(agent_id="writer", user_id="owner", limit=10)
+
+        self.assertEqual(result, expected)
+        mocked_coordinator.get_access_audit.assert_called_once_with("writer", user_id="owner", limit=10)
+
     def test_add_and_remove_agent_participant_delegate(self) -> None:
         mocked_coordinator = unittest.mock.Mock()
         mocked_coordinator.upsert_agent_membership.return_value = {"ok": True, "data": {"membership": {}}}
@@ -130,6 +141,7 @@ class GuiMcpServerTests(unittest.TestCase):
         self.assertIn("gui_action", names)
         self.assertIn("gui_task", names)
         self.assertIn("agent_access_get", names)
+        self.assertIn("agent_access_audit_list", names)
         self.assertIn("agent_memory_audit_list", names)
         self.assertIn("agent_owner_set", names)
         self.assertIn("agent_participant_add", names)

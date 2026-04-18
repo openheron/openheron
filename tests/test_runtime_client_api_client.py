@@ -60,6 +60,25 @@ def test_client_api_client_list_memory_audit_builds_get_request() -> None:
     assert captured["url"] == "http://127.0.0.1:8765/api/v1/agents/writer/memory/audit?user_id=owner&limit=25"
 
 
+def test_client_api_client_list_access_audit_builds_get_request() -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_urlopen(req, timeout: float):
+        captured["url"] = req.full_url
+        captured["method"] = req.get_method()
+        captured["data"] = req.data
+        return _FakeHttpResponse({"ok": True, "data": {"items": []}})
+
+    client = ClientApiClient()
+    with patch("openpipixia.runtime.client_api_client.request.urlopen", side_effect=_fake_urlopen):
+        payload = client.list_access_audit("writer", user_id="owner", limit=10, category="mutation")
+
+    assert payload["ok"] is True
+    assert captured["method"] == "GET"
+    assert captured["data"] is None
+    assert captured["url"] == "http://127.0.0.1:8765/api/v1/agents/writer/access/audit?user_id=owner&limit=10&category=mutation"
+
+
 def test_client_api_client_posts_owner_update() -> None:
     captured: dict[str, object] = {}
 
@@ -108,3 +127,41 @@ def test_client_api_client_membership_mutations_cover_post_and_delete() -> None:
         "http://127.0.0.1:8765/api/v1/agents/writer/access/memberships/alice?user_id=owner",
         None,
     )
+
+
+def test_client_api_client_batch_membership_mutations_use_batch_endpoint() -> None:
+    calls: list[tuple[str, str, bytes | None]] = []
+
+    def _fake_urlopen(req, timeout: float):
+        calls.append((req.get_method(), req.full_url, req.data))
+        return _FakeHttpResponse({"ok": True, "data": {}})
+
+    client = ClientApiClient()
+    with patch("openpipixia.runtime.client_api_client.request.urlopen", side_effect=_fake_urlopen):
+        add_payload = client.batch_add_participants("writer", ["alice", "bob"], user_id="owner", dry_run=True)
+        remove_payload = client.batch_remove_participants("writer", ["alice"], user_id="owner")
+        sync_payload = client.sync_participants("writer", ["alice", "carol"], user_id="owner")
+
+    assert add_payload["ok"] is True
+    assert remove_payload["ok"] is True
+    assert sync_payload["ok"] is True
+    assert all(call[0] == "POST" for call in calls)
+    assert all(call[1] == "http://127.0.0.1:8765/api/v1/agents/writer/access/memberships/batch" for call in calls)
+    assert json.loads(calls[0][2].decode("utf-8")) == {
+        "user_id": "owner",
+        "operation": "add",
+        "principal_ids": ["alice", "bob"],
+        "dry_run": True,
+    }
+    assert json.loads(calls[1][2].decode("utf-8")) == {
+        "user_id": "owner",
+        "operation": "remove",
+        "principal_ids": ["alice"],
+        "dry_run": False,
+    }
+    assert json.loads(calls[2][2].decode("utf-8")) == {
+        "user_id": "owner",
+        "operation": "sync",
+        "principal_ids": ["alice", "carol"],
+        "dry_run": False,
+    }

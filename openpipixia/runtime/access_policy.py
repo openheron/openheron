@@ -153,9 +153,13 @@ class AccessPolicy:
                 relation_to_agent=relation,
                 scope_kind="all",
             )
-        if access_kind == "membership_write" and relation == "owner":
+        if access_kind in {"membership_write", "access_audit_read"} and relation == "owner":
             return AccessDecision.allow_scope(
-                reason="agent_owner_membership_management",
+                reason=(
+                    "agent_owner_membership_management"
+                    if access_kind == "membership_write"
+                    else "agent_owner_admin_read"
+                ),
                 access_kind=access_kind,
                 requester_principal_id=requester_principal_id,
                 agent_id=agent_id,

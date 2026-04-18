@@ -779,6 +779,8 @@ def test_client_api_owner_can_manage_participant_membership(tmp_path: Path) -> N
     assert create_payload["data"]["membership"]["relation"] == "participant"
     assert access_payload["ok"] is True
     assert access_payload["data"]["requester"]["capabilities"]["can_manage_memberships"] is True
+    assert access_payload["data"]["requester"]["capabilities"]["can_read_access_audit"] is True
+    assert access_payload["data"]["requester"]["capabilities"]["can_read_admin_audit"] is True
     assert access_payload["data"]["requester"]["capabilities"]["can_change_owner"] is False
     assert {item["principal_id"] for item in access_payload["data"]["memberships"]} == {"participant"}
     assert delete_payload["ok"] is True
@@ -865,7 +867,215 @@ def test_client_api_root_can_change_owner(tmp_path: Path) -> None:
     assert payload["data"]["agent"]["metadata"]["owner_source"] == "client_api"
     assert access_payload["ok"] is True
     assert access_payload["data"]["agent"]["owner_principal_id"] == "new-owner"
+    assert access_payload["data"]["requester"]["capabilities"]["can_read_access_audit"] is True
+    assert access_payload["data"]["requester"]["capabilities"]["can_read_admin_audit"] is True
     assert access_payload["data"]["requester"]["capabilities"]["can_change_owner"] is True
+
+
+def test_client_api_owner_can_read_access_mutation_audit(tmp_path: Path) -> None:
+    (tmp_path / "global_config.json").write_text(
+        json.dumps({"agents": [{"name": "writer", "enabled": True}]}),
+        encoding="utf-8",
+    )
+    agent_dir = tmp_path / "writer"
+    agent_dir.mkdir()
+    (agent_dir / "config.json").write_text(
+        json.dumps({"agent": {"workspace": "workspace/writer", "ownerPrincipalId": "owner"}}),
+        encoding="utf-8",
+    )
+
+    coordinator = ClientApiCoordinator(data_dir=tmp_path)
+    create_payload = coordinator.upsert_agent_membership("writer", "participant", user_id="owner")
+    delete_payload = coordinator.delete_agent_membership("writer", "participant", user_id="owner")
+    audit_payload = coordinator.get_access_audit("writer", user_id="owner", limit=10, category="mutation")
+
+    assert create_payload["ok"] is True
+    assert delete_payload["ok"] is True
+    assert audit_payload["ok"] is True
+    assert audit_payload["data"]["requester"]["relation"] == "owner"
+    assert audit_payload["data"]["category"] == "mutation"
+    assert [item["action"] for item in audit_payload["data"]["items"][:2]] == [
+        "delete_membership",
+        "upsert_membership",
+    ]
+    newest = audit_payload["data"]["items"][0]
+    assert newest["actor_principal_id"] == "owner"
+    assert newest["actor_relation"] == "owner"
+    assert newest["target_principal_id"] == "participant"
+    assert newest["details"]["deleted"] is True
+
+
+def test_client_api_participant_cannot_read_access_mutation_audit(tmp_path: Path) -> None:
+    (tmp_path / "global_config.json").write_text(
+        json.dumps({"agents": [{"name": "writer", "enabled": True}]}),
+        encoding="utf-8",
+    )
+    agent_dir = tmp_path / "writer"
+    agent_dir.mkdir()
+    (agent_dir / "config.json").write_text(
+        json.dumps({"agent": {"workspace": "workspace/writer", "ownerPrincipalId": "owner"}}),
+        encoding="utf-8",
+    )
+
+    db_path = tmp_path / "identity.db"
+    identity_store = IdentityStore(db_path=db_path)
+    access_store = AgentAccessStore(db_path=db_path)
+    participant = identity_store.put_principal(_principal(principal_id="participant"))
+    access_store.upsert_membership(
+        AgentMembership(agent_id="writer", principal_id=participant.principal_id, relation="participant")
+    )
+    policy = AccessPolicy(identity_store=identity_store, agent_access_store=access_store)
+    query_service = MemoryQueryService(
+        identity_store=identity_store,
+        access_policy=policy,
+        memory_service=SQLiteMemoryService(db_path=tmp_path / "memory.db"),
+        audit_db_path=tmp_path / "memory.db",
+    )
+    coordinator = ClientApiCoordinator(
+        data_dir=tmp_path,
+        identity_store=identity_store,
+        agent_access_store=access_store,
+        access_policy=policy,
+        memory_query_service=query_service,
+    )
+
+    payload = coordinator.get_access_audit("writer", user_id=participant.principal_id, limit=10)
+
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "ACCESS_DENIED"
+    assert payload["error"]["details"]["reason"] == "insufficient_agent_admin_role"
+
+
+def test_client_api_owner_can_read_unified_admin_audit(tmp_path: Path) -> None:
+    (tmp_path / "global_config.json").write_text(
+        json.dumps({"agents": [{"name": "writer", "enabled": True}]}),
+        encoding="utf-8",
+    )
+    agent_dir = tmp_path / "writer"
+    agent_dir.mkdir()
+    (agent_dir / "config.json").write_text(
+        json.dumps({"agent": {"workspace": "workspace/writer", "ownerPrincipalId": "owner"}}),
+        encoding="utf-8",
+    )
+
+    coordinator = ClientApiCoordinator(data_dir=tmp_path)
+    access_payload = coordinator.get_agent_access("writer", user_id="owner")
+    create_payload = coordinator.upsert_agent_membership("writer", "participant", user_id="owner")
+    admin_audit_payload = coordinator.get_access_audit("writer", user_id="owner", limit=10, category="all")
+
+    assert access_payload["ok"] is True
+    assert create_payload["ok"] is True
+    assert admin_audit_payload["ok"] is True
+    assert admin_audit_payload["data"]["category"] == "all"
+    actions = [item["action"] for item in admin_audit_payload["data"]["items"]]
+    assert "read_access" in actions
+    assert "upsert_membership" in actions
+    assert "read_admin_audit" not in actions
+
+
+def test_client_api_batch_participant_management_supports_dry_run_and_apply(tmp_path: Path) -> None:
+    (tmp_path / "global_config.json").write_text(
+        json.dumps({"agents": [{"name": "writer", "enabled": True}]}),
+        encoding="utf-8",
+    )
+    agent_dir = tmp_path / "writer"
+    agent_dir.mkdir()
+    (agent_dir / "config.json").write_text(
+        json.dumps({"agent": {"workspace": "workspace/writer", "ownerPrincipalId": "owner"}}),
+        encoding="utf-8",
+    )
+
+    coordinator = ClientApiCoordinator(data_dir=tmp_path)
+    dry_run_payload = coordinator.batch_add_participants(
+        "writer",
+        ["alice", "bob", "alice"],
+        user_id="owner",
+        dry_run=True,
+    )
+    access_before = coordinator.get_agent_access("writer", user_id="owner")
+    apply_payload = coordinator.batch_add_participants("writer", ["alice", "bob"], user_id="owner")
+    remove_payload = coordinator.batch_remove_participants("writer", ["bob", "nobody"], user_id="owner")
+    sync_payload = coordinator.sync_participants("writer", ["carol"], user_id="owner")
+    mutation_audit_payload = coordinator.get_access_audit("writer", user_id="owner", limit=10, category="mutation")
+
+    assert dry_run_payload["ok"] is True
+    assert dry_run_payload["data"]["dry_run"] is True
+    assert dry_run_payload["data"]["applied"] is False
+    assert dry_run_payload["data"]["added_principal_ids"] == ["alice", "bob"]
+    assert access_before["ok"] is True
+    assert access_before["data"]["memberships"] == []
+
+    assert apply_payload["ok"] is True
+    assert apply_payload["data"]["added_principal_ids"] == ["alice", "bob"]
+    assert remove_payload["ok"] is True
+    assert remove_payload["data"]["removed_principal_ids"] == ["bob"]
+    assert remove_payload["data"]["unchanged_principal_ids"] == ["nobody"]
+    assert sync_payload["ok"] is True
+    assert sync_payload["data"]["added_principal_ids"] == ["carol"]
+    assert sync_payload["data"]["removed_principal_ids"] == ["alice"]
+
+    access_after = coordinator.get_agent_access("writer", user_id="owner")
+    assert {item["principal_id"] for item in access_after["data"]["memberships"]} == {"carol"}
+
+    actions = [item["action"] for item in mutation_audit_payload["data"]["items"]]
+    assert actions[:4] == [
+        "sync_participants",
+        "batch_remove_participants",
+        "batch_add_participants",
+        "batch_add_participants",
+    ]
+    assert mutation_audit_payload["data"]["items"][0]["details"]["dry_run"] is False
+    assert mutation_audit_payload["data"]["items"][3]["details"]["dry_run"] is True
+
+
+def test_client_api_participant_batch_management_is_denied_and_audited(tmp_path: Path) -> None:
+    (tmp_path / "global_config.json").write_text(
+        json.dumps({"agents": [{"name": "writer", "enabled": True}]}),
+        encoding="utf-8",
+    )
+    agent_dir = tmp_path / "writer"
+    agent_dir.mkdir()
+    (agent_dir / "config.json").write_text(
+        json.dumps({"agent": {"workspace": "workspace/writer", "ownerPrincipalId": "owner"}}),
+        encoding="utf-8",
+    )
+
+    db_path = tmp_path / "identity.db"
+    identity_store = IdentityStore(db_path=db_path)
+    access_store = AgentAccessStore(db_path=db_path)
+    owner = identity_store.put_principal(_principal(principal_id="owner"))
+    participant = identity_store.put_principal(_principal(principal_id="participant"))
+    access_store.set_agent_owner(agent_id="writer", owner_principal_id=owner.principal_id)
+    access_store.upsert_membership(
+        AgentMembership(agent_id="writer", principal_id=participant.principal_id, relation="participant")
+    )
+    policy = AccessPolicy(identity_store=identity_store, agent_access_store=access_store)
+    query_service = MemoryQueryService(
+        identity_store=identity_store,
+        access_policy=policy,
+        memory_service=SQLiteMemoryService(db_path=tmp_path / "memory.db"),
+        audit_db_path=tmp_path / "memory.db",
+    )
+    coordinator = ClientApiCoordinator(
+        data_dir=tmp_path,
+        identity_store=identity_store,
+        agent_access_store=access_store,
+        access_policy=policy,
+        memory_query_service=query_service,
+    )
+
+    denied_payload = coordinator.batch_add_participants(
+        "writer",
+        ["another-user"],
+        user_id=participant.principal_id,
+    )
+    admin_audit_payload = coordinator.get_access_audit("writer", user_id=owner.principal_id, limit=10, category="all")
+
+    assert denied_payload["ok"] is False
+    assert denied_payload["error"]["details"]["reason"] == "insufficient_agent_admin_role"
+    newest = admin_audit_payload["data"]["items"][0]
+    assert newest["action"] == "batch_add_participants"
+    assert newest["details"]["allowed"] is False
 
 
 def test_client_api_owner_can_read_memory_audit(tmp_path: Path) -> None:

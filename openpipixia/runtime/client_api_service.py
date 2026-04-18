@@ -68,6 +68,47 @@ def _normalize_agent_name(value: str) -> str:
     return normalized.strip("-_")
 
 
+_MUTATION_AUDIT_ACTIONS = (
+    "set_owner",
+    "upsert_membership",
+    "delete_membership",
+    "batch_add_participants",
+    "batch_remove_participants",
+    "sync_participants",
+)
+
+
+def _normalize_principal_id_list(values: list[str] | tuple[str, ...] | None) -> list[str]:
+    """Normalize one list of principal ids while preserving stable order."""
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in values or ():
+        principal_id = str(raw or "").strip()
+        if not principal_id or principal_id in seen:
+            continue
+        seen.add(principal_id)
+        normalized.append(principal_id)
+    return normalized
+
+
+def _normalize_access_audit_category(value: str | None) -> str:
+    """Normalize one admin-audit category selector."""
+    normalized = str(value or "all").strip().lower()
+    if normalized in {"", "all", "admin"}:
+        return "all"
+    if normalized == "mutation":
+        return "mutation"
+    raise ValueError("Query parameter 'category' must be 'all' or 'mutation'.")
+
+
+def _actions_for_access_audit_category(category: str) -> tuple[str, ...] | None:
+    """Return the audit actions included in one category filter."""
+    normalized = _normalize_access_audit_category(category)
+    if normalized == "all":
+        return None
+    return _MUTATION_AUDIT_ACTIONS
+
+
 def global_config_path(data_dir: Path | None = None) -> Path:
     """Return the global multi-agent config path."""
 
@@ -634,6 +675,68 @@ class ClientApiCoordinator:
                 key: value for key, value in self._messages_cache.items() if key[0] not in affected_session_ids
             }
 
+    def _record_admin_audit(
+        self,
+        *,
+        agent_id: str,
+        requester: ResolvedPrincipal,
+        action: str,
+        relation_to_agent: str,
+        target_principal_id: str = "",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Persist one admin-surface audit event without raising to callers."""
+        try:
+            self._agent_access_store.record_audit(
+                agent_id=agent_id,
+                actor_principal_id=requester.principal_id,
+                actor_relation=relation_to_agent,
+                action=action,
+                target_principal_id=target_principal_id,
+                details=details,
+            )
+        except Exception:
+            return
+
+    def _validate_membership_management(
+        self,
+        *,
+        agent_id: str,
+        requester: ResolvedPrincipal,
+        access_kind: str = "membership_write",
+        denied_action: str,
+        denied_target_principal_id: str = "",
+        denied_details: dict[str, Any] | None = None,
+    ) -> tuple[Path | None, Any, dict[str, Any] | None]:
+        """Validate one membership-management request and prebuild deny payloads."""
+        config_path = self._ensure_agent_access_state(agent_id)
+        if config_path is None:
+            return None, None, _error("AGENT_NOT_FOUND", f"Agent '{agent_id}' was not found.")
+        decision = self._access_policy.decide_agent_management(
+            requester_principal_id=requester.principal_id,
+            agent_id=agent_id,
+            access_kind=access_kind,
+        )
+        if decision.allow:
+            return config_path, decision, None
+        self._record_admin_audit(
+            agent_id=agent_id,
+            requester=requester,
+            action=denied_action,
+            relation_to_agent=decision.relation_to_agent,
+            target_principal_id=denied_target_principal_id,
+            details={
+                "allowed": False,
+                "reason": decision.reason,
+                **dict(denied_details or {}),
+            },
+        )
+        return config_path, decision, _error(
+            "ACCESS_DENIED",
+            f"Principal '{requester.principal_id}' cannot change memberships for agent '{agent_id}'.",
+            {"reason": decision.reason},
+        )
+
     def _read_sessions_direct(self, config_path: Path, *, user_id: str) -> list[dict[str, Any]]:
         """Read session summaries directly from the per-agent SQLite store."""
 
@@ -1049,6 +1152,13 @@ class ClientApiCoordinator:
             access_kind="agent_access_read",
         )
         if not decision.allow:
+            self._record_admin_audit(
+                agent_id=agent_id,
+                requester=requester,
+                action="read_access",
+                relation_to_agent=decision.relation_to_agent,
+                details={"allowed": False, "reason": decision.reason},
+            )
             return _error(
                 "ACCESS_DENIED",
                 f"Principal '{requester.principal_id}' cannot read access state for agent '{agent_id}'.",
@@ -1078,7 +1188,7 @@ class ClientApiCoordinator:
             )
 
         owner_visible = bool(record.owner_principal_id) and decision.allows_principal(record.owner_principal_id)
-        return _ok(
+        payload = _ok(
             {
                 "agent": {
                     "id": record.agent_id,
@@ -1101,6 +1211,16 @@ class ClientApiCoordinator:
                             agent_id=agent_id,
                             access_kind="membership_write",
                         ).allow,
+                        "can_read_access_audit": self._access_policy.decide_agent_management(
+                            requester_principal_id=requester.principal_id,
+                            agent_id=agent_id,
+                            access_kind="access_audit_read",
+                        ).allow,
+                        "can_read_admin_audit": self._access_policy.decide_agent_management(
+                            requester_principal_id=requester.principal_id,
+                            agent_id=agent_id,
+                            access_kind="access_audit_read",
+                        ).allow,
                         "can_change_owner": self._access_policy.decide_agent_management(
                             requester_principal_id=requester.principal_id,
                             agent_id=agent_id,
@@ -1111,6 +1231,19 @@ class ClientApiCoordinator:
                 "memberships": memberships,
             }
         )
+        self._record_admin_audit(
+            agent_id=agent_id,
+            requester=requester,
+            action="read_access",
+            relation_to_agent=decision.relation_to_agent,
+            details={
+                "allowed": True,
+                "reason": decision.reason,
+                "visible_membership_count": len(memberships),
+                "owner_visible": owner_visible,
+            },
+        )
+        return payload
 
     def set_agent_owner(
         self,
@@ -1130,6 +1263,14 @@ class ClientApiCoordinator:
             access_kind="ownership_write",
         )
         if not decision.allow:
+            self._record_admin_audit(
+                agent_id=agent_id,
+                requester=requester,
+                action="set_owner",
+                relation_to_agent=decision.relation_to_agent,
+                target_principal_id=str(owner_principal_id or "").strip(),
+                details={"allowed": False, "reason": decision.reason, "source": "client_api"},
+            )
             return _error(
                 "ACCESS_DENIED",
                 f"Principal '{requester.principal_id}' cannot change owner for agent '{agent_id}'.",
@@ -1149,6 +1290,7 @@ class ClientApiCoordinator:
         record = self._agent_access_store.get_agent_record(agent_id)
         if owner_principal is None or record is None:
             return _error("RUNTIME_UNAVAILABLE", f"Agent '{agent_id}' access record is unavailable.")
+        previous_owner_principal_id = record.owner_principal_id
 
         updated = self._agent_access_store.upsert_agent_record(
             AgentRecord(
@@ -1163,6 +1305,21 @@ class ClientApiCoordinator:
                     "owner_source": "client_api",
                 },
             )
+        )
+        self._agent_access_store.record_audit(
+            agent_id=agent_id,
+            actor_principal_id=requester.principal_id,
+            actor_relation=decision.relation_to_agent,
+            action="set_owner",
+            target_principal_id=owner_principal.principal_id,
+            details={
+                "allowed": True,
+                "reason": decision.reason,
+                "previous_owner_principal_id": previous_owner_principal_id,
+                "owner_principal_id": owner_principal.principal_id,
+                "changed": previous_owner_principal_id != owner_principal.principal_id,
+                "source": "client_api",
+            },
         )
         self._invalidate_agent_access_caches(agent_id)
         return _ok(
@@ -1186,19 +1343,15 @@ class ClientApiCoordinator:
         """Create or update one agent membership through the managed access layer."""
 
         requester = self._ensure_requester_principal(user_id)
-        if self._ensure_agent_access_state(agent_id) is None:
-            return _error("AGENT_NOT_FOUND", f"Agent '{agent_id}' was not found.")
-        decision = self._access_policy.decide_agent_management(
-            requester_principal_id=requester.principal_id,
+        _config_path, decision, denied = self._validate_membership_management(
             agent_id=agent_id,
-            access_kind="membership_write",
+            requester=requester,
+            denied_action="upsert_membership",
+            denied_target_principal_id=str(principal_id or "").strip(),
+            denied_details={"source": "client_api", "relation": str(relation or "").strip().lower()},
         )
-        if not decision.allow:
-            return _error(
-                "ACCESS_DENIED",
-                f"Principal '{requester.principal_id}' cannot change memberships for agent '{agent_id}'.",
-                {"reason": decision.reason},
-            )
+        if denied is not None:
+            return denied
 
         normalized_principal_id = str(principal_id or "").strip()
         normalized_relation = str(relation or "").strip().lower()
@@ -1215,6 +1368,10 @@ class ClientApiCoordinator:
         )
         if principal is None:
             return _error("RUNTIME_UNAVAILABLE", "Could not ensure the target principal.")
+        previous_membership = self._agent_access_store.get_membership(
+            agent_id=agent_id,
+            principal_id=principal.principal_id,
+        )
 
         membership = self._agent_access_store.upsert_membership(
             AgentMembership(
@@ -1223,6 +1380,24 @@ class ClientApiCoordinator:
                 relation=normalized_relation,
                 metadata={"source": "client_api"},
             )
+        )
+        self._agent_access_store.record_audit(
+            agent_id=agent_id,
+            actor_principal_id=requester.principal_id,
+            actor_relation=decision.relation_to_agent,
+            action="upsert_membership",
+            target_principal_id=membership.principal_id,
+            details={
+                "allowed": True,
+                "reason": decision.reason,
+                "relation": membership.relation,
+                "previous_relation": previous_membership.relation if previous_membership is not None else None,
+                "changed": previous_membership is None
+                or previous_membership.relation != membership.relation
+                or dict(previous_membership.metadata) != dict(membership.metadata),
+                "joined_at_ms": membership.joined_at_ms,
+                "source": "client_api",
+            },
         )
         self._invalidate_agent_access_caches(agent_id)
         return _ok(
@@ -1247,30 +1422,214 @@ class ClientApiCoordinator:
         """Delete one agent membership through the managed access layer."""
 
         requester = self._ensure_requester_principal(user_id)
-        if self._ensure_agent_access_state(agent_id) is None:
-            return _error("AGENT_NOT_FOUND", f"Agent '{agent_id}' was not found.")
-        decision = self._access_policy.decide_agent_management(
-            requester_principal_id=requester.principal_id,
+        _config_path, decision, denied = self._validate_membership_management(
             agent_id=agent_id,
-            access_kind="membership_write",
+            requester=requester,
+            denied_action="delete_membership",
+            denied_target_principal_id=str(principal_id or "").strip(),
+            denied_details={"source": "client_api"},
         )
-        if not decision.allow:
-            return _error(
-                "ACCESS_DENIED",
-                f"Principal '{requester.principal_id}' cannot change memberships for agent '{agent_id}'.",
-                {"reason": decision.reason},
-            )
+        if denied is not None:
+            return denied
 
         normalized_principal_id = str(principal_id or "").strip()
         if not normalized_principal_id:
             return _error("INVALID_REQUEST", "Field 'principal_id' is required.")
+        previous_membership = self._agent_access_store.get_membership(
+            agent_id=agent_id,
+            principal_id=normalized_principal_id,
+        )
 
         deleted = self._agent_access_store.delete_membership(
             agent_id=agent_id,
             principal_id=normalized_principal_id,
         )
+        self._agent_access_store.record_audit(
+            agent_id=agent_id,
+            actor_principal_id=requester.principal_id,
+            actor_relation=decision.relation_to_agent,
+            action="delete_membership",
+            target_principal_id=normalized_principal_id,
+            details={
+                "allowed": True,
+                "reason": decision.reason,
+                "deleted": deleted,
+                "previous_relation": previous_membership.relation if previous_membership is not None else None,
+                "source": "client_api",
+            },
+        )
         self._invalidate_agent_access_caches(agent_id)
         return _ok({"deleted": deleted, "principal_id": normalized_principal_id})
+
+    def batch_add_participants(
+        self,
+        agent_id: str,
+        principal_ids: list[str] | tuple[str, ...],
+        *,
+        user_id: str = "ppx-client-user",
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Add multiple participant memberships in one managed operation."""
+        return self._batch_manage_participants(
+            agent_id=agent_id,
+            principal_ids=principal_ids,
+            operation="add",
+            user_id=user_id,
+            dry_run=dry_run,
+        )
+
+    def batch_remove_participants(
+        self,
+        agent_id: str,
+        principal_ids: list[str] | tuple[str, ...],
+        *,
+        user_id: str = "ppx-client-user",
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Remove multiple participant memberships in one managed operation."""
+        return self._batch_manage_participants(
+            agent_id=agent_id,
+            principal_ids=principal_ids,
+            operation="remove",
+            user_id=user_id,
+            dry_run=dry_run,
+        )
+
+    def sync_participants(
+        self,
+        agent_id: str,
+        principal_ids: list[str] | tuple[str, ...],
+        *,
+        user_id: str = "ppx-client-user",
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Synchronize participant memberships to exactly the requested set."""
+        return self._batch_manage_participants(
+            agent_id=agent_id,
+            principal_ids=principal_ids,
+            operation="sync",
+            user_id=user_id,
+            dry_run=dry_run,
+        )
+
+    def _batch_manage_participants(
+        self,
+        *,
+        agent_id: str,
+        principal_ids: list[str] | tuple[str, ...],
+        operation: str,
+        user_id: str,
+        dry_run: bool,
+    ) -> dict[str, Any]:
+        """Apply one batch participant management operation with one summary audit row."""
+        requester = self._ensure_requester_principal(user_id)
+        normalized_principal_ids = _normalize_principal_id_list(principal_ids)
+        if not normalized_principal_ids:
+            return _error("INVALID_REQUEST", "Field 'principal_ids' must contain at least one principal id.")
+
+        action_name = {
+            "add": "batch_add_participants",
+            "remove": "batch_remove_participants",
+            "sync": "sync_participants",
+        }.get(operation, "")
+        if not action_name:
+            return _error("INVALID_REQUEST", f"Unsupported batch operation '{operation}'.")
+
+        _config_path, decision, denied = self._validate_membership_management(
+            agent_id=agent_id,
+            requester=requester,
+            denied_action=action_name,
+            denied_details={
+                "source": "client_api",
+                "dry_run": bool(dry_run),
+                "requested_principal_ids": normalized_principal_ids,
+            },
+        )
+        if denied is not None:
+            return denied
+
+        current_memberships = self._agent_access_store.list_memberships(
+            agent_id=agent_id,
+            relations=("participant",),
+        )
+        current_ids = {membership.principal_id for membership in current_memberships}
+        requested_ids = set(normalized_principal_ids)
+
+        if operation == "add":
+            added_ids = [principal_id for principal_id in normalized_principal_ids if principal_id not in current_ids]
+            removed_ids: list[str] = []
+            unchanged_ids = [principal_id for principal_id in normalized_principal_ids if principal_id in current_ids]
+        elif operation == "remove":
+            added_ids = []
+            removed_ids = [principal_id for principal_id in normalized_principal_ids if principal_id in current_ids]
+            unchanged_ids = [principal_id for principal_id in normalized_principal_ids if principal_id not in current_ids]
+        else:
+            added_ids = [principal_id for principal_id in normalized_principal_ids if principal_id not in current_ids]
+            removed_ids = sorted(principal_id for principal_id in current_ids if principal_id not in requested_ids)
+            unchanged_ids = [principal_id for principal_id in normalized_principal_ids if principal_id in current_ids]
+
+        if not dry_run:
+            for principal_id in added_ids:
+                principal = ensure_access_principal(
+                    self._identity_store,
+                    principal_id=principal_id,
+                    source="client_api_access_mutation",
+                    account_kind="managed_access",
+                )
+                if principal is None:
+                    return _error("RUNTIME_UNAVAILABLE", f"Could not ensure principal '{principal_id}'.")
+                self._agent_access_store.upsert_membership(
+                    AgentMembership(
+                        agent_id=agent_id,
+                        principal_id=principal.principal_id,
+                        relation="participant",
+                        metadata={"source": "client_api_batch"},
+                    )
+                )
+            for principal_id in removed_ids:
+                self._agent_access_store.delete_membership(agent_id=agent_id, principal_id=principal_id)
+            if added_ids or removed_ids:
+                self._invalidate_agent_access_caches(agent_id)
+
+        audit_details = {
+            "allowed": True,
+            "reason": decision.reason,
+            "source": "client_api",
+            "dry_run": bool(dry_run),
+            "applied": not dry_run,
+            "requested_principal_ids": normalized_principal_ids,
+            "added_principal_ids": added_ids,
+            "removed_principal_ids": removed_ids,
+            "unchanged_principal_ids": unchanged_ids,
+            "requested_count": len(normalized_principal_ids),
+            "added_count": len(added_ids),
+            "removed_count": len(removed_ids),
+            "unchanged_count": len(unchanged_ids),
+        }
+        self._record_admin_audit(
+            agent_id=agent_id,
+            requester=requester,
+            action=action_name,
+            relation_to_agent=decision.relation_to_agent,
+            details=audit_details,
+        )
+        return _ok(
+            {
+                "operation": action_name,
+                "dry_run": bool(dry_run),
+                "applied": not dry_run,
+                "requested_principal_ids": normalized_principal_ids,
+                "added_principal_ids": added_ids,
+                "removed_principal_ids": removed_ids,
+                "unchanged_principal_ids": unchanged_ids,
+                "summary": {
+                    "requested_count": len(normalized_principal_ids),
+                    "added_count": len(added_ids),
+                    "removed_count": len(removed_ids),
+                    "unchanged_count": len(unchanged_ids),
+                },
+            }
+        )
 
     def create_run(self, agent_id: str, session_id: str, text: str, *, user_id: str = "ppx-client-user") -> dict[str, Any]:
         """Create one streaming run and start consuming worker events in background."""
@@ -1447,12 +1806,19 @@ class ClientApiCoordinator:
         except Exception as exc:
             return _error("RUNTIME_UNAVAILABLE", str(exc))
         if not result.decision.allow:
+            self._record_admin_audit(
+                agent_id=agent_id,
+                requester=requester,
+                action="read_memory_audit",
+                relation_to_agent=result.decision.relation_to_agent,
+                details={"allowed": False, "reason": result.decision.reason, "limit": limit},
+            )
             return _error(
                 "ACCESS_DENIED",
                 f"Principal '{requester.principal_id}' cannot read memory audit for agent '{agent_id}'.",
                 {"reason": result.decision.reason},
             )
-        return _ok(
+        payload = _ok(
             {
                 "items": result.rows,
                 "requester": {
@@ -1463,6 +1829,102 @@ class ClientApiCoordinator:
                 },
             }
         )
+        self._record_admin_audit(
+            agent_id=agent_id,
+            requester=requester,
+            action="read_memory_audit",
+            relation_to_agent=result.decision.relation_to_agent,
+            details={
+                "allowed": True,
+                "reason": result.decision.reason,
+                "limit": limit,
+                "result_count": len(result.rows),
+            },
+        )
+        return payload
+
+    def get_access_audit(
+        self,
+        agent_id: str,
+        *,
+        user_id: str = "ppx-client-user",
+        limit: int = 50,
+        category: str = "all",
+    ) -> dict[str, Any]:
+        """Return visible admin-audit rows for one requester and agent."""
+        requester = self._ensure_requester_principal(user_id)
+        if self._ensure_agent_access_state(agent_id) is None:
+            return _error("AGENT_NOT_FOUND", f"Agent '{agent_id}' was not found.")
+        try:
+            normalized_category = _normalize_access_audit_category(category)
+        except ValueError as exc:
+            return _error("INVALID_REQUEST", str(exc))
+        decision = self._access_policy.decide_agent_management(
+            requester_principal_id=requester.principal_id,
+            agent_id=agent_id,
+            access_kind="access_audit_read",
+        )
+        if not decision.allow:
+            self._record_admin_audit(
+                agent_id=agent_id,
+                requester=requester,
+                action="read_admin_audit",
+                relation_to_agent=decision.relation_to_agent,
+                details={
+                    "allowed": False,
+                    "reason": decision.reason,
+                    "limit": limit,
+                    "category": normalized_category,
+                },
+            )
+            return _error(
+                "ACCESS_DENIED",
+                f"Principal '{requester.principal_id}' cannot read access audit for agent '{agent_id}'.",
+                {"reason": decision.reason},
+            )
+        rows = self._agent_access_store.list_audit(
+            agent_id=agent_id,
+            limit=limit,
+            actions=_actions_for_access_audit_category(normalized_category),
+        )
+        payload = _ok(
+            {
+                "items": [
+                    {
+                        "audit_id": row.audit_id,
+                        "agent_id": row.agent_id,
+                        "actor_principal_id": row.actor_principal_id,
+                        "actor_relation": row.actor_relation,
+                        "action": row.action,
+                        "target_principal_id": row.target_principal_id,
+                        "details": dict(row.details),
+                        "created_at_ms": row.created_at_ms,
+                    }
+                    for row in rows
+                ],
+                "requester": {
+                    "principal_id": requester.principal_id,
+                    "relation": decision.relation_to_agent,
+                    "reason": decision.reason,
+                    "scope_kind": decision.scope_kind,
+                },
+                "category": normalized_category,
+            }
+        )
+        self._record_admin_audit(
+            agent_id=agent_id,
+            requester=requester,
+            action="read_admin_audit",
+            relation_to_agent=decision.relation_to_agent,
+            details={
+                "allowed": True,
+                "reason": decision.reason,
+                "limit": limit,
+                "category": normalized_category,
+                "result_count": len(rows),
+            },
+        )
+        return payload
 
     def _consume_run_stderr(self, handle: RunHandle) -> None:
         """Continuously collect worker stderr for debug visibility."""
@@ -1773,6 +2235,28 @@ class _ClientApiHandler(BaseHTTPRequestHandler):
             payload = self.coordinator.get_agent_access(segments[3], user_id=user_id)
             self._send_json(200 if payload.get("ok") else 404, payload)
             return
+        if len(segments) == 6 and segments[:3] == ["api", "v1", "agents"] and segments[4] == "access" and segments[5] == "audit":
+            user_id = str(query.get("user_id") or "ppx-client-user")
+            raw_limit = str(query.get("limit") or "50").strip()
+            category = str(query.get("category") or "all")
+            try:
+                limit = int(raw_limit)
+            except ValueError:
+                self._send_json(400, _error("INVALID_REQUEST", "Query parameter 'limit' must be an integer."))
+                return
+            payload = self.coordinator.get_access_audit(
+                segments[3],
+                user_id=user_id,
+                limit=limit,
+                category=category,
+            )
+            status = 200 if payload.get("ok") else 403
+            if not payload.get("ok") and payload.get("error", {}).get("code") == "AGENT_NOT_FOUND":
+                status = 404
+            if not payload.get("ok") and payload.get("error", {}).get("code") == "INVALID_REQUEST":
+                status = 400
+            self._send_json(status, payload)
+            return
         if len(segments) == 5 and segments[:3] == ["api", "v1", "sessions"] and segments[4] == "messages":
             user_id = str(query.get("user_id") or "ppx-client-user")
             payload = self.coordinator.get_session_messages(segments[3], user_id=user_id)
@@ -1846,6 +2330,46 @@ class _ClientApiHandler(BaseHTTPRequestHandler):
                 user_id=user_id,
             )
             self._send_json(200 if payload.get("ok") else 403, payload)
+            return
+        if len(segments) == 7 and segments[:3] == ["api", "v1", "agents"] and segments[4] == "access" and segments[5] == "memberships" and segments[6] == "batch":
+            user_id = str(body.get("user_id") or "ppx-client-user")
+            operation = str(body.get("operation") or "").strip().lower()
+            dry_run = bool(body.get("dry_run"))
+            raw_principal_ids = body.get("principal_ids")
+            if not isinstance(raw_principal_ids, list):
+                self._send_json(400, _error("INVALID_REQUEST", "Field 'principal_ids' must be a JSON array."))
+                return
+            principal_ids = [str(item or "") for item in raw_principal_ids]
+            if operation == "add":
+                payload = self.coordinator.batch_add_participants(
+                    segments[3],
+                    principal_ids,
+                    user_id=user_id,
+                    dry_run=dry_run,
+                )
+            elif operation == "remove":
+                payload = self.coordinator.batch_remove_participants(
+                    segments[3],
+                    principal_ids,
+                    user_id=user_id,
+                    dry_run=dry_run,
+                )
+            elif operation == "sync":
+                payload = self.coordinator.sync_participants(
+                    segments[3],
+                    principal_ids,
+                    user_id=user_id,
+                    dry_run=dry_run,
+                )
+            else:
+                self._send_json(400, _error("INVALID_REQUEST", "Field 'operation' must be add, remove, or sync."))
+                return
+            status = 200 if payload.get("ok") else 403
+            if not payload.get("ok") and payload.get("error", {}).get("code") == "AGENT_NOT_FOUND":
+                status = 404
+            if not payload.get("ok") and payload.get("error", {}).get("code") == "INVALID_REQUEST":
+                status = 400
+            self._send_json(status, payload)
             return
         if len(segments) == 5 and segments[:3] == ["api", "v1", "agents"] and segments[4] == "sessions":
             user_id = str(body.get("user_id") or "ppx-client-user")

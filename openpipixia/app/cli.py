@@ -3971,6 +3971,28 @@ def _cmd_client_api_access_audit(*, agent_id: str, user_id: str, limit: int, out
     return _emit_client_api_payload(payload, output_json=output_json)
 
 
+def _cmd_client_api_access_mutation_audit(*, agent_id: str, user_id: str, limit: int, output_json: bool) -> int:
+    """Read one agent access-mutation audit snapshot from the local client-api runtime."""
+    payload = _client_api_coordinator().get_access_audit(
+        agent_id,
+        user_id=user_id,
+        limit=limit,
+        category="mutation",
+    )
+    return _emit_client_api_payload(payload, output_json=output_json)
+
+
+def _cmd_client_api_access_admin_audit(*, agent_id: str, user_id: str, limit: int, output_json: bool) -> int:
+    """Read one unified agent admin-audit snapshot from the local client-api runtime."""
+    payload = _client_api_coordinator().get_access_audit(
+        agent_id,
+        user_id=user_id,
+        limit=limit,
+        category="all",
+    )
+    return _emit_client_api_payload(payload, output_json=output_json)
+
+
 def _cmd_client_api_access_set_owner(
     *,
     agent_id: str,
@@ -4016,6 +4038,60 @@ def _cmd_client_api_access_remove_participant(
         agent_id,
         principal_id,
         user_id=user_id,
+    )
+    return _emit_client_api_payload(payload, output_json=output_json)
+
+
+def _cmd_client_api_access_add_participants(
+    *,
+    agent_id: str,
+    principal_ids: list[str],
+    user_id: str,
+    dry_run: bool,
+    output_json: bool,
+) -> int:
+    """Add multiple participant memberships from the local client-api runtime."""
+    payload = _client_api_coordinator().batch_add_participants(
+        agent_id,
+        principal_ids,
+        user_id=user_id,
+        dry_run=dry_run,
+    )
+    return _emit_client_api_payload(payload, output_json=output_json)
+
+
+def _cmd_client_api_access_remove_participants(
+    *,
+    agent_id: str,
+    principal_ids: list[str],
+    user_id: str,
+    dry_run: bool,
+    output_json: bool,
+) -> int:
+    """Remove multiple participant memberships from the local client-api runtime."""
+    payload = _client_api_coordinator().batch_remove_participants(
+        agent_id,
+        principal_ids,
+        user_id=user_id,
+        dry_run=dry_run,
+    )
+    return _emit_client_api_payload(payload, output_json=output_json)
+
+
+def _cmd_client_api_access_sync_participants(
+    *,
+    agent_id: str,
+    principal_ids: list[str],
+    user_id: str,
+    dry_run: bool,
+    output_json: bool,
+) -> int:
+    """Synchronize participant memberships from the local client-api runtime."""
+    payload = _client_api_coordinator().sync_participants(
+        agent_id,
+        principal_ids,
+        user_id=user_id,
+        dry_run=dry_run,
     )
     return _emit_client_api_payload(payload, output_json=output_json)
 
@@ -4204,6 +4280,32 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Emit machine-readable JSON.",
     )
+    client_api_access_mutation_audit_parser = client_api_access_subparsers.add_parser(
+        "mutation-audit",
+        help="Show owner/member access-mutation audit rows for one agent.",
+    )
+    client_api_access_mutation_audit_parser.add_argument("agent_id", help="Target agent id.")
+    client_api_access_mutation_audit_parser.add_argument("--user-id", default="ppx-client-user", help="Requester principal id.")
+    client_api_access_mutation_audit_parser.add_argument("--limit", type=int, default=50, help="Maximum rows to return.")
+    client_api_access_mutation_audit_parser.add_argument(
+        "--json",
+        dest="output_json",
+        action="store_true",
+        help="Emit machine-readable JSON.",
+    )
+    client_api_access_admin_audit_parser = client_api_access_subparsers.add_parser(
+        "admin-audit",
+        help="Show unified admin-audit rows for one agent.",
+    )
+    client_api_access_admin_audit_parser.add_argument("agent_id", help="Target agent id.")
+    client_api_access_admin_audit_parser.add_argument("--user-id", default="ppx-client-user", help="Requester principal id.")
+    client_api_access_admin_audit_parser.add_argument("--limit", type=int, default=50, help="Maximum rows to return.")
+    client_api_access_admin_audit_parser.add_argument(
+        "--json",
+        dest="output_json",
+        action="store_true",
+        help="Emit machine-readable JSON.",
+    )
     client_api_access_set_owner_parser = client_api_access_subparsers.add_parser(
         "set-owner",
         help="Set one agent owner. Requires a root requester.",
@@ -4238,6 +4340,48 @@ def main(argv: list[str] | None = None) -> None:
     client_api_access_remove_participant_parser.add_argument("principal_id", help="Participant principal id.")
     client_api_access_remove_participant_parser.add_argument("--user-id", default="ppx-client-user", help="Requester principal id.")
     client_api_access_remove_participant_parser.add_argument(
+        "--json",
+        dest="output_json",
+        action="store_true",
+        help="Emit machine-readable JSON.",
+    )
+    client_api_access_add_participants_parser = client_api_access_subparsers.add_parser(
+        "add-participants",
+        help="Add multiple participant memberships in one batch operation.",
+    )
+    client_api_access_add_participants_parser.add_argument("agent_id", help="Target agent id.")
+    client_api_access_add_participants_parser.add_argument("principal_ids", nargs="+", help="Participant principal ids.")
+    client_api_access_add_participants_parser.add_argument("--user-id", default="ppx-client-user", help="Requester principal id.")
+    client_api_access_add_participants_parser.add_argument("--dry-run", action="store_true", help="Preview the batch plan without writing.")
+    client_api_access_add_participants_parser.add_argument(
+        "--json",
+        dest="output_json",
+        action="store_true",
+        help="Emit machine-readable JSON.",
+    )
+    client_api_access_remove_participants_parser = client_api_access_subparsers.add_parser(
+        "remove-participants",
+        help="Remove multiple participant memberships in one batch operation.",
+    )
+    client_api_access_remove_participants_parser.add_argument("agent_id", help="Target agent id.")
+    client_api_access_remove_participants_parser.add_argument("principal_ids", nargs="+", help="Participant principal ids.")
+    client_api_access_remove_participants_parser.add_argument("--user-id", default="ppx-client-user", help="Requester principal id.")
+    client_api_access_remove_participants_parser.add_argument("--dry-run", action="store_true", help="Preview the batch plan without writing.")
+    client_api_access_remove_participants_parser.add_argument(
+        "--json",
+        dest="output_json",
+        action="store_true",
+        help="Emit machine-readable JSON.",
+    )
+    client_api_access_sync_participants_parser = client_api_access_subparsers.add_parser(
+        "sync-participants",
+        help="Synchronize participant memberships to the provided set.",
+    )
+    client_api_access_sync_participants_parser.add_argument("agent_id", help="Target agent id.")
+    client_api_access_sync_participants_parser.add_argument("principal_ids", nargs="+", help="Desired participant principal ids.")
+    client_api_access_sync_participants_parser.add_argument("--user-id", default="ppx-client-user", help="Requester principal id.")
+    client_api_access_sync_participants_parser.add_argument("--dry-run", action="store_true", help="Preview the sync plan without writing.")
+    client_api_access_sync_participants_parser.add_argument(
         "--json",
         dest="output_json",
         action="store_true",
@@ -4517,6 +4661,20 @@ def main(argv: list[str] | None = None) -> None:
                     limit=args.limit,
                     output_json=args.output_json,
                 )
+            elif args.client_api_access_command == "mutation-audit":
+                code = _cmd_client_api_access_mutation_audit(
+                    agent_id=args.agent_id,
+                    user_id=args.user_id,
+                    limit=args.limit,
+                    output_json=args.output_json,
+                )
+            elif args.client_api_access_command == "admin-audit":
+                code = _cmd_client_api_access_admin_audit(
+                    agent_id=args.agent_id,
+                    user_id=args.user_id,
+                    limit=args.limit,
+                    output_json=args.output_json,
+                )
             elif args.client_api_access_command == "set-owner":
                 code = _cmd_client_api_access_set_owner(
                     agent_id=args.agent_id,
@@ -4536,6 +4694,30 @@ def main(argv: list[str] | None = None) -> None:
                     agent_id=args.agent_id,
                     principal_id=args.principal_id,
                     user_id=args.user_id,
+                    output_json=args.output_json,
+                )
+            elif args.client_api_access_command == "add-participants":
+                code = _cmd_client_api_access_add_participants(
+                    agent_id=args.agent_id,
+                    principal_ids=args.principal_ids,
+                    user_id=args.user_id,
+                    dry_run=args.dry_run,
+                    output_json=args.output_json,
+                )
+            elif args.client_api_access_command == "remove-participants":
+                code = _cmd_client_api_access_remove_participants(
+                    agent_id=args.agent_id,
+                    principal_ids=args.principal_ids,
+                    user_id=args.user_id,
+                    dry_run=args.dry_run,
+                    output_json=args.output_json,
+                )
+            elif args.client_api_access_command == "sync-participants":
+                code = _cmd_client_api_access_sync_participants(
+                    agent_id=args.agent_id,
+                    principal_ids=args.principal_ids,
+                    user_id=args.user_id,
+                    dry_run=args.dry_run,
                     output_json=args.output_json,
                 )
             else:

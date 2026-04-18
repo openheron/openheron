@@ -119,6 +119,11 @@ def test_access_policy_owner_can_manage_memberships_but_not_ownership(tmp_path) 
         agent_id="writer",
         access_kind="membership_write",
     )
+    audit_decision = policy.decide_agent_management(
+        requester_principal_id=owner.principal_id,
+        agent_id="writer",
+        access_kind="access_audit_read",
+    )
     ownership_decision = policy.decide_agent_management(
         requester_principal_id=owner.principal_id,
         agent_id="writer",
@@ -127,6 +132,8 @@ def test_access_policy_owner_can_manage_memberships_but_not_ownership(tmp_path) 
 
     assert membership_decision.allow is True
     assert membership_decision.reason == "agent_owner_membership_management"
+    assert audit_decision.allow is True
+    assert audit_decision.reason == "agent_owner_admin_read"
     assert ownership_decision.allow is False
     assert ownership_decision.reason == "ownership_change_requires_root"
 
@@ -143,6 +150,11 @@ def test_access_policy_root_can_manage_owner_and_memberships(tmp_path) -> None:
         agent_id="writer",
         access_kind="membership_write",
     )
+    audit_decision = policy.decide_agent_management(
+        requester_principal_id=root.principal_id,
+        agent_id="writer",
+        access_kind="access_audit_read",
+    )
     ownership_decision = policy.decide_agent_management(
         requester_principal_id=root.principal_id,
         agent_id="writer",
@@ -151,5 +163,27 @@ def test_access_policy_root_can_manage_owner_and_memberships(tmp_path) -> None:
 
     assert membership_decision.allow is True
     assert membership_decision.reason == "root_management_scope"
+    assert audit_decision.allow is True
+    assert audit_decision.reason == "root_management_scope"
     assert ownership_decision.allow is True
     assert ownership_decision.reason == "root_management_scope"
+
+
+def test_access_policy_participant_cannot_read_access_audit(tmp_path) -> None:
+    db_path = tmp_path / "identity.db"
+    identity_store = IdentityStore(db_path=db_path)
+    access_store = AgentAccessStore(db_path=db_path)
+    participant = identity_store.put_principal(_principal(principal_id="participant"))
+    access_store.upsert_membership(
+        AgentMembership(agent_id="writer", principal_id=participant.principal_id, relation="participant")
+    )
+
+    policy = AccessPolicy(identity_store=identity_store, agent_access_store=access_store)
+    decision = policy.decide_agent_management(
+        requester_principal_id=participant.principal_id,
+        agent_id="writer",
+        access_kind="access_audit_read",
+    )
+
+    assert decision.allow is False
+    assert decision.reason == "insufficient_agent_admin_role"

@@ -143,6 +143,38 @@ class CLITests(unittest.TestCase):
                 )
                 mocked_bootstrap.assert_not_called()
 
+    def test_client_api_access_mutation_audit_dispatch(self) -> None:
+        from openpipixia import cli
+
+        with patch.object(cli, "bootstrap_env_from_config") as mocked_bootstrap:
+            with patch.object(cli, "_cmd_client_api_access_mutation_audit", return_value=0) as mocked:
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main(["client-api", "access", "mutation-audit", "writer", "--user-id", "owner", "--limit", "10"])
+                self.assertEqual(ctx.exception.code, 0)
+                mocked.assert_called_once_with(
+                    agent_id="writer",
+                    user_id="owner",
+                    limit=10,
+                    output_json=False,
+                )
+                mocked_bootstrap.assert_not_called()
+
+    def test_client_api_access_admin_audit_dispatch(self) -> None:
+        from openpipixia import cli
+
+        with patch.object(cli, "bootstrap_env_from_config") as mocked_bootstrap:
+            with patch.object(cli, "_cmd_client_api_access_admin_audit", return_value=0) as mocked:
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main(["client-api", "access", "admin-audit", "writer", "--user-id", "owner", "--limit", "12"])
+                self.assertEqual(ctx.exception.code, 0)
+                mocked.assert_called_once_with(
+                    agent_id="writer",
+                    user_id="owner",
+                    limit=12,
+                    output_json=False,
+                )
+                mocked_bootstrap.assert_not_called()
+
     def test_client_api_access_add_participant_dispatch(self) -> None:
         from openpipixia import cli
 
@@ -172,6 +204,51 @@ class CLITests(unittest.TestCase):
                     principal_id="alice",
                     user_id="ppx-client-user",
                     output_json=False,
+                )
+                mocked_bootstrap.assert_not_called()
+
+    def test_client_api_access_batch_membership_dispatch(self) -> None:
+        from openpipixia import cli
+
+        with patch.object(cli, "bootstrap_env_from_config") as mocked_bootstrap:
+            with patch.object(cli, "_cmd_client_api_access_add_participants", return_value=0) as mocked_add:
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main(["client-api", "access", "add-participants", "writer", "alice", "bob", "--user-id", "owner", "--dry-run"])
+                self.assertEqual(ctx.exception.code, 0)
+                mocked_add.assert_called_once_with(
+                    agent_id="writer",
+                    principal_ids=["alice", "bob"],
+                    user_id="owner",
+                    dry_run=True,
+                    output_json=False,
+                )
+                mocked_bootstrap.assert_not_called()
+
+        with patch.object(cli, "bootstrap_env_from_config") as mocked_bootstrap:
+            with patch.object(cli, "_cmd_client_api_access_remove_participants", return_value=0) as mocked_remove:
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main(["client-api", "access", "remove-participants", "writer", "alice"])
+                self.assertEqual(ctx.exception.code, 0)
+                mocked_remove.assert_called_once_with(
+                    agent_id="writer",
+                    principal_ids=["alice"],
+                    user_id="ppx-client-user",
+                    dry_run=False,
+                    output_json=False,
+                )
+                mocked_bootstrap.assert_not_called()
+
+        with patch.object(cli, "bootstrap_env_from_config") as mocked_bootstrap:
+            with patch.object(cli, "_cmd_client_api_access_sync_participants", return_value=0) as mocked_sync:
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main(["client-api", "access", "sync-participants", "writer", "alice", "carol", "--json"])
+                self.assertEqual(ctx.exception.code, 0)
+                mocked_sync.assert_called_once_with(
+                    agent_id="writer",
+                    principal_ids=["alice", "carol"],
+                    user_id="ppx-client-user",
+                    dry_run=False,
+                    output_json=True,
                 )
                 mocked_bootstrap.assert_not_called()
 

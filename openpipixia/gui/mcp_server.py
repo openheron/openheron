@@ -116,6 +116,27 @@ def list_agent_memory_audit(
         return {"ok": False, "error": str(exc)}
 
 
+def list_agent_access_audit(
+    *,
+    agent_id: str,
+    user_id: str = "ppx-client-user",
+    limit: int = 50,
+    data_dir: str | None = None,
+) -> dict[str, Any]:
+    """Return access-mutation audit rows for GUI and MCP workflows."""
+    normalized_agent_id = (agent_id or "").strip()
+    if not normalized_agent_id:
+        return {"ok": False, "error": "agent_id is required"}
+    try:
+        return _coordinator_for_data_dir(data_dir).get_access_audit(
+            normalized_agent_id,
+            user_id=user_id,
+            limit=limit,
+        )
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 def set_agent_owner(
     *,
     agent_id: str,
@@ -262,6 +283,23 @@ def build_gui_mcp_server(name: str = "openpipixia-gui") -> FastMCP:
         data_dir: str | None = None,
     ) -> dict[str, Any]:
         return list_agent_memory_audit(
+            agent_id=agent_id,
+            user_id=user_id,
+            limit=limit,
+            data_dir=data_dir,
+        )
+
+    @server.tool(
+        name="agent_access_audit_list",
+        description="List visible owner/member access-mutation audit rows for one agent.",
+    )
+    def _agent_access_audit_list(
+        agent_id: str,
+        user_id: str = "ppx-client-user",
+        limit: int = 50,
+        data_dir: str | None = None,
+    ) -> dict[str, Any]:
+        return list_agent_access_audit(
             agent_id=agent_id,
             user_id=user_id,
             limit=limit,

@@ -46,6 +46,20 @@ class AgentMembership:
     joined_at_ms: int = 0
 
 
+@dataclass(slots=True)
+class AgentAccessAuditRow:
+    """One persisted audit row for an explicit access-management mutation."""
+
+    audit_id: str
+    agent_id: str
+    actor_principal_id: str
+    actor_relation: str
+    action: str
+    target_principal_id: str
+    details: dict[str, Any] = field(default_factory=dict)
+    created_at_ms: int = 0
+
+
 def load_agent_access_store_config() -> AgentAccessStoreConfig:
     """Load access store config from environment variables."""
     default_db_path = load_identity_store_config().db_path
@@ -83,6 +97,11 @@ def _workspace_fallback_db_path(db_path: Path) -> Path:
 def _now_ms() -> int:
     """Return current wall-clock milliseconds."""
     return int(time.time() * 1000)
+
+
+def _new_audit_id() -> str:
+    """Return one opaque audit id for a persisted mutation row."""
+    return f"audit_{_now_ms()}_{os.urandom(4).hex()}"
 
 
 def _json_dumps(payload: dict[str, Any]) -> str:
@@ -156,6 +175,24 @@ class AgentAccessStore:
                 "CREATE INDEX IF NOT EXISTS idx_agent_memberships_agent_relation "
                 "ON agent_memberships(agent_id, relation)"
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS agent_access_audit (
+                    audit_id TEXT PRIMARY KEY,
+                    agent_id TEXT NOT NULL,
+                    actor_principal_id TEXT NOT NULL,
+                    actor_relation TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    target_principal_id TEXT NOT NULL,
+                    details_json TEXT NOT NULL,
+                    created_at_ms INTEGER NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_agent_access_audit_agent_created "
+                "ON agent_access_audit(agent_id, created_at_ms DESC)"
+            )
 
     @staticmethod
     def _record_from_row(row: sqlite3.Row) -> AgentRecord:
@@ -179,6 +216,20 @@ class AgentAccessStore:
             relation=str(row["relation"]),
             metadata=_json_loads(row["metadata_json"]),
             joined_at_ms=int(row["joined_at_ms"]),
+        )
+
+    @staticmethod
+    def _audit_row_from_row(row: sqlite3.Row) -> AgentAccessAuditRow:
+        """Project one SQLite row into an access-audit row."""
+        return AgentAccessAuditRow(
+            audit_id=str(row["audit_id"]),
+            agent_id=str(row["agent_id"]),
+            actor_principal_id=str(row["actor_principal_id"]),
+            actor_relation=str(row["actor_relation"]),
+            action=str(row["action"]),
+            target_principal_id=str(row["target_principal_id"]),
+            details=_json_loads(row["details_json"]),
+            created_at_ms=int(row["created_at_ms"]),
         )
 
     def upsert_agent_record(self, record: AgentRecord) -> AgentRecord:
@@ -399,6 +450,89 @@ class AgentAccessStore:
                 (agent_id, principal_id),
             )
         return cursor.rowcount > 0
+
+    def record_audit(
+        self,
+        *,
+        agent_id: str,
+        actor_principal_id: str,
+        actor_relation: str,
+        action: str,
+        target_principal_id: str,
+        details: dict[str, Any] | None = None,
+        created_at_ms: int = 0,
+    ) -> AgentAccessAuditRow:
+        """Persist one explicit access-management mutation audit row."""
+        payload = AgentAccessAuditRow(
+            audit_id=_new_audit_id(),
+            agent_id=str(agent_id),
+            actor_principal_id=str(actor_principal_id),
+            actor_relation=str(actor_relation or "none"),
+            action=str(action),
+            target_principal_id=str(target_principal_id or ""),
+            details=dict(details or {}),
+            created_at_ms=int(created_at_ms or _now_ms()),
+        )
+        with self._lock, _connect(self._db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO agent_access_audit (
+                    audit_id,
+                    agent_id,
+                    actor_principal_id,
+                    actor_relation,
+                    action,
+                    target_principal_id,
+                    details_json,
+                    created_at_ms
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload.audit_id,
+                    payload.agent_id,
+                    payload.actor_principal_id,
+                    payload.actor_relation,
+                    payload.action,
+                    payload.target_principal_id,
+                    _json_dumps(payload.details),
+                    payload.created_at_ms,
+                ),
+            )
+        return payload
+
+    def list_audit(
+        self,
+        *,
+        agent_id: str,
+        limit: int = 50,
+        actions: Sequence[str] | None = None,
+    ) -> list[AgentAccessAuditRow]:
+        """List recent access-management audit rows for one agent."""
+        normalized_limit = max(1, int(limit or 50))
+        query = """
+            SELECT
+                audit_id,
+                agent_id,
+                actor_principal_id,
+                actor_relation,
+                action,
+                target_principal_id,
+                details_json,
+                created_at_ms
+            FROM agent_access_audit
+            WHERE agent_id = ?
+        """
+        params: list[Any] = [agent_id]
+        normalized_actions = [str(item) for item in (actions or []) if str(item).strip()]
+        if normalized_actions:
+            placeholders = ", ".join("?" for _ in normalized_actions)
+            query += f" AND action IN ({placeholders})"
+            params.extend(normalized_actions)
+        query += " ORDER BY created_at_ms DESC, audit_id DESC LIMIT ?"
+        params.append(normalized_limit)
+        with self._lock, _connect(self._db_path) as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
+        return [self._audit_row_from_row(row) for row in rows]
 
 
 def create_agent_access_store(config: AgentAccessStoreConfig | None = None) -> AgentAccessStore:

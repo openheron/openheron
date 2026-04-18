@@ -83,6 +83,25 @@ class ClientApiClient:
             },
         )
 
+    def list_access_audit(
+        self,
+        agent_id: str,
+        *,
+        user_id: str = "ppx-client-user",
+        limit: int = 50,
+        category: str = "all",
+    ) -> dict[str, Any]:
+        """Fetch visible admin-audit rows for one agent."""
+        return self._request(
+            "GET",
+            f"/api/v1/agents/{agent_id}/access/audit",
+            query={
+                "user_id": user_id,
+                "limit": limit,
+                "category": category,
+            },
+        )
+
     def set_agent_owner(
         self,
         agent_id: str,
@@ -131,4 +150,64 @@ class ClientApiClient:
             "DELETE",
             f"/api/v1/agents/{agent_id}/access/memberships/{principal_id}",
             query={"user_id": user_id},
+        )
+
+    def batch_add_participants(
+        self,
+        agent_id: str,
+        principal_ids: list[str] | tuple[str, ...],
+        *,
+        user_id: str = "ppx-client-user",
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Add multiple participant memberships through the HTTP client API."""
+        return self._request(
+            "POST",
+            f"/api/v1/agents/{agent_id}/access/memberships/batch",
+            json_body={
+                "user_id": user_id,
+                "operation": "add",
+                "principal_ids": list(principal_ids),
+                "dry_run": bool(dry_run),
+            },
+        )
+
+    def batch_remove_participants(
+        self,
+        agent_id: str,
+        principal_ids: list[str] | tuple[str, ...],
+        *,
+        user_id: str = "ppx-client-user",
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Remove multiple participant memberships through the HTTP client API."""
+        return self._request(
+            "POST",
+            f"/api/v1/agents/{agent_id}/access/memberships/batch",
+            json_body={
+                "user_id": user_id,
+                "operation": "remove",
+                "principal_ids": list(principal_ids),
+                "dry_run": bool(dry_run),
+            },
+        )
+
+    def sync_participants(
+        self,
+        agent_id: str,
+        principal_ids: list[str] | tuple[str, ...],
+        *,
+        user_id: str = "ppx-client-user",
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Synchronize participant memberships through the HTTP client API."""
+        return self._request(
+            "POST",
+            f"/api/v1/agents/{agent_id}/access/memberships/batch",
+            json_body={
+                "user_id": user_id,
+                "operation": "sync",
+                "principal_ids": list(principal_ids),
+                "dry_run": bool(dry_run),
+            },
         )
