@@ -16,7 +16,10 @@ from google.genai import types
 from ..bus.events import InboundMessage, OutboundMessage
 from ..bus.queue import MessageBus
 from ..channels.manager import ChannelManager
+from ..runtime.access_policy import AccessPolicy
 from ..runtime.adk_utils import extract_text, merge_text_stream
+from ..runtime.agent_access_runtime import ensure_agent_access_record
+from ..runtime.agent_access_store import AgentAccessStore, AgentMembership, create_agent_access_store
 from ..runtime.cron_helpers import cron_store_path
 from ..runtime.cron_service import CronJob, CronService
 from ..runtime.heartbeat_status_store import write_heartbeat_status_snapshot
@@ -88,12 +91,18 @@ class Gateway:
         channel_manager: ChannelManager | None = None,
         session_service: Any | None = None,
         identity_store: Any | None = None,
+        agent_access_store: AgentAccessStore | None = None,
     ) -> None:
         self.app_name = app_name
         self._agent_id = getattr(agent, "name", app_name) or app_name
         self.bus = bus
         self.channel_manager = channel_manager
         self._identity_store = identity_store or create_identity_store()
+        self._agent_access_store = agent_access_store or create_agent_access_store()
+        self._access_policy = AccessPolicy(
+            identity_store=self._identity_store,
+            agent_access_store=self._agent_access_store,
+        )
         self.runner, self.session_service = create_runner(
             agent=agent,
             app_name=app_name,
@@ -115,6 +124,7 @@ class Gateway:
         self._inflight_user_requests = 0
         self._last_inbound_route: tuple[str, str] | None = None
         self._last_heartbeat_delivery: dict[str, Any] | None = None
+        self._ensure_agent_record()
 
     @staticmethod
     def _subagent_max_concurrency() -> int:
@@ -208,6 +218,38 @@ class Gateway:
         """Resolve one internal runtime principal."""
         return self._identity_store.resolve_service_principal(name)
 
+    def _ensure_agent_record(self) -> None:
+        """Ensure the current agent has a baseline access record."""
+        ensure_agent_access_record(
+            agent_id=self._agent_id,
+            agent_name=self._agent_id,
+            identity_store=self._identity_store,
+            agent_access_store=self._agent_access_store,
+            apply_env_overrides=True,
+        )
+
+    def _ensure_principal_membership(self, principal: ResolvedPrincipal) -> str:
+        """Ensure runtime access rows exist for the current principal and return its relation."""
+        self._ensure_agent_record()
+        if principal.principal_type == "human":
+            existing = self._agent_access_store.get_membership(
+                agent_id=self._agent_id,
+                principal_id=principal.principal_id,
+            )
+            if existing is None:
+                self._agent_access_store.upsert_membership(
+                    AgentMembership(
+                        agent_id=self._agent_id,
+                        principal_id=principal.principal_id,
+                        relation="participant",
+                        metadata={"auto_registered": True, **dict(principal.metadata)},
+                    )
+                )
+        return self._access_policy.relation_to_agent(
+            requester_principal_id=principal.principal_id,
+            agent_id=self._agent_id,
+        )
+
     def _build_interaction_context(
         self,
         *,
@@ -218,6 +260,7 @@ class Gateway:
         session_route_key: str,
     ) -> InteractionContext:
         """Build the invocation-scoped context injected into ADK `temp:` state."""
+        relation_to_agent = self._ensure_principal_membership(principal)
         return InteractionContext(
             app_name=self.app_name,
             agent_id=self._agent_id,
@@ -228,7 +271,7 @@ class Gateway:
             requester_principal_id=principal.principal_id,
             requester_principal_type=principal.principal_type,
             requester_level=principal.privilege_level,
-            requester_relation_to_agent="none",
+            requester_relation_to_agent=relation_to_agent,
             requester_account_kind=principal.account_kind,
             authenticated=principal.authenticated,
             requester_display_name=principal.display_name,

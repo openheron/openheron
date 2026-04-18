@@ -76,6 +76,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg["agent"]["heartbeat"]["activeHours"]["timezone"], "user")
         self.assertEqual(cfg["agent"]["name"], "")
         self.assertEqual(cfg["agent"]["privilegeLevel"], "")
+        self.assertEqual(cfg["agent"]["ownerPrincipalId"], "")
         self.assertEqual(cfg["agent"]["permissions"], {})
         self.assertFalse(cfg["security"]["restrictToWorkspace"])
         self.assertTrue(cfg["security"]["allowExec"])
@@ -195,6 +196,14 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(cfg["security"]["allowNetwork"])
         self.assertEqual(env["OPENPPX_AGENT_PRIVILEGE_LEVEL"], "medium")
         self.assertEqual(env["OPENPPX_FILESYSTEM_ACCESS"], "read_write")
+
+    def test_config_to_env_maps_agent_owner_principal_id(self) -> None:
+        cfg = default_config()
+        cfg["agent"]["ownerPrincipalId"] = "human:local:alice"
+
+        env = config_to_env(cfg)
+
+        self.assertEqual(env["OPENPPX_AGENT_OWNER_PRINCIPAL_ID"], "human:local:alice")
 
     def test_apply_agent_privilege_level_defaults_syncs_high_permissions(self) -> None:
         cfg = default_config()

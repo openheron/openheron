@@ -380,6 +380,7 @@ def default_config() -> dict[str, Any]:
         "agent": {
             "name": "",
             "privilegeLevel": "",
+            "ownerPrincipalId": "",
             "permissions": {},
             "workspace": str(get_default_workspace_path()),
             "builtinSkillsDir": "",
@@ -1033,6 +1034,7 @@ def config_to_env(
             agent.get("privilegeLevel", ""),
             default="",
         ),
+        "OPENPPX_AGENT_OWNER_PRINCIPAL_ID": str(agent.get("ownerPrincipalId", "")).strip(),
         "OPENPPX_CAN_DELEGATE": "1"
         if bool(_as_dict(agent.get("permissions")).get("canDelegate", False))
         else "0",

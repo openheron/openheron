@@ -87,3 +87,69 @@ def test_access_policy_root_gets_global_scope(tmp_path) -> None:
     assert decision.allow is True
     assert decision.reason == "root_scope"
     assert decision.scope_kind == "all"
+
+
+def test_access_policy_service_relation_is_service(tmp_path) -> None:
+    db_path = tmp_path / "identity.db"
+    identity_store = IdentityStore(db_path=db_path)
+    access_store = AgentAccessStore(db_path=db_path)
+    service = identity_store.put_principal(
+        _principal(principal_id="cron", principal_type="service", privilege_level="high")
+    )
+
+    policy = AccessPolicy(identity_store=identity_store, agent_access_store=access_store)
+    relation = policy.relation_to_agent(
+        requester_principal_id=service.principal_id,
+        agent_id="writer",
+    )
+
+    assert relation == "service"
+
+
+def test_access_policy_owner_can_manage_memberships_but_not_ownership(tmp_path) -> None:
+    db_path = tmp_path / "identity.db"
+    identity_store = IdentityStore(db_path=db_path)
+    access_store = AgentAccessStore(db_path=db_path)
+    owner = identity_store.put_principal(_principal(principal_id="owner"))
+    access_store.set_agent_owner(agent_id="writer", owner_principal_id=owner.principal_id)
+
+    policy = AccessPolicy(identity_store=identity_store, agent_access_store=access_store)
+    membership_decision = policy.decide_agent_management(
+        requester_principal_id=owner.principal_id,
+        agent_id="writer",
+        access_kind="membership_write",
+    )
+    ownership_decision = policy.decide_agent_management(
+        requester_principal_id=owner.principal_id,
+        agent_id="writer",
+        access_kind="ownership_write",
+    )
+
+    assert membership_decision.allow is True
+    assert membership_decision.reason == "agent_owner_membership_management"
+    assert ownership_decision.allow is False
+    assert ownership_decision.reason == "ownership_change_requires_root"
+
+
+def test_access_policy_root_can_manage_owner_and_memberships(tmp_path) -> None:
+    db_path = tmp_path / "identity.db"
+    identity_store = IdentityStore(db_path=db_path)
+    access_store = AgentAccessStore(db_path=db_path)
+    root = identity_store.put_principal(_principal(principal_id="root-user", privilege_level="root"))
+
+    policy = AccessPolicy(identity_store=identity_store, agent_access_store=access_store)
+    membership_decision = policy.decide_agent_management(
+        requester_principal_id=root.principal_id,
+        agent_id="writer",
+        access_kind="membership_write",
+    )
+    ownership_decision = policy.decide_agent_management(
+        requester_principal_id=root.principal_id,
+        agent_id="writer",
+        access_kind="ownership_write",
+    )
+
+    assert membership_decision.allow is True
+    assert membership_decision.reason == "root_management_scope"
+    assert ownership_decision.allow is True
+    assert ownership_decision.reason == "root_management_scope"

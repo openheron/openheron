@@ -24,6 +24,8 @@ class AccessPolicy:
         principal = self._identity_store.get_principal(requester_principal_id)
         if principal is None:
             return "none"
+        if principal.principal_type == "service":
+            return "service"
         if principal.privilege_level == "root":
             return "root"
 
@@ -119,4 +121,60 @@ class AccessPolicy:
             requester_principal_id=requester_principal_id,
             agent_id=agent_id,
             relation_to_agent=scope.relation_to_agent,
+        )
+
+    def decide_agent_management(
+        self,
+        *,
+        requester_principal_id: str,
+        agent_id: str,
+        access_kind: str,
+    ) -> AccessDecision:
+        """Return whether the requester can mutate one agent's access state."""
+        principal = self._identity_store.get_principal(requester_principal_id)
+        if principal is None:
+            return AccessDecision.deny(
+                reason="requester_principal_not_found",
+                access_kind=access_kind,
+                requester_principal_id=requester_principal_id,
+                agent_id=agent_id,
+            )
+
+        relation = self.relation_to_agent(
+            requester_principal_id=requester_principal_id,
+            agent_id=agent_id,
+        )
+        if principal.privilege_level == "root":
+            return AccessDecision.allow_scope(
+                reason="root_management_scope",
+                access_kind=access_kind,
+                requester_principal_id=requester_principal_id,
+                agent_id=agent_id,
+                relation_to_agent=relation,
+                scope_kind="all",
+            )
+        if access_kind == "membership_write" and relation == "owner":
+            return AccessDecision.allow_scope(
+                reason="agent_owner_membership_management",
+                access_kind=access_kind,
+                requester_principal_id=requester_principal_id,
+                agent_id=agent_id,
+                relation_to_agent=relation,
+                scope_kind="agent",
+                visible_principal_ids=(requester_principal_id,),
+            )
+        if access_kind == "ownership_write" and relation == "owner":
+            return AccessDecision.deny(
+                reason="ownership_change_requires_root",
+                access_kind=access_kind,
+                requester_principal_id=requester_principal_id,
+                agent_id=agent_id,
+                relation_to_agent=relation,
+            )
+        return AccessDecision.deny(
+            reason="insufficient_agent_admin_role",
+            access_kind=access_kind,
+            requester_principal_id=requester_principal_id,
+            agent_id=agent_id,
+            relation_to_agent=relation,
         )

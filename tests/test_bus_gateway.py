@@ -18,10 +18,12 @@ from google.adk.tools import LongRunningFunctionTool
 from openpipixia.bus.events import InboundMessage, OutboundMessage
 from openpipixia.bus.queue import MessageBus
 from openpipixia.app.gateway import Gateway
+from openpipixia.runtime.agent_access_store import AgentAccessStore
 from openpipixia.runtime.cron_service import CronJob, CronJobState, CronPayload, CronSchedule
 from openpipixia.runtime.heartbeat_runner import HeartbeatRunRequest
 from openpipixia.runtime.heartbeat_status_store import read_heartbeat_status_snapshot
 from openpipixia.runtime.heartbeat_utils import DEFAULT_HEARTBEAT_PROMPT
+from openpipixia.runtime.identity_store import IdentityStore
 from openpipixia.tooling.registry import SubagentSpawnRequest
 
 _LOCAL_PRINCIPAL_ID = "human:local:u1"
@@ -89,6 +91,114 @@ class GatewayTests(unittest.TestCase):
         self.assertIn("Current request time: 2026-02-18T09:30:00+00:00 (UTC)", text)
         self.assertIn("Use this as the reference 'now' for relative time expressions", text)
         self.assertIn("\n\nhello", text)
+
+    def test_process_message_sets_participant_relation_and_access_rows(self) -> None:
+        fake_event = pytypes.SimpleNamespace(
+            content=pytypes.SimpleNamespace(parts=[pytypes.SimpleNamespace(text="ok")])
+        )
+        captured: dict[str, object] = {}
+
+        class _FakeRunner:
+            async def run_async(self, **kwargs):
+                captured.update(kwargs)
+                yield fake_event
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "identity.db"
+            identity_store = IdentityStore(db_path=db_path)
+            access_store = AgentAccessStore(db_path=db_path)
+            fake_agent = pytypes.SimpleNamespace(name="openpipixia")
+            with patch("openpipixia.app.gateway.create_runner", return_value=(_FakeRunner(), object())):
+                gateway = Gateway(
+                    agent=fake_agent,
+                    app_name="openpipixia",
+                    bus=MessageBus(),
+                    identity_store=identity_store,
+                    agent_access_store=access_store,
+                )
+                inbound = InboundMessage(channel="local", sender_id="u1", chat_id="c1", content="hello")
+                asyncio.run(gateway.process_message(inbound))
+
+            context = captured["state_delta"]["temp:_openppx:ctx"]
+            membership = access_store.get_membership(
+                agent_id="openpipixia",
+                principal_id=_LOCAL_PRINCIPAL_ID,
+            )
+            record = access_store.get_agent_record("openpipixia")
+
+        self.assertEqual(context["requester_relation_to_agent"], "participant")
+        self.assertIsNotNone(membership)
+        self.assertEqual(membership.relation, "participant")
+        self.assertIsNotNone(record)
+        self.assertEqual(record.agent_id, "openpipixia")
+
+    def test_process_message_sets_owner_relation_when_owner_record_exists(self) -> None:
+        fake_event = pytypes.SimpleNamespace(
+            content=pytypes.SimpleNamespace(parts=[pytypes.SimpleNamespace(text="ok")])
+        )
+        captured: dict[str, object] = {}
+
+        class _FakeRunner:
+            async def run_async(self, **kwargs):
+                captured.update(kwargs)
+                yield fake_event
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "identity.db"
+            identity_store = IdentityStore(db_path=db_path)
+            access_store = AgentAccessStore(db_path=db_path)
+            access_store.set_agent_owner(agent_id="openpipixia", owner_principal_id=_LOCAL_PRINCIPAL_ID)
+            fake_agent = pytypes.SimpleNamespace(name="openpipixia")
+            with patch("openpipixia.app.gateway.create_runner", return_value=(_FakeRunner(), object())):
+                gateway = Gateway(
+                    agent=fake_agent,
+                    app_name="openpipixia",
+                    bus=MessageBus(),
+                    identity_store=identity_store,
+                    agent_access_store=access_store,
+                )
+                inbound = InboundMessage(channel="local", sender_id="u1", chat_id="c1", content="hello")
+                asyncio.run(gateway.process_message(inbound))
+
+        context = captured["state_delta"]["temp:_openppx:ctx"]
+        self.assertEqual(context["requester_relation_to_agent"], "owner")
+
+    def test_process_message_uses_configured_owner_principal_id(self) -> None:
+        fake_event = pytypes.SimpleNamespace(
+            content=pytypes.SimpleNamespace(parts=[pytypes.SimpleNamespace(text="ok")])
+        )
+        captured: dict[str, object] = {}
+
+        class _FakeRunner:
+            async def run_async(self, **kwargs):
+                captured.update(kwargs)
+                yield fake_event
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "identity.db"
+            identity_store = IdentityStore(db_path=db_path)
+            access_store = AgentAccessStore(db_path=db_path)
+            fake_agent = pytypes.SimpleNamespace(name="openpipixia")
+            with (
+                patch.dict(os.environ, {"OPENPPX_AGENT_OWNER_PRINCIPAL_ID": _LOCAL_PRINCIPAL_ID}, clear=False),
+                patch("openpipixia.app.gateway.create_runner", return_value=(_FakeRunner(), object())),
+            ):
+                gateway = Gateway(
+                    agent=fake_agent,
+                    app_name="openpipixia",
+                    bus=MessageBus(),
+                    identity_store=identity_store,
+                    agent_access_store=access_store,
+                )
+                inbound = InboundMessage(channel="local", sender_id="u1", chat_id="c1", content="hello")
+                asyncio.run(gateway.process_message(inbound))
+
+            context = captured["state_delta"]["temp:_openppx:ctx"]
+            record = access_store.get_agent_record("openpipixia")
+
+        self.assertEqual(context["requester_relation_to_agent"], "owner")
+        self.assertIsNotNone(record)
+        self.assertEqual(record.owner_principal_id, _LOCAL_PRINCIPAL_ID)
 
     def test_process_message_includes_media_parts(self) -> None:
         fake_event = pytypes.SimpleNamespace(

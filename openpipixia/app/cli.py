@@ -3929,6 +3929,87 @@ def _cmd_gateway_service_status(*, output_json: bool) -> int:
     return 0
 
 
+def _client_api_coordinator() -> Any:
+    """Build one local client-api coordinator for CLI access helpers."""
+    from ..runtime.client_api_service import ClientApiCoordinator
+
+    return ClientApiCoordinator(data_dir=get_data_dir())
+
+
+def _emit_client_api_payload(payload: dict[str, Any], *, output_json: bool) -> int:
+    """Render one client-api style payload and return an exit code."""
+    if output_json:
+        _stdout_line(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0 if payload.get("ok") else 1
+    if payload.get("ok"):
+        data = payload.get("data")
+        _stdout_line(json.dumps(data if isinstance(data, dict) else payload, ensure_ascii=False, indent=2))
+        return 0
+    error = payload.get("error") if isinstance(payload.get("error"), dict) else {}
+    message = str(error.get("message") or "unknown client-api error")
+    details = error.get("details") if isinstance(error.get("details"), dict) else {}
+    reason = str(details.get("reason") or "").strip()
+    _stdout_line(f"Error: {message}")
+    if reason:
+        _stdout_line(f"Reason: {reason}")
+    return 1
+
+
+def _cmd_client_api_access_get(*, agent_id: str, user_id: str, output_json: bool) -> int:
+    """Read one agent access snapshot from the local client-api runtime."""
+    payload = _client_api_coordinator().get_agent_access(agent_id, user_id=user_id)
+    return _emit_client_api_payload(payload, output_json=output_json)
+
+
+def _cmd_client_api_access_set_owner(
+    *,
+    agent_id: str,
+    owner_principal_id: str,
+    user_id: str,
+    output_json: bool,
+) -> int:
+    """Set one agent owner from the local client-api runtime."""
+    payload = _client_api_coordinator().set_agent_owner(
+        agent_id,
+        owner_principal_id,
+        user_id=user_id,
+    )
+    return _emit_client_api_payload(payload, output_json=output_json)
+
+
+def _cmd_client_api_access_add_participant(
+    *,
+    agent_id: str,
+    principal_id: str,
+    user_id: str,
+    output_json: bool,
+) -> int:
+    """Add one participant membership from the local client-api runtime."""
+    payload = _client_api_coordinator().upsert_agent_membership(
+        agent_id,
+        principal_id,
+        relation="participant",
+        user_id=user_id,
+    )
+    return _emit_client_api_payload(payload, output_json=output_json)
+
+
+def _cmd_client_api_access_remove_participant(
+    *,
+    agent_id: str,
+    principal_id: str,
+    user_id: str,
+    output_json: bool,
+) -> int:
+    """Remove one participant membership from the local client-api runtime."""
+    payload = _client_api_coordinator().delete_agent_membership(
+        agent_id,
+        principal_id,
+        user_id=user_id,
+    )
+    return _emit_client_api_payload(payload, output_json=output_json)
+
+
 def _should_require_agent_config_for_gateway(args: argparse.Namespace) -> bool:
     """Return true when command needs an explicit/available single-agent config."""
     if args.command != "gateway":
@@ -4080,6 +4161,65 @@ def main(argv: list[str] | None = None) -> None:
     client_api_serve_parser = client_api_subparsers.add_parser("serve", help="Start the local client API server.")
     client_api_serve_parser.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1).")
     client_api_serve_parser.add_argument("--port", type=int, default=8765, help="Bind port (default: 8765).")
+    client_api_access_parser = client_api_subparsers.add_parser(
+        "access",
+        help="Inspect or manage agent owner/participant access state locally.",
+    )
+    client_api_access_subparsers = client_api_access_parser.add_subparsers(
+        dest="client_api_access_command",
+        required=True,
+    )
+    client_api_access_get_parser = client_api_access_subparsers.add_parser(
+        "get",
+        help="Show one agent access snapshot.",
+    )
+    client_api_access_get_parser.add_argument("agent_id", help="Target agent id.")
+    client_api_access_get_parser.add_argument("--user-id", default="ppx-client-user", help="Requester principal id.")
+    client_api_access_get_parser.add_argument(
+        "--json",
+        dest="output_json",
+        action="store_true",
+        help="Emit machine-readable JSON.",
+    )
+    client_api_access_set_owner_parser = client_api_access_subparsers.add_parser(
+        "set-owner",
+        help="Set one agent owner. Requires a root requester.",
+    )
+    client_api_access_set_owner_parser.add_argument("agent_id", help="Target agent id.")
+    client_api_access_set_owner_parser.add_argument("owner_principal_id", help="New owner principal id.")
+    client_api_access_set_owner_parser.add_argument("--user-id", default="ppx-client-user", help="Requester principal id.")
+    client_api_access_set_owner_parser.add_argument(
+        "--json",
+        dest="output_json",
+        action="store_true",
+        help="Emit machine-readable JSON.",
+    )
+    client_api_access_add_participant_parser = client_api_access_subparsers.add_parser(
+        "add-participant",
+        help="Add one participant membership.",
+    )
+    client_api_access_add_participant_parser.add_argument("agent_id", help="Target agent id.")
+    client_api_access_add_participant_parser.add_argument("principal_id", help="Participant principal id.")
+    client_api_access_add_participant_parser.add_argument("--user-id", default="ppx-client-user", help="Requester principal id.")
+    client_api_access_add_participant_parser.add_argument(
+        "--json",
+        dest="output_json",
+        action="store_true",
+        help="Emit machine-readable JSON.",
+    )
+    client_api_access_remove_participant_parser = client_api_access_subparsers.add_parser(
+        "remove-participant",
+        help="Remove one participant membership.",
+    )
+    client_api_access_remove_participant_parser.add_argument("agent_id", help="Target agent id.")
+    client_api_access_remove_participant_parser.add_argument("principal_id", help="Participant principal id.")
+    client_api_access_remove_participant_parser.add_argument("--user-id", default="ppx-client-user", help="Requester principal id.")
+    client_api_access_remove_participant_parser.add_argument(
+        "--json",
+        dest="output_json",
+        action="store_true",
+        help="Emit machine-readable JSON.",
+    )
     provider_parser = subparsers.add_parser("provider", help="Manage runtime LLM providers.")
     provider_subparsers = provider_parser.add_subparsers(dest="provider_command", required=True)
     provider_list_parser = provider_subparsers.add_parser("list", help="List providers available to ppx.")
@@ -4340,6 +4480,37 @@ def main(argv: list[str] | None = None) -> None:
 
             serve_client_api(host=args.host, port=args.port)
             code = 0
+        elif args.client_api_command == "access":
+            if args.client_api_access_command == "get":
+                code = _cmd_client_api_access_get(
+                    agent_id=args.agent_id,
+                    user_id=args.user_id,
+                    output_json=args.output_json,
+                )
+            elif args.client_api_access_command == "set-owner":
+                code = _cmd_client_api_access_set_owner(
+                    agent_id=args.agent_id,
+                    owner_principal_id=args.owner_principal_id,
+                    user_id=args.user_id,
+                    output_json=args.output_json,
+                )
+            elif args.client_api_access_command == "add-participant":
+                code = _cmd_client_api_access_add_participant(
+                    agent_id=args.agent_id,
+                    principal_id=args.principal_id,
+                    user_id=args.user_id,
+                    output_json=args.output_json,
+                )
+            elif args.client_api_access_command == "remove-participant":
+                code = _cmd_client_api_access_remove_participant(
+                    agent_id=args.agent_id,
+                    principal_id=args.principal_id,
+                    user_id=args.user_id,
+                    output_json=args.output_json,
+                )
+            else:
+                parser.print_help()
+                code = 2
         else:
             parser.print_help()
             code = 2

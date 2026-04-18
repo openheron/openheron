@@ -19,7 +19,9 @@ from typing import Any
 from ..core.config import get_data_dir
 from ..core.logging_utils import debug_logging_enabled, emit_debug
 from .access_policy import AccessPolicy
-from .agent_access_store import AgentAccessStore
+from .agent_access_runtime import ensure_access_principal
+from .agent_access_runtime import ensure_agent_access_record
+from .agent_access_store import AgentAccessStore, AgentMembership, AgentRecord
 from .identity_models import ResolvedPrincipal
 from .identity_store import IdentityStore
 from .memory_query_service import MemoryQueryService
@@ -562,6 +564,21 @@ class ClientApiCoordinator:
         )
         return self._identity_store.put_principal(principal)
 
+    def _ensure_agent_access_state(self, agent_id: str) -> Path | None:
+        """Ensure access rows exist for one configured agent before evaluation."""
+        config_path = agent_config_path(agent_id, self.data_dir)
+        if not config_path.exists():
+            return None
+        ensure_agent_access_record(
+            agent_id=agent_id,
+            agent_name=agent_id,
+            identity_store=self._identity_store,
+            agent_access_store=self._agent_access_store,
+            config_path=config_path,
+            apply_env_overrides=False,
+        )
+        return config_path
+
     def _visible_principal_ids(self, requester_principal_id: str, *, agent_id: str, access_kind: str) -> tuple[Any, tuple[str, ...]]:
         """Resolve the effective visible principal ids for one request."""
         decision = self._access_policy.decide_agent_scope(
@@ -601,6 +618,21 @@ class ClientApiCoordinator:
     def _invalidate_session_cache(self, session_id: str, *, user_id: str) -> None:
         with self._lock:
             self._messages_cache.pop((session_id, user_id), None)
+
+    def _invalidate_agent_access_caches(self, agent_id: str) -> None:
+        """Drop cached views that may become stale after access mutations."""
+        with self._lock:
+            self._sessions_cache = {
+                key: value for key, value in self._sessions_cache.items() if key[0] != agent_id
+            }
+            affected_session_ids = {
+                session_id
+                for session_id, cached_agent_id in self._session_agents.items()
+                if cached_agent_id == agent_id
+            }
+            self._messages_cache = {
+                key: value for key, value in self._messages_cache.items() if key[0] not in affected_session_ids
+            }
 
     def _read_sessions_direct(self, config_path: Path, *, user_id: str) -> list[dict[str, Any]]:
         """Read session summaries directly from the per-agent SQLite store."""
@@ -738,8 +770,8 @@ class ClientApiCoordinator:
         requester_principal_id: str,
     ) -> tuple[Any, list[tuple[str, dict[str, Any]]]] | dict[str, Any]:
         """Collect session rows visible to one requester for one agent."""
-        config_path = agent_config_path(agent_id, self.data_dir)
-        if not config_path.exists():
+        config_path = self._ensure_agent_access_state(agent_id)
+        if config_path is None:
             return _error("AGENT_NOT_FOUND", f"Agent '{agent_id}' was not found.")
         decision, visible_principal_ids = self._visible_principal_ids(
             requester_principal_id,
@@ -898,8 +930,8 @@ class ClientApiCoordinator:
         """Create one session for the target agent."""
 
         requester = self._ensure_requester_principal(user_id)
-        config_path = agent_config_path(agent_id, self.data_dir)
-        if not config_path.exists():
+        config_path = self._ensure_agent_access_state(agent_id)
+        if config_path is None:
             return _error("AGENT_NOT_FOUND", f"Agent '{agent_id}' was not found.")
         session_id = f"{agent_id}-{os.urandom(8).hex()}"
         try:
@@ -1005,12 +1037,247 @@ class ClientApiCoordinator:
         self._write_cache(self._messages_cache, cache_key, messages)
         return _ok({"items": messages})
 
+    def get_agent_access(self, agent_id: str, *, user_id: str = "ppx-client-user") -> dict[str, Any]:
+        """Return the requester's visible access snapshot for one agent."""
+
+        requester = self._ensure_requester_principal(user_id)
+        if self._ensure_agent_access_state(agent_id) is None:
+            return _error("AGENT_NOT_FOUND", f"Agent '{agent_id}' was not found.")
+        decision = self._access_policy.decide_agent_scope(
+            requester_principal_id=requester.principal_id,
+            agent_id=agent_id,
+            access_kind="agent_access_read",
+        )
+        if not decision.allow:
+            return _error(
+                "ACCESS_DENIED",
+                f"Principal '{requester.principal_id}' cannot read access state for agent '{agent_id}'.",
+                {"reason": decision.reason},
+            )
+
+        record = self._agent_access_store.get_agent_record(agent_id)
+        if record is None:
+            return _error("RUNTIME_UNAVAILABLE", f"Agent '{agent_id}' access record is unavailable.")
+
+        visible_principal_ids = set(decision.resolved_scope(self._identity_store.list_principal_ids()))
+        memberships = []
+        for membership in self._agent_access_store.list_memberships(agent_id=agent_id):
+            if membership.principal_id not in visible_principal_ids and decision.scope_kind != "all":
+                continue
+            principal = self._identity_store.get_principal(membership.principal_id)
+            memberships.append(
+                {
+                    "principal_id": membership.principal_id,
+                    "relation": membership.relation,
+                    "joined_at_ms": membership.joined_at_ms,
+                    "metadata": dict(membership.metadata),
+                    "display_name": principal.display_name if principal is not None else membership.principal_id,
+                    "principal_type": principal.principal_type if principal is not None else "unknown",
+                    "privilege_level": principal.privilege_level if principal is not None else "",
+                }
+            )
+
+        owner_visible = bool(record.owner_principal_id) and decision.allows_principal(record.owner_principal_id)
+        return _ok(
+            {
+                "agent": {
+                    "id": record.agent_id,
+                    "name": record.name,
+                    "privilege_level": record.privilege_level,
+                    "owner_principal_id": record.owner_principal_id if owner_visible else None,
+                    "owner_configured": bool(record.owner_principal_id),
+                    "status": record.status,
+                    "config_ref": record.config_ref or None,
+                    "metadata": dict(record.metadata),
+                },
+                "requester": {
+                    "principal_id": requester.principal_id,
+                    "relation": decision.relation_to_agent,
+                    "reason": decision.reason,
+                    "scope_kind": decision.scope_kind,
+                    "capabilities": {
+                        "can_manage_memberships": self._access_policy.decide_agent_management(
+                            requester_principal_id=requester.principal_id,
+                            agent_id=agent_id,
+                            access_kind="membership_write",
+                        ).allow,
+                        "can_change_owner": self._access_policy.decide_agent_management(
+                            requester_principal_id=requester.principal_id,
+                            agent_id=agent_id,
+                            access_kind="ownership_write",
+                        ).allow,
+                    },
+                },
+                "memberships": memberships,
+            }
+        )
+
+    def set_agent_owner(
+        self,
+        agent_id: str,
+        owner_principal_id: str,
+        *,
+        user_id: str = "ppx-client-user",
+    ) -> dict[str, Any]:
+        """Set one agent owner through the managed access layer."""
+
+        requester = self._ensure_requester_principal(user_id)
+        if self._ensure_agent_access_state(agent_id) is None:
+            return _error("AGENT_NOT_FOUND", f"Agent '{agent_id}' was not found.")
+        decision = self._access_policy.decide_agent_management(
+            requester_principal_id=requester.principal_id,
+            agent_id=agent_id,
+            access_kind="ownership_write",
+        )
+        if not decision.allow:
+            return _error(
+                "ACCESS_DENIED",
+                f"Principal '{requester.principal_id}' cannot change owner for agent '{agent_id}'.",
+                {"reason": decision.reason},
+            )
+
+        normalized_owner_principal_id = str(owner_principal_id or "").strip()
+        if not normalized_owner_principal_id:
+            return _error("INVALID_REQUEST", "Field 'owner_principal_id' is required.")
+
+        owner_principal = ensure_access_principal(
+            self._identity_store,
+            principal_id=normalized_owner_principal_id,
+            source="client_api_access_mutation",
+            account_kind="managed_access",
+        )
+        record = self._agent_access_store.get_agent_record(agent_id)
+        if owner_principal is None or record is None:
+            return _error("RUNTIME_UNAVAILABLE", f"Agent '{agent_id}' access record is unavailable.")
+
+        updated = self._agent_access_store.upsert_agent_record(
+            AgentRecord(
+                agent_id=record.agent_id,
+                name=record.name,
+                privilege_level=record.privilege_level,
+                owner_principal_id=owner_principal.principal_id,
+                status=record.status,
+                config_ref=record.config_ref,
+                metadata={
+                    **dict(record.metadata),
+                    "owner_source": "client_api",
+                },
+            )
+        )
+        self._invalidate_agent_access_caches(agent_id)
+        return _ok(
+            {
+                "agent": {
+                    "id": updated.agent_id,
+                    "owner_principal_id": updated.owner_principal_id,
+                    "metadata": dict(updated.metadata),
+                }
+            }
+        )
+
+    def upsert_agent_membership(
+        self,
+        agent_id: str,
+        principal_id: str,
+        *,
+        relation: str = "participant",
+        user_id: str = "ppx-client-user",
+    ) -> dict[str, Any]:
+        """Create or update one agent membership through the managed access layer."""
+
+        requester = self._ensure_requester_principal(user_id)
+        if self._ensure_agent_access_state(agent_id) is None:
+            return _error("AGENT_NOT_FOUND", f"Agent '{agent_id}' was not found.")
+        decision = self._access_policy.decide_agent_management(
+            requester_principal_id=requester.principal_id,
+            agent_id=agent_id,
+            access_kind="membership_write",
+        )
+        if not decision.allow:
+            return _error(
+                "ACCESS_DENIED",
+                f"Principal '{requester.principal_id}' cannot change memberships for agent '{agent_id}'.",
+                {"reason": decision.reason},
+            )
+
+        normalized_principal_id = str(principal_id or "").strip()
+        normalized_relation = str(relation or "").strip().lower()
+        if not normalized_principal_id:
+            return _error("INVALID_REQUEST", "Field 'principal_id' is required.")
+        if normalized_relation != "participant":
+            return _error("INVALID_REQUEST", "Field 'relation' must currently be 'participant'.")
+
+        principal = ensure_access_principal(
+            self._identity_store,
+            principal_id=normalized_principal_id,
+            source="client_api_access_mutation",
+            account_kind="managed_access",
+        )
+        if principal is None:
+            return _error("RUNTIME_UNAVAILABLE", "Could not ensure the target principal.")
+
+        membership = self._agent_access_store.upsert_membership(
+            AgentMembership(
+                agent_id=agent_id,
+                principal_id=principal.principal_id,
+                relation=normalized_relation,
+                metadata={"source": "client_api"},
+            )
+        )
+        self._invalidate_agent_access_caches(agent_id)
+        return _ok(
+            {
+                "membership": {
+                    "agent_id": membership.agent_id,
+                    "principal_id": membership.principal_id,
+                    "relation": membership.relation,
+                    "joined_at_ms": membership.joined_at_ms,
+                    "metadata": dict(membership.metadata),
+                }
+            }
+        )
+
+    def delete_agent_membership(
+        self,
+        agent_id: str,
+        principal_id: str,
+        *,
+        user_id: str = "ppx-client-user",
+    ) -> dict[str, Any]:
+        """Delete one agent membership through the managed access layer."""
+
+        requester = self._ensure_requester_principal(user_id)
+        if self._ensure_agent_access_state(agent_id) is None:
+            return _error("AGENT_NOT_FOUND", f"Agent '{agent_id}' was not found.")
+        decision = self._access_policy.decide_agent_management(
+            requester_principal_id=requester.principal_id,
+            agent_id=agent_id,
+            access_kind="membership_write",
+        )
+        if not decision.allow:
+            return _error(
+                "ACCESS_DENIED",
+                f"Principal '{requester.principal_id}' cannot change memberships for agent '{agent_id}'.",
+                {"reason": decision.reason},
+            )
+
+        normalized_principal_id = str(principal_id or "").strip()
+        if not normalized_principal_id:
+            return _error("INVALID_REQUEST", "Field 'principal_id' is required.")
+
+        deleted = self._agent_access_store.delete_membership(
+            agent_id=agent_id,
+            principal_id=normalized_principal_id,
+        )
+        self._invalidate_agent_access_caches(agent_id)
+        return _ok({"deleted": deleted, "principal_id": normalized_principal_id})
+
     def create_run(self, agent_id: str, session_id: str, text: str, *, user_id: str = "ppx-client-user") -> dict[str, Any]:
         """Create one streaming run and start consuming worker events in background."""
 
         requester = self._ensure_requester_principal(user_id)
-        config_path = agent_config_path(agent_id, self.data_dir)
-        if not config_path.exists():
+        config_path = self._ensure_agent_access_state(agent_id)
+        if config_path is None:
             return _error("AGENT_NOT_FOUND", f"Agent '{agent_id}' was not found.")
         location = self._find_session_owner(
             session_id=session_id,
@@ -1126,6 +1393,8 @@ class ClientApiCoordinator:
     def search_memory(self, agent_id: str, query: str, *, user_id: str = "ppx-client-user") -> dict[str, Any]:
         """Run one explicit memory query through the access-controlled query layer."""
         requester = self._ensure_requester_principal(user_id)
+        if self._ensure_agent_access_state(agent_id) is None:
+            return _error("AGENT_NOT_FOUND", f"Agent '{agent_id}' was not found.")
         try:
             result = asyncio.run(
                 self._memory_query_service.search(
@@ -1462,6 +1731,11 @@ class _ClientApiHandler(BaseHTTPRequestHandler):
             payload = self.coordinator.list_sessions(segments[3], user_id=user_id)
             self._send_json(200 if payload.get("ok") else 404, payload)
             return
+        if len(segments) == 5 and segments[:3] == ["api", "v1", "agents"] and segments[4] == "access":
+            user_id = str(query.get("user_id") or "ppx-client-user")
+            payload = self.coordinator.get_agent_access(segments[3], user_id=user_id)
+            self._send_json(200 if payload.get("ok") else 404, payload)
+            return
         if len(segments) == 5 and segments[:3] == ["api", "v1", "sessions"] and segments[4] == "messages":
             user_id = str(query.get("user_id") or "ppx-client-user")
             payload = self.coordinator.get_session_messages(segments[3], user_id=user_id)
@@ -1501,6 +1775,30 @@ class _ClientApiHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         path, segments, _query = self._parse()
         body = self._read_json_body()
+        if len(segments) == 6 and segments[:3] == ["api", "v1", "agents"] and segments[4] == "access" and segments[5] == "owner":
+            user_id = str(body.get("user_id") or "ppx-client-user")
+            owner_principal_id = str(body.get("owner_principal_id") or "").strip()
+            if not owner_principal_id:
+                self._send_json(400, _error("INVALID_REQUEST", "Field 'owner_principal_id' is required."))
+                return
+            payload = self.coordinator.set_agent_owner(segments[3], owner_principal_id, user_id=user_id)
+            self._send_json(200 if payload.get("ok") else 403, payload)
+            return
+        if len(segments) == 6 and segments[:3] == ["api", "v1", "agents"] and segments[4] == "access" and segments[5] == "memberships":
+            user_id = str(body.get("user_id") or "ppx-client-user")
+            principal_id = str(body.get("principal_id") or "").strip()
+            relation = str(body.get("relation") or "participant").strip()
+            if not principal_id:
+                self._send_json(400, _error("INVALID_REQUEST", "Field 'principal_id' is required."))
+                return
+            payload = self.coordinator.upsert_agent_membership(
+                segments[3],
+                principal_id,
+                relation=relation,
+                user_id=user_id,
+            )
+            self._send_json(200 if payload.get("ok") else 403, payload)
+            return
         if len(segments) == 5 and segments[:3] == ["api", "v1", "agents"] and segments[4] == "sessions":
             user_id = str(body.get("user_id") or "ppx-client-user")
             payload = self.coordinator.create_session(segments[3], user_id=user_id)
@@ -1518,6 +1816,19 @@ class _ClientApiHandler(BaseHTTPRequestHandler):
         if len(segments) == 5 and segments[:3] == ["api", "v1", "runs"] and segments[4] == "cancel":
             payload = self.coordinator.cancel_run(segments[3])
             self._send_json(200 if payload.get("ok") else 404, payload)
+            return
+        self._send_json(404, _error("NOT_FOUND", f"Unknown path: {path}"))
+
+    def do_DELETE(self) -> None:  # noqa: N802
+        path, segments, query = self._parse()
+        if len(segments) == 7 and segments[:3] == ["api", "v1", "agents"] and segments[4] == "access" and segments[5] == "memberships":
+            user_id = str(query.get("user_id") or "ppx-client-user")
+            payload = self.coordinator.delete_agent_membership(
+                segments[3],
+                segments[6],
+                user_id=user_id,
+            )
+            self._send_json(200 if payload.get("ok") else 403, payload)
             return
         self._send_json(404, _error("NOT_FOUND", f"Unknown path: {path}"))
 

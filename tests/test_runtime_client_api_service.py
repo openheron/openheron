@@ -661,3 +661,208 @@ def test_client_api_owner_can_query_participant_memory(tmp_path: Path) -> None:
     assert payload["ok"] is True
     assert payload["data"]["items"][0]["subject_principal_id"] == participant.principal_id
     assert "launch checklist" in payload["data"]["items"][0]["text"]
+
+
+def test_client_api_get_agent_access_bootstraps_owner_from_config(tmp_path: Path) -> None:
+    (tmp_path / "global_config.json").write_text(
+        json.dumps({"agents": [{"name": "writer", "enabled": True}]}),
+        encoding="utf-8",
+    )
+    agent_dir = tmp_path / "writer"
+    agent_dir.mkdir()
+    (agent_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "agent": {
+                    "workspace": "workspace/writer",
+                    "privilegeLevel": "high",
+                    "ownerPrincipalId": "owner",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    coordinator = ClientApiCoordinator(data_dir=tmp_path)
+    payload = coordinator.get_agent_access("writer", user_id="owner")
+
+    assert payload["ok"] is True
+    assert payload["data"]["agent"]["privilege_level"] == "high"
+    assert payload["data"]["agent"]["owner_principal_id"] == "owner"
+    assert payload["data"]["agent"]["owner_configured"] is True
+    assert payload["data"]["agent"]["metadata"]["owner_source"] == "config"
+    assert payload["data"]["requester"]["relation"] == "owner"
+    assert payload["data"]["requester"]["scope_kind"] == "agent"
+    assert payload["data"]["memberships"] == []
+
+
+def test_client_api_get_agent_access_filters_memberships_by_visible_scope(tmp_path: Path) -> None:
+    (tmp_path / "global_config.json").write_text(
+        json.dumps({"agents": [{"name": "writer", "enabled": True}]}),
+        encoding="utf-8",
+    )
+    agent_dir = tmp_path / "writer"
+    agent_dir.mkdir()
+    (agent_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "agent": {
+                    "workspace": "workspace/writer",
+                    "ownerPrincipalId": "owner",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    db_path = tmp_path / "identity.db"
+    identity_store = IdentityStore(db_path=db_path)
+    access_store = AgentAccessStore(db_path=db_path)
+    participant = identity_store.put_principal(_principal(principal_id="participant"))
+    access_store.upsert_membership(
+        AgentMembership(agent_id="writer", principal_id=participant.principal_id, relation="participant")
+    )
+    policy = AccessPolicy(identity_store=identity_store, agent_access_store=access_store)
+    query_service = MemoryQueryService(
+        identity_store=identity_store,
+        access_policy=policy,
+        memory_service=SQLiteMemoryService(db_path=tmp_path / "memory.db"),
+        audit_db_path=tmp_path / "memory.db",
+    )
+
+    coordinator = ClientApiCoordinator(
+        data_dir=tmp_path,
+        identity_store=identity_store,
+        agent_access_store=access_store,
+        access_policy=policy,
+        memory_query_service=query_service,
+    )
+    payload = coordinator.get_agent_access("writer", user_id=participant.principal_id)
+
+    assert payload["ok"] is True
+    assert payload["data"]["requester"]["relation"] == "participant"
+    assert payload["data"]["requester"]["scope_kind"] == "self"
+    assert payload["data"]["agent"]["owner_configured"] is True
+    assert payload["data"]["agent"]["owner_principal_id"] is None
+    assert payload["data"]["memberships"] == [
+        {
+            "principal_id": "participant",
+            "relation": "participant",
+            "joined_at_ms": payload["data"]["memberships"][0]["joined_at_ms"],
+            "metadata": {},
+            "display_name": "participant",
+            "principal_type": "human",
+            "privilege_level": "minimal",
+        }
+    ]
+
+
+def test_client_api_owner_can_manage_participant_membership(tmp_path: Path) -> None:
+    (tmp_path / "global_config.json").write_text(
+        json.dumps({"agents": [{"name": "writer", "enabled": True}]}),
+        encoding="utf-8",
+    )
+    agent_dir = tmp_path / "writer"
+    agent_dir.mkdir()
+    (agent_dir / "config.json").write_text(
+        json.dumps({"agent": {"workspace": "workspace/writer", "ownerPrincipalId": "owner"}}),
+        encoding="utf-8",
+    )
+
+    coordinator = ClientApiCoordinator(data_dir=tmp_path)
+    create_payload = coordinator.upsert_agent_membership("writer", "participant", user_id="owner")
+    access_payload = coordinator.get_agent_access("writer", user_id="owner")
+    delete_payload = coordinator.delete_agent_membership("writer", "participant", user_id="owner")
+
+    assert create_payload["ok"] is True
+    assert create_payload["data"]["membership"]["principal_id"] == "participant"
+    assert create_payload["data"]["membership"]["relation"] == "participant"
+    assert access_payload["ok"] is True
+    assert access_payload["data"]["requester"]["capabilities"]["can_manage_memberships"] is True
+    assert access_payload["data"]["requester"]["capabilities"]["can_change_owner"] is False
+    assert {item["principal_id"] for item in access_payload["data"]["memberships"]} == {"participant"}
+    assert delete_payload["ok"] is True
+    assert delete_payload["data"]["deleted"] is True
+
+
+def test_client_api_participant_cannot_manage_memberships(tmp_path: Path) -> None:
+    (tmp_path / "global_config.json").write_text(
+        json.dumps({"agents": [{"name": "writer", "enabled": True}]}),
+        encoding="utf-8",
+    )
+    agent_dir = tmp_path / "writer"
+    agent_dir.mkdir()
+    (agent_dir / "config.json").write_text(
+        json.dumps({"agent": {"workspace": "workspace/writer", "ownerPrincipalId": "owner"}}),
+        encoding="utf-8",
+    )
+
+    db_path = tmp_path / "identity.db"
+    identity_store = IdentityStore(db_path=db_path)
+    access_store = AgentAccessStore(db_path=db_path)
+    participant = identity_store.put_principal(_principal(principal_id="participant"))
+    access_store.upsert_membership(
+        AgentMembership(agent_id="writer", principal_id=participant.principal_id, relation="participant")
+    )
+    policy = AccessPolicy(identity_store=identity_store, agent_access_store=access_store)
+    query_service = MemoryQueryService(
+        identity_store=identity_store,
+        access_policy=policy,
+        memory_service=SQLiteMemoryService(db_path=tmp_path / "memory.db"),
+        audit_db_path=tmp_path / "memory.db",
+    )
+    coordinator = ClientApiCoordinator(
+        data_dir=tmp_path,
+        identity_store=identity_store,
+        agent_access_store=access_store,
+        access_policy=policy,
+        memory_query_service=query_service,
+    )
+
+    payload = coordinator.upsert_agent_membership("writer", "another-user", user_id=participant.principal_id)
+
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "ACCESS_DENIED"
+    assert payload["error"]["details"]["reason"] == "insufficient_agent_admin_role"
+
+
+def test_client_api_root_can_change_owner(tmp_path: Path) -> None:
+    (tmp_path / "global_config.json").write_text(
+        json.dumps({"agents": [{"name": "writer", "enabled": True}]}),
+        encoding="utf-8",
+    )
+    agent_dir = tmp_path / "writer"
+    agent_dir.mkdir()
+    (agent_dir / "config.json").write_text(
+        json.dumps({"agent": {"workspace": "workspace/writer", "ownerPrincipalId": "owner"}}),
+        encoding="utf-8",
+    )
+
+    db_path = tmp_path / "identity.db"
+    identity_store = IdentityStore(db_path=db_path)
+    access_store = AgentAccessStore(db_path=db_path)
+    root = identity_store.put_principal(_principal(principal_id="root-user", privilege_level="root"))
+    policy = AccessPolicy(identity_store=identity_store, agent_access_store=access_store)
+    query_service = MemoryQueryService(
+        identity_store=identity_store,
+        access_policy=policy,
+        memory_service=SQLiteMemoryService(db_path=tmp_path / "memory.db"),
+        audit_db_path=tmp_path / "memory.db",
+    )
+    coordinator = ClientApiCoordinator(
+        data_dir=tmp_path,
+        identity_store=identity_store,
+        agent_access_store=access_store,
+        access_policy=policy,
+        memory_query_service=query_service,
+    )
+
+    payload = coordinator.set_agent_owner("writer", "new-owner", user_id=root.principal_id)
+    access_payload = coordinator.get_agent_access("writer", user_id=root.principal_id)
+
+    assert payload["ok"] is True
+    assert payload["data"]["agent"]["owner_principal_id"] == "new-owner"
+    assert payload["data"]["agent"]["metadata"]["owner_source"] == "client_api"
+    assert access_payload["ok"] is True
+    assert access_payload["data"]["agent"]["owner_principal_id"] == "new-owner"
+    assert access_payload["data"]["requester"]["capabilities"]["can_change_owner"] is True

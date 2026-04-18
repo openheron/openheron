@@ -8,10 +8,14 @@ import unittest
 from unittest.mock import patch
 
 from openpipixia.gui.mcp_server import (
+    add_agent_participant,
     build_gui_mcp_server,
+    get_agent_access,
     main,
+    remove_agent_participant,
     run_gui_action,
     run_gui_task,
+    set_agent_owner,
 )
 
 
@@ -61,12 +65,63 @@ class GuiMcpServerTests(unittest.TestCase):
             planner_base_url=None,
         )
 
+    def test_get_agent_access_requires_agent_id(self) -> None:
+        result = get_agent_access(agent_id=" ")
+        self.assertEqual(result["ok"], False)
+        self.assertIn("agent_id", result["error"])
+
+    def test_get_agent_access_delegates(self) -> None:
+        expected = {"ok": True, "data": {"agent": {"id": "writer"}}}
+        mocked_coordinator = unittest.mock.Mock()
+        mocked_coordinator.get_agent_access.return_value = expected
+        with patch("openpipixia.gui.mcp_server._coordinator_for_data_dir", return_value=mocked_coordinator):
+            result = get_agent_access(agent_id="writer", user_id="owner", data_dir="/tmp/demo")
+
+        self.assertEqual(result, expected)
+        mocked_coordinator.get_agent_access.assert_called_once_with("writer", user_id="owner")
+
+    def test_set_agent_owner_delegates(self) -> None:
+        expected = {"ok": True}
+        mocked_coordinator = unittest.mock.Mock()
+        mocked_coordinator.set_agent_owner.return_value = expected
+        with patch("openpipixia.gui.mcp_server._coordinator_for_data_dir", return_value=mocked_coordinator):
+            result = set_agent_owner(agent_id="writer", owner_principal_id="root-user", user_id="root-user")
+
+        self.assertEqual(result, expected)
+        mocked_coordinator.set_agent_owner.assert_called_once_with("writer", "root-user", user_id="root-user")
+
+    def test_add_and_remove_agent_participant_delegate(self) -> None:
+        mocked_coordinator = unittest.mock.Mock()
+        mocked_coordinator.upsert_agent_membership.return_value = {"ok": True, "data": {"membership": {}}}
+        mocked_coordinator.delete_agent_membership.return_value = {"ok": True, "data": {"deleted": True}}
+        with patch("openpipixia.gui.mcp_server._coordinator_for_data_dir", return_value=mocked_coordinator):
+            add_result = add_agent_participant(agent_id="writer", principal_id="alice", user_id="owner")
+            remove_result = remove_agent_participant(agent_id="writer", principal_id="alice", user_id="owner")
+
+        self.assertEqual(add_result["ok"], True)
+        self.assertEqual(remove_result["ok"], True)
+        mocked_coordinator.upsert_agent_membership.assert_called_once_with(
+            "writer",
+            "alice",
+            relation="participant",
+            user_id="owner",
+        )
+        mocked_coordinator.delete_agent_membership.assert_called_once_with(
+            "writer",
+            "alice",
+            user_id="owner",
+        )
+
     def test_build_gui_mcp_server_registers_tools(self) -> None:
         server = build_gui_mcp_server()
         tools = asyncio.run(server.list_tools())
         names = {tool.name for tool in tools}
         self.assertIn("gui_action", names)
         self.assertIn("gui_task", names)
+        self.assertIn("agent_access_get", names)
+        self.assertIn("agent_owner_set", names)
+        self.assertIn("agent_participant_add", names)
+        self.assertIn("agent_participant_remove", names)
 
     def test_main_raises_for_invalid_transport(self) -> None:
         with patch.dict(os.environ, {"OPENPPX_GUI_MCP_TRANSPORT": "bad"}, clear=False):

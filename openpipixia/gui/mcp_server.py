@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from ..runtime.client_api_service import ClientApiCoordinator
 from .executor import execute_gui_action
 from .task_runner import execute_gui_task
 
@@ -67,13 +69,113 @@ def run_gui_task(
         return {"ok": False, "error": str(exc)}
 
 
+def _coordinator_for_data_dir(data_dir: str | None = None) -> ClientApiCoordinator:
+    """Build one local client-api coordinator for MCP access helpers."""
+    if data_dir and str(data_dir).strip():
+        return ClientApiCoordinator(data_dir=Path(data_dir).expanduser())
+    return ClientApiCoordinator()
+
+
+def get_agent_access(
+    *,
+    agent_id: str,
+    user_id: str = "ppx-client-user",
+    data_dir: str | None = None,
+) -> dict[str, Any]:
+    """Return one agent access snapshot for GUI and MCP workflows."""
+    normalized_agent_id = (agent_id or "").strip()
+    if not normalized_agent_id:
+        return {"ok": False, "error": "agent_id is required"}
+    try:
+        return _coordinator_for_data_dir(data_dir).get_agent_access(
+            normalized_agent_id,
+            user_id=user_id,
+        )
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def set_agent_owner(
+    *,
+    agent_id: str,
+    owner_principal_id: str,
+    user_id: str = "ppx-client-user",
+    data_dir: str | None = None,
+) -> dict[str, Any]:
+    """Set one agent owner for GUI and MCP workflows."""
+    normalized_agent_id = (agent_id or "").strip()
+    normalized_owner = (owner_principal_id or "").strip()
+    if not normalized_agent_id:
+        return {"ok": False, "error": "agent_id is required"}
+    if not normalized_owner:
+        return {"ok": False, "error": "owner_principal_id is required"}
+    try:
+        return _coordinator_for_data_dir(data_dir).set_agent_owner(
+            normalized_agent_id,
+            normalized_owner,
+            user_id=user_id,
+        )
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def add_agent_participant(
+    *,
+    agent_id: str,
+    principal_id: str,
+    user_id: str = "ppx-client-user",
+    data_dir: str | None = None,
+) -> dict[str, Any]:
+    """Add or refresh one participant membership for GUI and MCP workflows."""
+    normalized_agent_id = (agent_id or "").strip()
+    normalized_principal_id = (principal_id or "").strip()
+    if not normalized_agent_id:
+        return {"ok": False, "error": "agent_id is required"}
+    if not normalized_principal_id:
+        return {"ok": False, "error": "principal_id is required"}
+    try:
+        return _coordinator_for_data_dir(data_dir).upsert_agent_membership(
+            normalized_agent_id,
+            normalized_principal_id,
+            relation="participant",
+            user_id=user_id,
+        )
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def remove_agent_participant(
+    *,
+    agent_id: str,
+    principal_id: str,
+    user_id: str = "ppx-client-user",
+    data_dir: str | None = None,
+) -> dict[str, Any]:
+    """Remove one participant membership for GUI and MCP workflows."""
+    normalized_agent_id = (agent_id or "").strip()
+    normalized_principal_id = (principal_id or "").strip()
+    if not normalized_agent_id:
+        return {"ok": False, "error": "agent_id is required"}
+    if not normalized_principal_id:
+        return {"ok": False, "error": "principal_id is required"}
+    try:
+        return _coordinator_for_data_dir(data_dir).delete_agent_membership(
+            normalized_agent_id,
+            normalized_principal_id,
+            user_id=user_id,
+        )
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 def build_gui_mcp_server(name: str = "openpipixia-gui") -> FastMCP:
     """Build a FastMCP server that exposes GUI automation tools."""
     server = FastMCP(
         name=name,
         instructions=(
             "Desktop GUI automation tools for openpipixia. Use `gui_action` for one step "
-            "and `gui_task` for multi-step workflows."
+            "and `gui_task` for multi-step workflows. Access helpers can inspect and manage "
+            "agent owner/participant relationships."
         ),
     )
 
@@ -107,7 +209,7 @@ def build_gui_mcp_server(name: str = "openpipixia-gui") -> FastMCP:
         planner_model: str | None = None,
         planner_api_key: str | None = None,
         planner_base_url: str | None = None,
-    ) -> dict[str, Any]:
+        ) -> dict[str, Any]:
         return run_gui_task(
             task=task,
             max_steps=max_steps,
@@ -115,6 +217,68 @@ def build_gui_mcp_server(name: str = "openpipixia-gui") -> FastMCP:
             planner_model=planner_model,
             planner_api_key=planner_api_key,
             planner_base_url=planner_base_url,
+        )
+
+    @server.tool(
+        name="agent_access_get",
+        description="Read one agent access snapshot, including visible owner and participant relationships.",
+    )
+    def _agent_access_get(
+        agent_id: str,
+        user_id: str = "ppx-client-user",
+        data_dir: str | None = None,
+    ) -> dict[str, Any]:
+        return get_agent_access(agent_id=agent_id, user_id=user_id, data_dir=data_dir)
+
+    @server.tool(
+        name="agent_owner_set",
+        description="Set one agent owner. This requires a root-level requester.",
+    )
+    def _agent_owner_set(
+        agent_id: str,
+        owner_principal_id: str,
+        user_id: str = "ppx-client-user",
+        data_dir: str | None = None,
+    ) -> dict[str, Any]:
+        return set_agent_owner(
+            agent_id=agent_id,
+            owner_principal_id=owner_principal_id,
+            user_id=user_id,
+            data_dir=data_dir,
+        )
+
+    @server.tool(
+        name="agent_participant_add",
+        description="Add or refresh one participant membership for an agent.",
+    )
+    def _agent_participant_add(
+        agent_id: str,
+        principal_id: str,
+        user_id: str = "ppx-client-user",
+        data_dir: str | None = None,
+    ) -> dict[str, Any]:
+        return add_agent_participant(
+            agent_id=agent_id,
+            principal_id=principal_id,
+            user_id=user_id,
+            data_dir=data_dir,
+        )
+
+    @server.tool(
+        name="agent_participant_remove",
+        description="Remove one participant membership from an agent.",
+    )
+    def _agent_participant_remove(
+        agent_id: str,
+        principal_id: str,
+        user_id: str = "ppx-client-user",
+        data_dir: str | None = None,
+    ) -> dict[str, Any]:
+        return remove_agent_participant(
+            agent_id=agent_id,
+            principal_id=principal_id,
+            user_id=user_id,
+            data_dir=data_dir,
         )
 
     return server

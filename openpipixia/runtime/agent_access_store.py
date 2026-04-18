@@ -388,6 +388,18 @@ class AgentAccessStore:
             rows = conn.execute(query, tuple(params)).fetchall()
         return [self._membership_from_row(row) for row in rows]
 
+    def delete_membership(self, *, agent_id: str, principal_id: str) -> bool:
+        """Delete one membership row and return whether anything changed."""
+        with self._lock, _connect(self._db_path) as conn:
+            cursor = conn.execute(
+                """
+                DELETE FROM agent_memberships
+                WHERE agent_id = ? AND principal_id = ?
+                """,
+                (agent_id, principal_id),
+            )
+        return cursor.rowcount > 0
+
 
 def create_agent_access_store(config: AgentAccessStoreConfig | None = None) -> AgentAccessStore:
     """Create the runtime agent access store."""
