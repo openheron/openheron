@@ -5,9 +5,9 @@
 
 ## ✨ News
 
-- 2026-04-18: V0.2.1 released with the `openpipixia` / `ppx` naming refresh, Weixin and WeCom channel support, improved Feishu guidance and voice handling, gateway streaming and realtime feedback, local client API service, and the new privilege-level-based agent lifecycle under `~/.openppx`.
+- 2026-04-18: v0.2.1 released with Weixin and WeCom channel support, improved Feishu guidance, gateway streaming and realtime feedback, local client API service, and the new privilege-level-based agent lifecycle.
 
-- 2026-02-18: V0.2 released with multi-agent and GUI operation support.
+- 2026-02-18: v0.2 released with multi-agent and GUI operation support.
 
 - 2026-02-12: Initial version released with single-agent support, including Feishu image and file sending/receiving.
 
