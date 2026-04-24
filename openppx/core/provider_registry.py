@@ -72,12 +72,13 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
     ),
     ProviderSpec(
         name="deepseek",
-        default_model="deepseek-chat",
+        default_model="deepseek-v4-pro",
         display_name="DeepSeek",
         runtime=RUNTIME_LITELLM,
         api_key_env="DEEPSEEK_API_KEY",
         litellm_prefix="deepseek",
         skip_prefixes=("deepseek/",),
+        default_api_base="https://api.deepseek.com",
     ),
     ProviderSpec(
         name="groq",

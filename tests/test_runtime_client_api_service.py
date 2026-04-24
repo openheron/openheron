@@ -146,6 +146,26 @@ def test_project_session_event_builds_structured_parts() -> None:
     assert message["parts"][3]["type"] == "tool_result"
 
 
+def test_project_session_event_skips_thought_text() -> None:
+    message = project_session_event(
+        {
+            "id": "evt_thought",
+            "author": "assistant",
+            "timestamp": 1_717_171_717,
+            "content": {
+                "parts": [
+                    {"text": "hidden reasoning", "thought": True},
+                    {"text": "visible answer"},
+                ]
+            },
+        },
+        "session_thought",
+    )
+
+    assert message is not None
+    assert message["parts"] == [{"type": "markdown", "text": "visible answer"}]
+
+
 def test_project_session_event_skips_unrenderable_events() -> None:
     message = project_session_event(
         {

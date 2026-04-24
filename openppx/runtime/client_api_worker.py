@@ -35,6 +35,8 @@ def _event_preview_text(event: object) -> str:
     parts = getattr(content, "parts", None) or []
     texts: list[str] = []
     for part in parts:
+        if bool(getattr(part, "thought", False)):
+            continue
         text = getattr(part, "text", None)
         if isinstance(text, str) and text.strip():
             texts.append(text.strip())

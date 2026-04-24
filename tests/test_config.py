@@ -49,6 +49,9 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(cfg["providers"]["google"]["enabled"])
         self.assertEqual(cfg["providers"]["openai"]["model"], "openai/gpt-5.4")
         self.assertEqual(cfg["providers"]["openrouter"]["model"], "openai/gpt-5.4")
+        self.assertEqual(cfg["providers"]["deepseek"]["model"], "deepseek-v4-pro")
+        self.assertEqual(cfg["providers"]["deepseek"]["apiBase"], "https://api.deepseek.com")
+        self.assertTrue(cfg["providers"]["deepseek"]["strictToolCalls"])
         self.assertEqual(cfg["providers"]["aihubmix"]["model"], "openai/gpt-5.4")
         self.assertEqual(cfg["providers"]["custom"]["model"], "openai/gpt-5.4")
         self.assertIn("openai_mm", cfg["multimodalProviders"])
@@ -735,6 +738,46 @@ class ConfigTests(unittest.TestCase):
             os.environ["OPENPPX_PROVIDER_EXTRA_HEADERS_JSON"],
             '{"X-Trace-Id":"trace-001"}',
         )
+
+    def test_deepseek_strict_provider_exports_beta_base_url(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            cfg = default_config()
+            cfg["providers"]["google"]["enabled"] = False
+            cfg["providers"]["deepseek"]["enabled"] = True
+            cfg["providers"]["deepseek"]["apiKey"] = "deepseek-key"
+            save_config(cfg, path)
+
+            os.environ.pop("OPENPPX_PROVIDER", None)
+            os.environ.pop("OPENPPX_MODEL", None)
+            os.environ.pop("OPENPPX_PROVIDER_API_BASE", None)
+            os.environ.pop("OPENPPX_PROVIDER_STRICT_TOOL_CALLS", None)
+            os.environ.pop("DEEPSEEK_API_KEY", None)
+            bootstrap_env_from_config(path)
+
+        self.assertEqual(os.environ["OPENPPX_PROVIDER"], "deepseek")
+        self.assertEqual(os.environ["OPENPPX_MODEL"], "deepseek/deepseek-v4-pro")
+        self.assertEqual(os.environ["DEEPSEEK_API_KEY"], "deepseek-key")
+        self.assertEqual(os.environ["OPENPPX_PROVIDER_STRICT_TOOL_CALLS"], "1")
+        self.assertEqual(os.environ["OPENPPX_PROVIDER_API_BASE"], "https://api.deepseek.com/beta")
+
+    def test_deepseek_non_strict_provider_exports_standard_base_url(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            cfg = default_config()
+            cfg["providers"]["google"]["enabled"] = False
+            cfg["providers"]["deepseek"]["enabled"] = True
+            cfg["providers"]["deepseek"]["strictToolCalls"] = False
+            save_config(cfg, path)
+
+            os.environ.pop("OPENPPX_PROVIDER", None)
+            os.environ.pop("OPENPPX_PROVIDER_API_BASE", None)
+            os.environ.pop("OPENPPX_PROVIDER_STRICT_TOOL_CALLS", None)
+            bootstrap_env_from_config(path)
+
+        self.assertEqual(os.environ["OPENPPX_PROVIDER"], "deepseek")
+        self.assertEqual(os.environ["OPENPPX_PROVIDER_STRICT_TOOL_CALLS"], "0")
+        self.assertEqual(os.environ["OPENPPX_PROVIDER_API_BASE"], "https://api.deepseek.com")
 
     def test_gui_multimodal_providers_are_mapped_to_gui_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

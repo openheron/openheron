@@ -9,7 +9,11 @@ def extract_text(content: types.Content | None) -> str:
     """Join text parts from an ADK content payload without altering spacing."""
     if content is None or not content.parts:
         return ""
-    return "".join(getattr(part, "text", "") for part in content.parts if getattr(part, "text", None))
+    return "".join(
+        getattr(part, "text", "")
+        for part in content.parts
+        if getattr(part, "text", None) and not getattr(part, "thought", False)
+    )
 
 
 def _longest_suffix_prefix_overlap(current: str, candidate: str) -> int:

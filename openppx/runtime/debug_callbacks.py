@@ -59,6 +59,8 @@ def _clip(text: str) -> str:
 
 
 def _extract_part_text(part: Any) -> str:
+    if bool(getattr(part, "thought", False)):
+        return ""
     text = getattr(part, "text", None)
     return text or ""
 

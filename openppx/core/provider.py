@@ -18,6 +18,7 @@ from .provider_registry import (
 )
 
 DEFAULT_PROVIDER = "google"
+_DEEPSEEK_STRICT_API_BASE = "https://api.deepseek.com/beta"
 _PROVIDER_ALIASES: dict[str, str] = {
     "codex": "openai_codex",
     "copilot": "github_copilot",
@@ -129,6 +130,12 @@ def build_adk_model_from_env() -> Any:
     """Build ADK model object/string based on selected provider."""
     provider = normalize_provider_name(os.getenv("OPENPPX_PROVIDER"))
     model_name = normalize_model_name(provider, os.getenv("OPENPPX_MODEL"))
+    strict_tool_calls = os.getenv("OPENPPX_PROVIDER_STRICT_TOOL_CALLS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     issue = validate_provider_runtime(provider)
     if issue:
         raise RuntimeError(issue)
@@ -144,6 +151,10 @@ def build_adk_model_from_env() -> Any:
         from google.adk.models.lite_llm import LiteLlm
 
         kwargs: dict[str, Any] = {"drop_params": True}
+        if provider == "deepseek" and strict_tool_calls:
+            from .deepseek_litellm import DeepSeekStrictToolLiteLLMClient
+
+            kwargs["llm_client"] = DeepSeekStrictToolLiteLLMClient()
 
         api_key_env = provider_api_key_env(provider)
         if api_key_env:
@@ -151,7 +162,11 @@ def build_adk_model_from_env() -> Any:
             if api_key:
                 kwargs["api_key"] = api_key
 
-        api_base = os.getenv("OPENPPX_PROVIDER_API_BASE", "").strip() or provider_default_api_base(provider)
+        api_base = os.getenv("OPENPPX_PROVIDER_API_BASE", "").strip() or provider_default_api_base(
+            provider
+        )
+        if provider == "deepseek" and strict_tool_calls:
+            api_base = _DEEPSEEK_STRICT_API_BASE
         if api_base:
             kwargs["api_base"] = api_base
 

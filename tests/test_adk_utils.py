@@ -20,6 +20,16 @@ class AdkUtilsTests(unittest.TestCase):
 
         self.assertEqual(extract_text(content), "hello world")
 
+    def test_extract_text_skips_thought_parts(self) -> None:
+        content = pytypes.SimpleNamespace(
+            parts=[
+                pytypes.SimpleNamespace(text="internal reasoning", thought=True),
+                pytypes.SimpleNamespace(text="final answer", thought=False),
+            ]
+        )
+
+        self.assertEqual(extract_text(content), "final answer")
+
     def test_merge_text_stream_appends_delta_chunks_without_newline(self) -> None:
         merged = merge_text_stream("", "hello")
         merged = merge_text_stream(merged, " world")

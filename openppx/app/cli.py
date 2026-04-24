@@ -4813,6 +4813,8 @@ def _debug_event(event: object) -> None:
     if content and getattr(content, "parts", None):
         for part in content.parts:
             row: dict[str, object] = {}
+            if bool(getattr(part, "thought", False)):
+                continue
             text = getattr(part, "text", None)
             if text:
                 row["text"] = text

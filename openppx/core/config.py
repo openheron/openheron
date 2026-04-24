@@ -407,6 +407,7 @@ def default_config() -> dict[str, Any]:
                 "model": default_model_for_provider(name),
                 "apiBase": provider_default_api_base(name),
                 "extraHeaders": {},
+                "strictToolCalls": name == "deepseek",
             }
             for name in provider_names()
         },
@@ -745,7 +746,9 @@ def _resolve_enabled_channels(channels: dict[str, Any]) -> str:
     return ",".join(names)
 
 
-def _resolve_provider(cfg: dict[str, Any]) -> tuple[str, bool, str, str, str, str]:
+def _resolve_provider(
+    cfg: dict[str, Any],
+) -> tuple[str, bool, str, str, str, str, bool]:
     providers = cfg.get("providers")
     if not isinstance(providers, dict):
         providers = {}
@@ -761,7 +764,15 @@ def _resolve_provider(cfg: dict[str, Any]) -> tuple[str, bool, str, str, str, st
 
     if not enabled_names:
         default_base = provider_default_api_base(DEFAULT_PROVIDER)
-        return DEFAULT_PROVIDER, False, default_model_for_provider(DEFAULT_PROVIDER), "", default_base, ""
+        return (
+            DEFAULT_PROVIDER,
+            False,
+            default_model_for_provider(DEFAULT_PROVIDER),
+            "",
+            default_base,
+            "",
+            False,
+        )
 
     active = enabled_names[0]
     active_cfg = providers.get(active, {})
@@ -770,11 +781,18 @@ def _resolve_provider(cfg: dict[str, Any]) -> tuple[str, bool, str, str, str, st
     model = normalize_model_name(active, active_cfg.get("model"))
     api_key = str(active_cfg.get("apiKey", "")).strip()
     api_base = str(active_cfg.get("apiBase", "")).strip() or provider_default_api_base(active)
+    strict_tool_calls = is_enabled(active_cfg.get("strictToolCalls"), default=False)
+    if active == "deepseek" and strict_tool_calls:
+        api_base = "https://api.deepseek.com/beta"
     extra_headers = active_cfg.get("extraHeaders", {})
     if not isinstance(extra_headers, dict):
         extra_headers = {}
-    extra_headers_json = json.dumps(extra_headers, ensure_ascii=False, separators=(",", ":")) if extra_headers else ""
-    return active, True, model, api_key, api_base, extra_headers_json
+    extra_headers_json = (
+        json.dumps(extra_headers, ensure_ascii=False, separators=(",", ":"))
+        if extra_headers
+        else ""
+    )
+    return active, True, model, api_key, api_base, extra_headers_json, strict_tool_calls
 
 
 def _resolve_web(cfg: dict[str, Any]) -> tuple[bool, bool, str, int, str]:
@@ -1008,7 +1026,15 @@ def config_to_env(
     session = _as_dict(cfg.get("session"))
     channels = _as_dict(cfg.get("channels"))
     channel_env = _channel_env_values(channels)
-    provider_name, provider_enabled, model, provider_api_key, provider_api_base, provider_extra_headers = _resolve_provider(
+    (
+        provider_name,
+        provider_enabled,
+        model,
+        provider_api_key,
+        provider_api_base,
+        provider_extra_headers,
+        provider_strict_tool_calls,
+    ) = _resolve_provider(
         cfg
     )
     web_enabled, web_search_enabled, web_search_provider, web_search_max_results, web_search_api_key = _resolve_web(
@@ -1028,6 +1054,7 @@ def config_to_env(
         "OPENPPX_PROVIDER_ENABLED": "1" if provider_enabled else "0",
         "OPENPPX_PROVIDER_API_BASE": provider_api_base,
         "OPENPPX_PROVIDER_EXTRA_HEADERS_JSON": provider_extra_headers,
+        "OPENPPX_PROVIDER_STRICT_TOOL_CALLS": "1" if provider_strict_tool_calls else "0",
         "OPENPPX_AGENT_NAME": str(agent.get("name", "")).strip(),
         "OPENPPX_AGENT_HOME": os.getenv(_AGENT_HOME_ENV, "").strip(),
         "OPENPPX_AGENT_PRIVILEGE_LEVEL": normalize_agent_privilege_level(
@@ -1104,7 +1131,7 @@ def _active_provider_fallback_api_key_env(cfg: dict[str, Any]) -> str | None:
     When the selected provider is enabled but its config `apiKey` is empty, the
     runtime should keep an existing shell env API key instead of clearing it.
     """
-    provider_name, provider_enabled, _, provider_api_key, _, _ = _resolve_provider(cfg)
+    provider_name, provider_enabled, _, provider_api_key, _, _, _ = _resolve_provider(cfg)
     if not provider_enabled or provider_api_key:
         return None
     return provider_api_key_env(provider_name)

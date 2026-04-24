@@ -43,6 +43,38 @@ class DebugCallbacksTests(unittest.TestCase):
         self.assertIn("tomorrow weather in Weihai", serialized)
         self.assertIn("You are an assistant.", serialized)
 
+    def test_before_model_omits_thought_text_when_debug_enabled(self) -> None:
+        callback_context = pytypes.SimpleNamespace(
+            invocation_id="inv-thought",
+            agent_name="openppx",
+            user_id="u-thought",
+            session=pytypes.SimpleNamespace(id="s-thought"),
+        )
+        llm_request = pytypes.SimpleNamespace(
+            model="openai/gpt-5.2",
+            config=pytypes.SimpleNamespace(system_instruction=""),
+            contents=[
+                pytypes.SimpleNamespace(
+                    role="model",
+                    parts=[
+                        pytypes.SimpleNamespace(text="hidden reasoning", thought=True),
+                        pytypes.SimpleNamespace(text="visible answer", thought=False),
+                    ],
+                )
+            ],
+            tools_dict={},
+        )
+
+        with patch.dict(os.environ, {"OPENPPX_DEBUG": "1"}, clear=False):
+            with patch("openppx.runtime.debug_callbacks._write_debug") as mocked_emit:
+                before_model_debug_callback(callback_context, llm_request)
+
+        tag, payload = mocked_emit.call_args.args
+        self.assertEqual(tag, "llm.before_model")
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("hidden reasoning", serialized)
+        self.assertIn("visible answer", serialized)
+
     def test_after_model_emits_response_text_when_debug_enabled(self) -> None:
         callback_context = pytypes.SimpleNamespace(
             invocation_id="inv-2",

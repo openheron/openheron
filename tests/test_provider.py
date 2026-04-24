@@ -6,9 +6,13 @@ import unittest
 import os
 from unittest.mock import patch
 
+from google.adk.models.lite_llm import LiteLlm
+
+from openppx.core.deepseek_litellm import DeepSeekStrictToolLiteLLMClient
 from openppx.core.provider import (
     build_adk_model_from_env,
     canonical_provider_name,
+    default_model_for_provider,
     normalize_model_name,
     normalize_provider_name,
     validate_provider_runtime,
@@ -39,7 +43,25 @@ class ProviderTests(unittest.TestCase):
         self.assertIsNone(issue)
 
     def test_deepseek_model_is_prefixed_when_missing_provider(self) -> None:
-        self.assertEqual(normalize_model_name("deepseek", "deepseek-chat"), "deepseek/deepseek-chat")
+        self.assertEqual(normalize_model_name("deepseek", "deepseek-v4-pro"), "deepseek/deepseek-v4-pro")
+
+    def test_deepseek_default_model_is_v4_pro(self) -> None:
+        self.assertEqual(default_model_for_provider("deepseek"), "deepseek-v4-pro")
+
+    def test_build_deepseek_strict_model_from_env(self) -> None:
+        env = {
+            "OPENPPX_PROVIDER": "deepseek",
+            "OPENPPX_MODEL": "deepseek-v4-pro",
+            "OPENPPX_PROVIDER_STRICT_TOOL_CALLS": "1",
+            "DEEPSEEK_API_KEY": "test-key",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            model = build_adk_model_from_env()
+
+        self.assertIsInstance(model, LiteLlm)
+        self.assertEqual(model.model, "deepseek/deepseek-v4-pro")
+        self.assertIsInstance(model.llm_client, DeepSeekStrictToolLiteLLMClient)
+        self.assertEqual(model._additional_args["api_base"], "https://api.deepseek.com/beta")
 
     def test_openai_codex_runtime_is_supported(self) -> None:
         with patch("openppx.core.provider.importlib.util.find_spec", return_value=object()):

@@ -82,8 +82,12 @@ def _parts_from_content(content: object) -> list[object]:
 def _part_text(part: object) -> str:
     """Extract a text field from one content part object."""
     if isinstance(part, Mapping):
+        if bool(part.get("thought")):
+            return ""
         text = part.get("text")
     else:
+        if bool(getattr(part, "thought", False)):
+            return ""
         text = getattr(part, "text", None)
     return text if isinstance(text, str) else ""
 

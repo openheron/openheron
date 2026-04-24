@@ -333,6 +333,8 @@ def _event_preview_text(event: dict[str, Any]) -> str:
     for raw_part in raw_parts:
         if not isinstance(raw_part, dict):
             continue
+        if bool(raw_part.get("thought")):
+            continue
         text = raw_part.get("text")
         if isinstance(text, str) and text.strip():
             normalized_text = _strip_request_time_prefix(text)
@@ -372,6 +374,8 @@ def project_session_event(event: dict[str, Any], session_id: str) -> dict[str, A
     parts: list[dict[str, Any]] = []
     for raw_part in raw_parts:
         if not isinstance(raw_part, dict):
+            continue
+        if bool(raw_part.get("thought")):
             continue
         text = raw_part.get("text")
         if isinstance(text, str) and text.strip():

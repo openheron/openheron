@@ -44,7 +44,7 @@ ppx create --name "root-main" --privilege-level root
 ## `config.json` 关键字段
 
 - `agent.name / agent.privilegeLevel / agent.permissions / agent.workspace / agent.builtinSkillsDir`
-- `providers.<provider>.enabled / apiKey / model / apiBase / extraHeaders`
+- `providers.<provider>.enabled / apiKey / model / apiBase / extraHeaders / strictToolCalls`
 - `multimodalProviders.<alias>.enabled / provider / apiKey / model / apiBase / extraHeaders`
 - `gui.groundingProvider / gui.plannerProvider / gui.builtinGUIToolsEnabled`（绑定到 `multimodalProviders` 名称）
 - `channels.<name>.*`
@@ -54,6 +54,7 @@ ppx create --name "root-main" --privilege-level root
 - `debug`
 
 Provider 选择由 `enabled` 控制，建议保持“仅一个 provider 为 true”。
+DeepSeek 默认模型为 `deepseek-v4-pro`。`providers.deepseek.strictToolCalls=true` 时会试用 DeepSeek strict Tool Calls，并将 provider base URL 切到 `https://api.deepseek.com/beta`；关闭该项时使用 `https://api.deepseek.com`。
 
 ### `agent.privilegeLevel` 与默认权限
 
