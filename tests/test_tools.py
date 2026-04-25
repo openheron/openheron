@@ -10,6 +10,7 @@ import tempfile
 import time
 import types as pytypes
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -17,6 +18,7 @@ from urllib.error import URLError
 
 from openppx.browser.service import BrowserDispatchResponse
 from openppx.runtime.tool_context import route_context
+from openppx.tooling.tool_meta import get_tool_meta
 from openppx.tooling.registry import (
     SubagentSpawnRequest,
     browser,
@@ -95,6 +97,19 @@ class ToolsTests(unittest.TestCase):
 
             self.assertIn("approval required", message("hello"))
 
+    def test_builtin_tool_metadata_marks_read_and_high_risk_tools(self) -> None:
+        read_meta = get_tool_meta("read_file")
+        exec_meta = get_tool_meta("exec")
+
+        self.assertIsNotNone(read_meta)
+        self.assertIsNotNone(exec_meta)
+        assert read_meta is not None
+        assert exec_meta is not None
+        self.assertTrue(read_meta.read_only)
+        self.assertFalse(exec_meta.read_only)
+        self.assertTrue(exec_meta.exclusive)
+        self.assertEqual(exec_meta.risk, "high")
+
     def test_spawn_subagent_respects_delegation_policy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             os.environ["OPENPPX_WORKSPACE"] = tmp
@@ -167,6 +182,40 @@ class ToolsTests(unittest.TestCase):
             self.assertIn("[Read output capped at 1KB for this call. Use offset=", output)
             self.assertNotIn("line-399", output)
 
+    def test_read_file_rejects_device_paths(self) -> None:
+        out = read_file(path="/dev/random")
+        self.assertIn("Refusing to read device", out)
+
+    def test_read_file_returns_image_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["OPENPPX_WORKSPACE"] = tmp
+            image_path = Path(tmp) / "tmp" / "demo.png"
+            image_path.parent.mkdir(parents=True, exist_ok=True)
+            image_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+            payload = json.loads(read_file(path="tmp/demo.png"))
+
+            self.assertEqual(payload["type"], "image")
+            self.assertEqual(payload["mimeType"], "image/png")
+            self.assertEqual(Path(payload["path"]).resolve(), image_path.resolve())
+
+    def test_read_file_extracts_docx_text(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["OPENPPX_WORKSPACE"] = tmp
+            docx_path = Path(tmp) / "tmp" / "demo.docx"
+            docx_path.parent.mkdir(parents=True, exist_ok=True)
+            document_xml = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                "<w:body><w:p><w:r><w:t>Hello DOCX</w:t></w:r></w:p></w:body></w:document>"
+            )
+            with zipfile.ZipFile(docx_path, "w") as archive:
+                archive.writestr("word/document.xml", document_xml)
+
+            output = read_file(path="tmp/demo.docx")
+
+            self.assertIn("Hello DOCX", output)
+
     def test_list_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             os.environ["OPENPPX_WORKSPACE"] = tmp
@@ -225,6 +274,18 @@ class ToolsTests(unittest.TestCase):
             edited = edit_file("tmp/demo.txt", "beta", "delta")
             self.assertIn("Successfully edited", edited)
             self.assertIn("delta", read_file("tmp/demo.txt"))
+
+    def test_edit_file_supports_quote_normalized_matching(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["OPENPPX_WORKSPACE"] = tmp
+            file_path = Path(tmp) / "tmp" / "quotes.txt"
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_text("label = \u201cold\u201d\n", encoding="utf-8")
+
+            edited = edit_file("tmp/quotes.txt", 'label = "old"', 'label = "new"')
+
+            self.assertIn("Successfully edited", edited)
+            self.assertIn("label = \u201cnew\u201d", file_path.read_text(encoding="utf-8"))
 
     def test_exec_tool(self) -> None:
         result = exec_command("echo hello")
@@ -715,6 +776,30 @@ class ToolsTests(unittest.TestCase):
             record = json.loads(outbox.read_text(encoding="utf-8").splitlines()[-1])
             self.assertEqual(record["channel"], "telegram")
             self.assertEqual(record["chat_id"], "u2")
+
+    def test_message_tool_records_media_and_buttons(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["OPENPPX_WORKSPACE"] = tmp
+            image_path = Path(tmp) / "tmp" / "demo.png"
+            image_path.parent.mkdir(parents=True, exist_ok=True)
+            image_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+            response = message(
+                "approve?",
+                channel="local",
+                chat_id="u1",
+                media=["tmp/demo.png"],
+                buttons=[["Approve", "Reject"]],
+            )
+
+            self.assertIn("Message recorded", response)
+            self.assertIn("1 attachment", response)
+            self.assertIn("2 button", response)
+            outbox = Path(tmp) / "messages" / "outbox.log"
+            record = json.loads(outbox.read_text(encoding="utf-8").splitlines()[-1])
+            self.assertEqual(record["metadata"]["buttons"], [["Approve", "Reject"]])
+            self.assertEqual(record["metadata"]["content_type"], "image")
+            self.assertEqual(Path(record["metadata"]["media"][0]).resolve(), image_path.resolve())
 
     def test_message_image_tool_writes_image_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1877,6 +1962,29 @@ class ToolsTests(unittest.TestCase):
         os.environ["OPENPPX_WEB_SEARCH_PROVIDER"] = "dummy"
         out = web_search("adk")
         self.assertIn("not supported", out.lower())
+
+    def test_web_search_provider_argument_overrides_config(self) -> None:
+        os.environ["OPENPPX_WEB_ENABLED"] = "1"
+        os.environ["OPENPPX_WEB_SEARCH_ENABLED"] = "1"
+        os.environ["OPENPPX_WEB_SEARCH_PROVIDER"] = "dummy"
+        html_body = (
+            '<a class="result__a" href="https://example.com">Example Title</a>'
+            '<div class="result__snippet">Example snippet</div>'
+        )
+
+        class _FakeResponse(BytesIO):
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        with patch("openppx.tooling.registry.urlopen", return_value=_FakeResponse(html_body.encode("utf-8"))):
+            out = web_search("adk", provider="duckduckgo")
+
+        self.assertIn("Example Title", out)
 
     def test_web_search_falls_back_to_duckduckgo_when_brave_key_missing(self) -> None:
         os.environ["OPENPPX_WEB_ENABLED"] = "1"
